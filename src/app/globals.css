@@ -2,20 +2,120 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg-canvas: #fafbfc;
+    --bg-surface: #ffffff;
+    --bg-toolbar: #f8f9fa;
+    --bg-panel: #ffffff;
+    --bg-hover: #f1f5f9;
+    --bg-active: #e2e8f0;
+
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-disabled: #94a3b8;
+
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-muted: #bfdbfe;
+    --accent-surface: #eff6ff;
+
+    --border-light: #e2e8f0;
+    --border-default: #cbd5e1;
+    --border-focus: #3b82f6;
+
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    --control-bg: #f8fafc;
+    --control-bg-hover: #f1f5f9;
+    --control-bg-active: #e2e8f0;
+    --control-border: #e2e8f0;
+    --control-border-hover: #cbd5e1;
+
+    --button-primary-bg: #3b82f6;
+    --button-primary-hover: #2563eb;
+    --button-secondary-bg: #f1f5f9;
+    --button-secondary-hover: #e2e8f0;
+
+    --grid-line: rgba(203, 213, 225, 0.4);
+    --grid-line-accent: rgba(59, 130, 246, 0.4);
+    --selection: rgba(59, 130, 246, 0.2);
+    --drop-target: rgba(59, 130, 246, 0.3);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+  }
+
+  .dark {
+    --bg-canvas: #1d1d1d;
+    --bg-surface: #111111;
+    --bg-toolbar: #111111;
+    --bg-panel: #111111;
+    --bg-hover: #334155;
+    --bg-active: #475569;
+
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-disabled: #64748b;
+
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-muted: #1d4ed8;
+    --accent-surface: rgba(59, 130, 246, 0.1);
+
+    --border-light: #334155;
+    --border-default: #475569;
+    --border-focus: #3b82f6;
+
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    --control-bg: #1e293b;
+    --control-bg-hover: #334155;
+    --control-bg-active: #475569;
+    --control-border: #334155;
+    --control-border-hover: #475569;
+
+    --button-primary-bg: #3b82f6;
+    --button-primary-hover: #60a5fa;
+    --button-secondary-bg: #334155;
+    --button-secondary-hover: #475569;
+
+    --grid-line: rgba(71, 85, 105, 0.4);
+    --grid-line-accent: rgba(59, 130, 246, 0.4);
+    --selection: rgba(59, 130, 246, 0.2);
+    --drop-target: rgba(59, 130, 246, 0.3);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .element-box {
+    @apply aspect-square flex items-center justify-center 
+             bg-[#1A1A1A] hover:bg-[#2A2A2A] 
+             text-gray-300 hover:text-white
+             border border-[#333333] rounded-xl
+              ease-in-out
+             cursor-pointer shadow-lg hover:shadow-xl
+             capitalize text-sm font-medium;
+  }
+
+  .element-box-large {
+    @apply element-box text-base;
+  }
+
+  .element-box-selected {
+    @apply element-box bg-[#2A2A2A] text-white;
+  }
 }
