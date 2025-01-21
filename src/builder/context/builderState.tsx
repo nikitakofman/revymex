@@ -37,6 +37,7 @@ interface BuilderContextType {
   ) => void;
   nodeDisp: NodeDispatcher;
   dragDisp: DragDispatcher;
+  isMovingCanvas: boolean;
 }
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
@@ -47,16 +48,38 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.3 });
+  const [isMovingCanvas, setIsMovingCanvas] = useState(false);
+
+  // Timer ref to handle debouncing the isMovingCanvas state
+  const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
+
+  // Clear the timer and set isMoving to false
+  const stopMoving = useCallback(() => {
+    setIsMovingCanvas(false);
+  }, []);
+
+  // Start moving and setup the debounce timer
+  const startMoving = useCallback(() => {
+    setIsMovingCanvas(true);
+
+    if (moveTimerRef.current) {
+      clearTimeout(moveTimerRef.current);
+    }
+
+    moveTimerRef.current = setTimeout(stopMoving, 150);
+  }, [stopMoving]);
 
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
 
       if (!containerRef.current) return;
+
+      startMoving();
 
       if (e.ctrlKey || e.metaKey) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -111,11 +134,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     }
   }, [dragState.isDragging]);
 
-  console.log("dragState", dragState.selectedIds);
-
   const setNodeStyle = useCallback(
     (styles: React.CSSProperties, nodeIds?: (string | number)[]) => {
-      console.log("updating style", nodeIds, styles);
       const targetIds = nodeIds || dragState.selectedIds;
       if (targetIds.length > 0) {
         nodeDisp.updateNodeStyle(targetIds, styles);
@@ -134,6 +154,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     setNodeStyle,
     nodeDisp,
     dragDisp,
+    isMovingCanvas,
   };
 
   return (

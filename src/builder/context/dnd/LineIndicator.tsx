@@ -17,12 +17,10 @@ export const LineIndicator = ({
 }: LineIndicatorProps) => {
   if (!show) return null;
 
-  // Determine if vertical based on dimensions
   const isVertical = parseFloat(String(height)) > parseFloat(String(width));
 
   return createPortal(
     <>
-      {/* Main line */}
       <div
         className="pointer-events-none fixed z-[9997] bg-blue-500"
         style={{
@@ -34,7 +32,6 @@ export const LineIndicator = ({
       />
 
       {isVertical ? (
-        // Vertical line dots
         <>
           <div
             className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"
@@ -54,7 +51,6 @@ export const LineIndicator = ({
           />
         </>
       ) : (
-        // Horizontal line dots
         <>
           <div
             className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"

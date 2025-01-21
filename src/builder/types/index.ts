@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { Node } from "../../../../RevymeX/legacy/nodeReducer";
+import { Node } from "../reducer/nodeDispatcher";
 
 export type ElementProps = {
   children?: ReactNode;

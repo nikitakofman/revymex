@@ -1,15 +1,18 @@
 import React, { useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, PlayCircle } from "lucide-react";
+import { PreviewModal } from "./PreviewRenderer";
 
 export const ViewportDevTools: React.FC = () => {
-  const { transform, setTransform, nodeState, nodeDisp } = useBuilder();
+  const { transform, setTransform, nodeState, nodeDisp, dragState } =
+    useBuilder();
   const [showTree, setShowTree] = useState(false);
   const [activeTab, setActiveTab] = useState<"view" | "import">("view");
   const [importValue, setImportValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleResetView = () => {
     setTransform({ x: 0, y: 0, scale: 1 });
@@ -66,8 +69,28 @@ export const ViewportDevTools: React.FC = () => {
             <Moon className="w-4 h-4" />
           )}
         </button>
+        <button
+          className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+          onClick={() => setShowPreview(true)}
+        >
+          <PlayCircle className="w-4 h-4" />
+        </button>
+        <button
+          className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+            activeTab === "import"
+              ? "bg-[var(--button-primary-bg)] text-white"
+              : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+          }`}
+        >
+          {dragState.selectedIds.length}
+        </button>
       </div>
 
+      <PreviewModal
+        isOpen={showPreview}
+        onClose={() => setShowPreview(false)}
+        nodes={nodeState.nodes}
+      />
       {/* Modal for Tree view and Import */}
       {showTree && (
         <div className="fixed inset-0 flex z-50 items-center justify-center bg-black/50">

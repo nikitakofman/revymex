@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, HTMLAttributes } from "react";
-import { useBuilder } from "../builderState";
-import { Node } from "../../../../../RevymeX/legacy/nodeReducer";
+import { useBuilder } from "@/builder/context/builderState";
+import { Node } from "@/builder/reducer/nodeDispatcher";
 
 type Direction =
   | "top"
@@ -25,7 +25,15 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   minWidth = 50,
   minHeight = 50,
 }) => {
-  const { nodeDisp, dragState, transform } = useBuilder();
+  const {
+    nodeDisp,
+    dragState,
+    transform,
+    isMovingCanvas,
+    setNodeStyle,
+    nodeState,
+    dragDisp,
+  } = useBuilder();
   const elementRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
@@ -44,10 +52,22 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       const computedStyle = window.getComputedStyle(elementRef.current);
       const startWidth = parseFloat(computedStyle.width);
       const startHeight = parseFloat(computedStyle.height);
+      const unit = computedStyle.width.includes("%") ? "%" : "px";
       const startX = e.clientX;
       const startY = e.clientY;
 
       setIsResizing(true);
+
+      // Initial helper position and dimensions
+      dragDisp.updateStyleHelper({
+        type: "dimensions",
+        position: { x: e.clientX, y: e.clientY },
+        dimensions: {
+          width: startWidth,
+          height: startHeight,
+          unit,
+        },
+      });
 
       const handlePointerMove = (moveEvent: PointerEvent) => {
         if (!elementRef.current) return;
@@ -110,15 +130,23 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
             break;
         }
 
-        // Update all selected nodes with the new dimensions
+        // Update helper with new position and dimensions
+        dragDisp.updateStyleHelper({
+          type: "dimensions",
+          position: { x: moveEvent.clientX, y: moveEvent.clientY },
+          dimensions: {
+            width: newWidth,
+            height: newHeight,
+            unit,
+          },
+        });
+
         selectedNodes.forEach((nodeId) => {
-          // Update style dimensions
           nodeDisp.updateNodeStyle([nodeId], {
-            width: `${newWidth}px`,
-            height: `${newHeight}px`,
+            width: `${newWidth}${unit}`,
+            height: `${newHeight}${unit}`,
           });
 
-          // Update position if needed
           if (newX !== node.position?.x || newY !== node.position?.y) {
             nodeDisp.updateNodePosition(nodeId, { x: newX, y: newY });
           }
@@ -126,6 +154,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       };
 
       const handlePointerUp = () => {
+        dragDisp.hideStyleHelper();
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         setIsResizing(false);
@@ -163,25 +192,224 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     }
   };
 
+  const getBorderResizeStyles = (direction: Direction): React.CSSProperties => {
+    const borderSize = 4 / transform.scale;
+
+    switch (direction) {
+      case "top":
+        return {
+          top: 0,
+          left: 0,
+          right: 0,
+          height: borderSize,
+          transform: "translateY(-50%)",
+        };
+      case "right":
+        return {
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: borderSize,
+          transform: "translateX(50%)",
+        };
+      case "bottom":
+        return {
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: borderSize,
+          transform: "translateY(50%)",
+        };
+      case "left":
+        return {
+          top: 0,
+          left: 0,
+          bottom: 0,
+          width: borderSize,
+          transform: "translateX(-50%)",
+        };
+      default:
+        return {};
+    }
+  };
+
+  const getHandleStyles = (direction: Direction): React.CSSProperties => {
+    switch (direction) {
+      case "topLeft":
+        return { top: 0, left: 0 };
+      case "topRight":
+        return { top: 0, right: 0 };
+      case "bottomRight":
+        return { bottom: 0, right: 0 };
+      case "bottomLeft":
+        return { bottom: 0, left: 0 };
+      default:
+        return {};
+    }
+  };
+
+  const startAdjustingGap = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const currentGap = parseInt(
+      getComputedStyle(elementRef.current!).gap || "0"
+    );
+    const isHorizontal =
+      getComputedStyle(elementRef.current!).flexDirection === "row";
+
+    // Show initial helper
+    dragDisp.updateStyleHelper({
+      type: "gap",
+      position: { x: e.clientX, y: e.clientY },
+      value: currentGap,
+    });
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      moveEvent.preventDefault();
+      moveEvent.stopPropagation();
+
+      const deltaX = (moveEvent.clientX - startX) / transform.scale;
+      const deltaY = (moveEvent.clientY - startY) / transform.scale;
+      const delta = isHorizontal ? deltaX : deltaY;
+
+      const newGap = Math.max(0, currentGap + delta);
+
+      // Update helper with new position and value
+      dragDisp.updateStyleHelper({
+        type: "gap",
+        position: { x: moveEvent.clientX, y: moveEvent.clientY },
+        value: newGap,
+      });
+
+      setNodeStyle(
+        {
+          gap: `${Math.round(newGap)}px`,
+        },
+        [node.id]
+      );
+    };
+
+    const handleMouseUp = () => {
+      dragDisp.hideStyleHelper();
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const renderGapHandles = () => {
+    if (!elementRef.current || !isSelected || isMovingCanvas || isResizing)
+      return null;
+    if (node.type !== "frame") return null;
+
+    const frameElement = document.querySelector(`[data-node-id="${node.id}"]`);
+    if (!frameElement) return null;
+
+    const computedStyle = window.getComputedStyle(frameElement);
+    const isColumn = computedStyle.flexDirection === "column";
+
+    const frameChildren = nodeState.nodes
+      .filter((child) => child.parentId === node.id)
+      .map((childNode) => {
+        const el = document.querySelector(
+          `[data-node-id="${childNode.id}"]`
+        ) as HTMLElement | null;
+        return el
+          ? {
+              id: childNode.id,
+              rect: el.getBoundingClientRect(),
+            }
+          : null;
+      })
+      .filter((x): x is { id: string; rect: DOMRect } => !!x);
+
+    if (frameChildren.length < 2) return null;
+
+    const frameRect = frameElement.getBoundingClientRect();
+    const gapHandles = [];
+
+    for (let i = 0; i < frameChildren.length - 1; i++) {
+      const firstElement = frameChildren[i];
+      const secondElement = frameChildren[i + 1];
+
+      if (isColumn) {
+        const firstElementBottomEdge = firstElement.rect.bottom;
+        const secondElementTopEdge = secondElement.rect.top;
+        const centerY = (firstElementBottomEdge + secondElementTopEdge) / 2;
+        const relativeCenter = (centerY - frameRect.top) / transform.scale;
+
+        gapHandles.push(
+          <div
+            key={`gap-${firstElement.id}-${secondElement.id}`}
+            className="w-10 h-2 bg-pink-400 absolute cursor-row-resize"
+            style={{
+              transform: "translateY(-50%)",
+              top: `${relativeCenter}px`,
+            }}
+            onMouseDown={(e) => startAdjustingGap(e)}
+          />
+        );
+      } else {
+        const firstElementRightEdge = firstElement.rect.right;
+        const secondElementLeftEdge = secondElement.rect.left;
+        const centerX = (firstElementRightEdge + secondElementLeftEdge) / 2;
+        const relativeCenter = (centerX - frameRect.left) / transform.scale;
+
+        gapHandles.push(
+          <div
+            key={`gap-${firstElement.id}-${secondElement.id}`}
+            className="h-10 w-2 bg-pink-400 absolute cursor-col-resize"
+            style={{
+              transform: "translateX(-50%)",
+              left: `${relativeCenter}px`,
+            }}
+            onMouseDown={(e) => startAdjustingGap(e)}
+          />
+        );
+      }
+    }
+
+    return <>{gapHandles}</>;
+  };
+
   const ResizeHandles = () => (
     <>
-      {[
-        "top",
-        "right",
-        "bottom",
-        "left",
-        "topRight",
-        "bottomRight",
-        "bottomLeft",
-        "topLeft",
-      ].map((direction) => (
+      {/* Corner handles */}
+      {["topRight", "bottomRight", "bottomLeft", "topLeft"].map((direction) => (
         <div
           key={direction}
-          className="absolute w-3 h-3 bg-blue-500 rounded-full border-2 border-white"
+          className="absolute bg-blue-500 rounded-full border-2 border-white"
           style={{
             ...getHandleStyles(direction as Direction),
             cursor: getHandleCursor(direction as Direction),
             zIndex: 1000,
+            width: `${8 / transform.scale}px`,
+            height: `${8 / transform.scale}px`,
+            transform: `translate(${
+              direction.includes("Right") ? "50%" : "-50%"
+            }, ${direction.includes("bottom") ? "50%" : "-50%"})`,
+            pointerEvents: "all",
+          }}
+          onPointerDown={(e) => handleResizeStart(e, direction as Direction)}
+        />
+      ))}
+
+      {/* Border resize areas */}
+      {["top", "right", "bottom", "left"].map((direction) => (
+        <div
+          key={direction}
+          className="absolute bg-transparent"
+          style={{
+            ...getBorderResizeStyles(direction as Direction),
+            cursor: getHandleCursor(direction as Direction),
+            zIndex: 999,
+            pointerEvents: "all",
           }}
           onPointerDown={(e) => handleResizeStart(e, direction as Direction)}
         />
@@ -193,34 +421,22 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     ref: elementRef,
     style: {
       ...children.props.style,
-      outline: isSelected ? "2px solid #3b82f6" : undefined,
+      outline:
+        !isMovingCanvas && isSelected
+          ? `${2 / transform.scale}px solid #3b82f6`
+          : undefined,
+      pointerEvents: isSelected ? "all" : undefined,
     },
     children: (
       <>
         {children.props.children}
-        {isSelected && !isResizing && <ResizeHandles />}
+        {isSelected && !isResizing && !isMovingCanvas && (
+          <>
+            <ResizeHandles />
+            {renderGapHandles()}
+          </>
+        )}
       </>
     ),
   } as React.HTMLAttributes<HTMLElement>);
-};
-
-const getHandleStyles = (direction: Direction): React.CSSProperties => {
-  switch (direction) {
-    case "top":
-      return { top: -6, left: "50%", transform: "translateX(-50%)" };
-    case "right":
-      return { right: -6, top: "50%", transform: "translateY(-50%)" };
-    case "bottom":
-      return { bottom: -6, left: "50%", transform: "translateX(-50%)" };
-    case "left":
-      return { left: -6, top: "50%", transform: "translateY(-50%)" };
-    case "topLeft":
-      return { top: -6, left: -6 };
-    case "topRight":
-      return { top: -6, right: -6 };
-    case "bottomRight":
-      return { bottom: -6, right: -6 };
-    case "bottomLeft":
-      return { bottom: -6, left: -6 };
-  }
 };

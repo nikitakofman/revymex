@@ -9,6 +9,7 @@ import { useMouseUp } from "@/builder/context/dnd/useMouseUp";
 import { LineIndicator } from "@/builder/context/dnd/LineIndicator";
 import { SnapGuides } from "@/builder/context/dnd/SnapGuides";
 import { ToolbarDragPreview } from "@/builder/context/dnd/toolbarDragPreview";
+import { StyleUpdateHelper } from "@/builder/context/dnd/StyleUpdateHelper";
 
 const Canvas = () => {
   const { containerRef, contentRef, dragState } = useBuilder();
@@ -33,12 +34,6 @@ const Canvas = () => {
     }
   }, [dragState.isDragging]);
 
-  const viewports = [
-    { width: 1440, class: "w-[1440px]" },
-    { width: 768, class: "w-[768px]" },
-    { width: 375, class: "w-[375px]" },
-  ];
-
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-[#1D1D1D]">
       <ViewportDevTools />
@@ -47,29 +42,18 @@ const Canvas = () => {
 
       <div ref={containerRef} className="w-full h-full canvas relative">
         <SnapGuides />
+        <StyleUpdateHelper />
 
         <div ref={contentRef} className="relative">
           <RenderNodes filter="outOfViewport" />
-
-          <div className="flex gap-8 p-10">
-            {viewports.map(({ width, class: widthClass }) => (
-              <div
-                key={width}
-                data-viewport={width}
-                className={`${widthClass} viewport flex-shrink-0 h-[1000px] bg-white border border-gray-200 
-                            items-center justify-center shadow-lg rounded-lg`}
-              >
-                <RenderNodes filter="inViewport" />
-                <LineIndicator
-                  show={dragState.lineIndicator.show}
-                  x={dragState.lineIndicator.x}
-                  y={dragState.lineIndicator.y}
-                  width={dragState.lineIndicator.width}
-                  height={dragState.lineIndicator.height}
-                />
-              </div>
-            ))}
-          </div>
+          <RenderNodes filter="inViewport" />
+          <LineIndicator
+            show={dragState.lineIndicator.show}
+            x={dragState.lineIndicator.x}
+            y={dragState.lineIndicator.y}
+            width={dragState.lineIndicator.width}
+            height={dragState.lineIndicator.height}
+          />
         </div>
       </div>
       <RightToolbar />

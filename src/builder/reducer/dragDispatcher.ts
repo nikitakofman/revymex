@@ -3,8 +3,10 @@ import { Node } from "./nodeDispatcher";
 import { LineIndicatorState } from "../context/builderState";
 
 export interface DropInfo {
-  targetId: number | null;
+  targetId: string | number | null;
   position: "before" | "after" | "inside" | null;
+  dropX?: number;
+  dropY?: number;
 }
 
 export interface DraggedNode {
@@ -14,7 +16,19 @@ export interface DraggedNode {
 
 export interface SnapGuideLine {
   orientation: "vertical" | "horizontal";
-  position: number; // x or y coordinate
+  position: number;
+}
+
+interface StyleHelper {
+  show: boolean;
+  type: "dimensions" | "gap" | null;
+  position: { x: number; y: number };
+  value?: number;
+  dimensions?: {
+    width: number;
+    height: number;
+    unit: "px" | "%";
+  };
 }
 
 export interface DragState {
@@ -26,16 +40,13 @@ export interface DragState {
   placeholderId: string | number | null;
   originalIndex: number | null;
   lineIndicator: LineIndicatorState;
-  dragSource: string | null;
+  dragSource: "canvas" | "viewport" | "toolbar" | "parent" | null;
   snapGuides: SnapGuideLine[];
+  originalParentId: string | number | null;
+  styleHelper: StyleHelper;
+  activeViewportId: string | number | null;
 }
 
-/**
- * IMPORTANT CHANGE:
- *   We no longer store a 'private state: DragState' reference.
- *   Instead, we ONLY store 'private setState', and always use
- *   the functional update form.
- */
 export class DragDispatcher {
   constructor(
     private setState: React.Dispatch<React.SetStateAction<DragState>>
@@ -45,6 +56,14 @@ export class DragDispatcher {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.isDragging = isDragging;
+      })
+    );
+  }
+
+  setPartialDragState(state: Partial<DragState>) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        Object.assign(draft, state);
       })
     );
   }
@@ -69,12 +88,14 @@ export class DragDispatcher {
   }
 
   setDropInfo(
-    targetId: number | null,
-    position: "before" | "after" | "inside" | null
+    targetId: string | number | null,
+    position: "before" | "after" | "inside" | null,
+    dropX?: number,
+    dropY?: number
   ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        draft.dropInfo = { targetId, position };
+        draft.dropInfo = { targetId, position, dropX, dropY };
       })
     );
   }
@@ -147,7 +168,7 @@ export class DragDispatcher {
     );
   }
 
-  setDragSource(source: string | null) {
+  setDragSource(source: "canvas" | "viewport" | "toolbar" | "parent" | null) {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.dragSource = source;
@@ -171,6 +192,39 @@ export class DragDispatcher {
     );
   }
 
+  updateStyleHelper(params: {
+    type: "dimensions" | "gap";
+    position: { x: number; y: number };
+    value?: number;
+    dimensions?: { width: number; height: number; unit: "px" | "%" };
+  }) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.styleHelper = {
+          show: true,
+          type: params.type,
+          position: params.position,
+          value: params.value,
+          dimensions: params.dimensions,
+        };
+      })
+    );
+  }
+
+  hideStyleHelper() {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.styleHelper = {
+          show: false,
+          type: null,
+          position: { x: 0, y: 0 },
+          value: undefined,
+          dimensions: undefined,
+        };
+      })
+    );
+  }
+
   resetDragState() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -183,6 +237,13 @@ export class DragDispatcher {
         draft.originalIndex = null;
         draft.snapGuides = [];
         draft.dragSource = null;
+        draft.styleHelper = {
+          show: false,
+          type: null,
+          position: { x: 0, y: 0 },
+          value: undefined,
+          dimensions: undefined,
+        };
       })
     );
   }

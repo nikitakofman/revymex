@@ -12,29 +12,72 @@ interface RenderNodesProps {
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   const { nodeState } = useBuilder();
 
-  const renderNode = (node: Node) => {
+  const renderNode = (node: Node, viewportId?: string | number) => {
     switch (node.type) {
-      case "frame":
-        return (
-          <Frame key={node.id} node={node}>
-            {node.children?.map(renderNode)}
-          </Frame>
+      case "frame": {
+        const children = nodeState.nodes.filter(
+          (child) => child.parentId === node.id
         );
 
+        return (
+          <Frame key={node.id} node={node} viewportId={viewportId}>
+            {children.map((childNode) => renderNode(childNode, viewportId))}
+          </Frame>
+        );
+      }
+
       case "image":
-        return <ImageElement key={node.id} node={node} />;
+        return (
+          <ImageElement key={node.id} node={node} viewportId={viewportId} />
+        );
 
       case "text":
-        return <TextElement key={node.id} node={node} />;
+        return (
+          <TextElement key={node.id} node={node} viewportId={viewportId} />
+        );
 
       default:
-        return <div key={node.id} style={node.style}></div>;
+        return (
+          <div
+            key={node.id}
+            style={node.style}
+            data-node-id={node.id}
+            data-viewport-context={viewportId} // Optional: add viewport context to plain divs
+          />
+        );
     }
   };
 
-  const filteredNodes = nodeState.nodes.filter((node: Node) =>
-    filter === "inViewport" ? node.inViewport === true : !node.inViewport
+  // Rest stays exactly the same
+  const viewportFrames = nodeState.nodes.filter(
+    (node) => node.type === "frame" && node.isViewport
   );
 
-  return filteredNodes.map(renderNode);
+  const filteredNodes = nodeState.nodes.filter((node: Node) =>
+    filter === "inViewport"
+      ? node.inViewport === true
+      : node.inViewport === false
+  );
+
+  const topLevelNodes = filteredNodes.filter((node) => {
+    if (node.parentId == null) return true;
+    const parentInFilter = filteredNodes.some((n) => n.id === node.parentId);
+    return !parentInFilter;
+  });
+
+  if (filter === "outOfViewport") {
+    return <>{topLevelNodes.map((node) => renderNode(node))}</>;
+  } else {
+    return (
+      <>
+        {viewportFrames.map((viewportFrame) => (
+          <Frame key={viewportFrame.id} node={viewportFrame}>
+            {topLevelNodes
+              .filter((node) => node.type !== "frame" || !node.isViewport)
+              .map((node) => renderNode(node, viewportFrame.id))}
+          </Frame>
+        ))}
+      </>
+    );
+  }
 };

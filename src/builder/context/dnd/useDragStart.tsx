@@ -4,6 +4,8 @@ import {
   calculateDragPositions,
   calculateDragTransform,
   findIndex,
+  findIndexWithinParent,
+  findParentViewport,
 } from "./utils";
 import { nanoid } from "nanoid";
 
@@ -27,6 +29,7 @@ export const useDragStart = () => {
           backgroundColor: fromToolbarType === "frame" ? "gray" : undefined,
         },
         inViewport: false,
+        parentId: null,
       };
 
       dragDisp.setDraggedNode(newNode, {
@@ -35,7 +38,6 @@ export const useDragStart = () => {
         mouseX: 0,
         mouseY: 0,
       });
-
       dragDisp.setIsDragging(true);
       dragDisp.setDraggedItem(fromToolbarType);
       dragDisp.setDragSource("toolbar");
@@ -58,7 +60,14 @@ export const useDragStart = () => {
     );
 
     if (node.inViewport) {
-      const oldIndex = findIndex(nodeState.nodes, node.id);
+      dragDisp.setDragSource("viewport");
+
+      const oldIndex = findIndexWithinParent(
+        nodeState.nodes,
+        node.id,
+        node.parentId
+      );
+
       const placeholderNode: Node = {
         id: nanoid(),
         type: "placeholder",
@@ -69,11 +78,10 @@ export const useDragStart = () => {
           position: "relative",
         },
         inViewport: true,
+        parentId: node.parentId,
       };
 
-      dragDisp.setDragSource("viewport");
-
-      nodeDisp.insertAtIndex(placeholderNode, oldIndex);
+      nodeDisp.insertAtIndex(placeholderNode, oldIndex, node.parentId);
 
       const { x: initialX, y: initialY } = calculateDragTransform(
         positions.cursorX,
@@ -101,6 +109,8 @@ export const useDragStart = () => {
         mouseY: positions.mouseOffsetY,
       });
     } else {
+      dragDisp.setDragSource("canvas");
+
       const { x: initialX, y: initialY } = calculateDragTransform(
         positions.cursorX,
         positions.cursorY,
@@ -109,8 +119,6 @@ export const useDragStart = () => {
         positions.mouseOffsetX,
         positions.mouseOffsetY
       );
-
-      dragDisp.setDragSource("canvas");
 
       setNodeStyle(
         {

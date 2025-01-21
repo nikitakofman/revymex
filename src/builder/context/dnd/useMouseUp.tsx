@@ -1,5 +1,5 @@
 import { useBuilder } from "@/builder/context/builderState";
-import { isOverDropzone } from "./utils";
+import { isOverDropzone, isWithinViewport } from "./utils";
 import { useRef } from "react";
 
 export const useMouseUp = () => {
@@ -24,15 +24,21 @@ export const useMouseUp = () => {
     const realNodeId = draggedNode.id;
 
     if (dragState.draggedItem) {
-      const overViewport = isOverDropzone(e, "viewport");
+      const { targetId, position, dropX, dropY } = dragState.dropInfo;
 
-      if (overViewport) {
-        const { targetId, position } = dragState.dropInfo;
+      console.log("targetId", targetId);
+
+      console.log("targetid", dragState.dropInfo);
+      if (targetId) {
+        console.log("IF TARGET ID", targetId);
+
+        const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
+
+        console.log("shouldBeInViewport", shouldBeInViewport);
 
         nodeDisp.addNode(
           {
             ...draggedNode,
-            inViewport: true,
             style: {
               ...draggedNode.style,
               position: "relative",
@@ -43,23 +49,31 @@ export const useMouseUp = () => {
             },
           },
           targetId,
-          position
+          position,
+          shouldBeInViewport
         );
-      } else if (containerRef.current) {
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const finalX =
-          (e.clientX - containerRect.left - transform.x) / transform.scale;
-        const finalY =
-          (e.clientY - containerRect.top - transform.y) / transform.scale;
+      } else {
+        const containerRect = containerRef.current?.getBoundingClientRect();
+
+        const itemWidth = parseInt(draggedNode.style.width as string) || 150;
+        const itemHeight = parseInt(draggedNode.style.height as string) || 150;
+
+        const relativeX = dropX! - containerRect!.left;
+        const relativeY = dropY! - containerRect!.top;
+
+        const adjustedX =
+          (relativeX - transform.x) / transform.scale - itemWidth / 2;
+        const adjustedY =
+          (relativeY - transform.y) / transform.scale - itemHeight / 2;
 
         nodeDisp.addNode(
           {
             ...draggedNode,
-            inViewport: false,
-            position: { x: finalX, y: finalY },
             style: {
               ...draggedNode.style,
               position: "absolute",
+              left: `${adjustedX}px`,
+              top: `${adjustedY}px`,
             },
           },
           null,
@@ -81,7 +95,11 @@ export const useMouseUp = () => {
       const placeholderId = nodeState.nodes[placeholderIndex].id;
       nodeDisp.removeNode(placeholderId);
       nodeDisp.removeNode(realNodeId);
-      nodeDisp.insertAtIndex(draggedNode, placeholderIndex);
+      nodeDisp.insertAtIndex(
+        draggedNode,
+        placeholderIndex,
+        draggedNode.parentId
+      );
 
       setNodeStyle(
         {
@@ -94,12 +112,10 @@ export const useMouseUp = () => {
         [realNodeId]
       );
     } else {
-      const overViewport = isOverDropzone(e, "viewport");
+      const { targetId, position } = dragState.dropInfo;
 
-      if (overViewport) {
-        const { targetId, position } = dragState.dropInfo;
+      if (targetId) {
         nodeDisp.moveNode(realNodeId, true, { targetId, position });
-
         setNodeStyle(
           {
             position: "relative",

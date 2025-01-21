@@ -1,7 +1,7 @@
-import React from "react";
+import React, { CSSProperties } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 
-const GuideLineComponent = ({ style }) => {
+const GuideLineComponent = ({ style }: { style: CSSProperties }) => {
   const [isVisible, setIsVisible] = React.useState(false);
 
   React.useEffect(() => {
