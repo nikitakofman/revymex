@@ -46,14 +46,7 @@ const Canvas = () => {
 
         <div ref={contentRef} className="relative">
           <RenderNodes filter="outOfViewport" />
-          <RenderNodes filter="inViewport" />
-          <LineIndicator
-            show={dragState.lineIndicator.show}
-            x={dragState.lineIndicator.x}
-            y={dragState.lineIndicator.y}
-            width={dragState.lineIndicator.width}
-            height={dragState.lineIndicator.height}
-          />
+          <LineIndicator />
         </div>
       </div>
       <RightToolbar />

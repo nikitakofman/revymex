@@ -855,14 +855,67 @@ export const isWithinViewport = (
 };
 
 export const findParentViewport = (
-  element: HTMLElement | null
+  nodeId: string | number | null | undefined,
+  nodes: Node[]
 ): string | number | null => {
-  if (!element) return null;
+  if (!nodeId) return null;
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) return null;
 
-  const viewportId = element.getAttribute("data-viewport-id");
-  if (viewportId) return viewportId;
+  // If this node is a viewport, return its id
+  if (node.isViewport) return node.id;
 
-  return element.parentElement
-    ? findParentViewport(element.parentElement)
-    : null;
+  // Otherwise recurse up through parents
+  return findParentViewport(node.parentId, nodes);
+};
+
+export const findViewportAndPath = (
+  nodeId: string | number | null,
+  draft: any
+): { viewport: Node | null; path: { type: string; index: number }[] } => {
+  const path: { type: string; index: number }[] = [];
+  let currentId = nodeId;
+
+  while (currentId) {
+    const node = draft.nodes.find((n) => n.id === currentId);
+    if (!node) break;
+
+    if (node.isViewport) {
+      return { viewport: node, path };
+    }
+
+    // Get index among siblings of same type
+    const siblings = draft.nodes.filter(
+      (n) => n.parentId === node.parentId && n.type === node.type
+    );
+    const index = siblings.findIndex((n) => n.id === node.id);
+
+    path.unshift({ type: node.type, index });
+    currentId = node.parentId;
+  }
+
+  return { viewport: null, path };
+};
+
+export const findMatchingNode = (
+  viewport: Node,
+  path: { type: string; index: number }[],
+  draft: any
+): Node | null => {
+  let currentParent = viewport;
+
+  for (const { type, index } of path) {
+    // Find all siblings of the same type
+    const siblings = draft.nodes.filter(
+      (n) => n.parentId === currentParent.id && n.type === type
+    );
+
+    // Get the node at the same index position
+    const child = siblings[index];
+    if (!child) return null;
+
+    currentParent = child;
+  }
+
+  return currentParent;
 };

@@ -44,7 +44,6 @@ export interface DragState {
   snapGuides: SnapGuideLine[];
   originalParentId: string | number | null;
   styleHelper: StyleHelper;
-  activeViewportId: string | number | null;
 }
 
 export class DragDispatcher {

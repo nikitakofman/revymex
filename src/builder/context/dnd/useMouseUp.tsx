@@ -1,6 +1,8 @@
 import { useBuilder } from "@/builder/context/builderState";
-import { isOverDropzone, isWithinViewport } from "./utils";
+import { findParentViewport, isOverDropzone, isWithinViewport } from "./utils";
 import { useRef } from "react";
+import { Node } from "@/builder/reducer/nodeDispatcher";
+import { nanoid } from "nanoid";
 
 export const useMouseUp = () => {
   const {
@@ -22,6 +24,12 @@ export const useMouseUp = () => {
 
     const draggedNode = dragState.draggedNode.node;
     const realNodeId = draggedNode.id;
+    const sharedId = nanoid(); // Generate shared ID for new node
+
+    const sourceViewportId = findParentViewport(
+      draggedNode.parentId,
+      nodeState.nodes
+    );
 
     if (dragState.draggedItem) {
       const { targetId, position, dropX, dropY } = dragState.dropInfo;
@@ -35,10 +43,12 @@ export const useMouseUp = () => {
         const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
 
         console.log("shouldBeInViewport", shouldBeInViewport);
+        console.log("reORDER NOW 6");
 
         nodeDisp.addNode(
           {
             ...draggedNode,
+            sharedId,
             style: {
               ...draggedNode.style,
               position: "relative",
@@ -52,6 +62,7 @@ export const useMouseUp = () => {
           position,
           shouldBeInViewport
         );
+        nodeDisp.syncViewports();
       } else {
         const containerRect = containerRef.current?.getBoundingClientRect();
 
@@ -77,12 +88,15 @@ export const useMouseUp = () => {
             },
           },
           null,
-          null
+          null,
+          false
         );
       }
+      console.log("reORDER NOW 3");
 
       dragDisp.hideLineIndicator();
       dragDisp.resetDragState();
+      nodeDisp.syncViewports();
       originalIndexRef.current = null;
       return;
     }
@@ -92,6 +106,10 @@ export const useMouseUp = () => {
     );
 
     if (placeholderIndex !== -1) {
+      console.log("reORDER NOW");
+
+      console.log("sourceViewportId", sourceViewportId);
+
       const placeholderId = nodeState.nodes[placeholderIndex].id;
       nodeDisp.removeNode(placeholderId);
       nodeDisp.removeNode(realNodeId);
@@ -111,8 +129,13 @@ export const useMouseUp = () => {
         },
         [realNodeId]
       );
+      if (sourceViewportId) {
+        console.log("SYNCING HERE");
+        nodeDisp.syncFromViewport(sourceViewportId);
+      }
     } else {
       const { targetId, position } = dragState.dropInfo;
+      console.log("reORDER NOW 2");
 
       if (targetId) {
         nodeDisp.moveNode(realNodeId, true, { targetId, position });
@@ -126,6 +149,7 @@ export const useMouseUp = () => {
           },
           [realNodeId]
         );
+        nodeDisp.syncViewports();
       } else if (containerRef.current) {
         const rect = document
           .querySelector(`[data-node-id="${realNodeId}"]`)

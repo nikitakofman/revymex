@@ -1,60 +1,32 @@
+import { CSSProperties } from "react";
 import { DragState } from "./dragDispatcher";
-import { NodeState } from "./nodeDispatcher";
+import { Position } from "./nodeDispatcher";
 
 const VIEWPORT_GAP = 160; // Gap between viewports in pixels
 
+export interface Node {
+  id: string | number;
+  type: "frame" | "image" | "text" | "placeholder" | string;
+  style: CSSProperties;
+  viewportStyles?: {
+    [viewportId: string]: React.CSSProperties; // For when we export/preview
+  };
+  src?: string;
+  text?: string;
+  parentId?: string | number | null;
+  position?: Position;
+  inViewport?: boolean;
+  isViewport?: boolean;
+  viewportWidth?: number;
+}
+
+export interface NodeState {
+  nodes: Node[];
+  selectedNodeIds: (string | number)[] | null;
+}
+
 export const nodeInitialState: NodeState = {
   nodes: [
-    // {
-    //   id: "1",
-    //   type: "frame",
-    //   style: {
-    //     width: "150px",
-    //     height: "150px",
-    //     backgroundColor: "red",
-    //     position: "relative",
-    //   },
-    //   inViewport: true,
-    //   parentId: null, // top-level
-    // },
-    // {
-    //   id: "2",
-    //   type: "frame",
-    //   style: {
-    //     width: "150px",
-    //     height: "150px",
-    //     backgroundColor: "blue",
-    //     position: "relative",
-    //   },
-    //   inViewport: true,
-    //   parentId: null, // top-level
-    // },
-    // {
-    //   id: "3",
-    //   type: "image",
-    //   src: "https://hatrabbits.com/wp-content/uploads/2017/01/random.jpg",
-    //   style: {
-    //     width: "150px",
-    //     height: "150px",
-    //     position: "relative",
-    //   },
-    //   inViewport: true,
-    //   parentId: null, // top-level
-    // },
-    // {
-    //   id: "4",
-    //   type: "text",
-    //   text: "hello world",
-    //   style: {
-    //     width: "150px",
-    //     height: "150px",
-    //     fontSize: "30px",
-    //     backgroundColor: "yellow",
-    //     position: "relative",
-    //   },
-    //   inViewport: true,
-    //   parentId: null, // top-level
-    // },
     {
       id: "viewport-1440",
       type: "frame",
@@ -70,13 +42,15 @@ export const nodeInitialState: NodeState = {
         boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
         left: "0px",
         top: "0px",
+        display: "flex",
+        flexDirection: "row",
+        justifyContent: "center",
+        alignItems: "center",
       },
       inViewport: false,
       parentId: null,
       position: { x: 100, y: 100 },
     },
-
-    // Tablet Viewport (768px) - positioned after desktop + gap
     {
       id: "viewport-768",
       type: "frame",
@@ -90,15 +64,13 @@ export const nodeInitialState: NodeState = {
         border: "1px solid #e5e7eb",
         borderRadius: "8px",
         boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-        left: `${1440 + VIEWPORT_GAP}px`, // Desktop width + gap
+        left: `${1440 + VIEWPORT_GAP}px`,
         top: "0px",
       },
       inViewport: false,
       parentId: null,
       position: { x: 100 + 1440 + VIEWPORT_GAP, y: 100 },
     },
-
-    // Mobile Viewport (375px) - positioned after desktop + gap + tablet + gap
     {
       id: "viewport-375",
       type: "frame",
@@ -112,7 +84,7 @@ export const nodeInitialState: NodeState = {
         border: "1px solid #e5e7eb",
         borderRadius: "8px",
         boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-        left: `${1440 + VIEWPORT_GAP + 768 + VIEWPORT_GAP}px`, // Desktop + gap + tablet + gap
+        left: `${1440 + VIEWPORT_GAP + 768 + VIEWPORT_GAP}px`,
         top: "0px",
       },
       inViewport: false,
@@ -151,5 +123,4 @@ export const dragInitialState: DragState = {
     value: undefined,
     dimensions: undefined,
   },
-  activeViewportId: null,
 };

@@ -12,7 +12,7 @@ interface RenderNodesProps {
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   const { nodeState } = useBuilder();
 
-  const renderNode = (node: Node, viewportId?: string | number) => {
+  const renderNode = (node: Node) => {
     switch (node.type) {
       case "frame": {
         const children = nodeState.nodes.filter(
@@ -20,38 +20,24 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
         );
 
         return (
-          <Frame key={node.id} node={node} viewportId={viewportId}>
-            {children.map((childNode) => renderNode(childNode, viewportId))}
+          <Frame key={node.id} node={node}>
+            {children.map((childNode) => renderNode(childNode))}
           </Frame>
         );
       }
 
       case "image":
-        return (
-          <ImageElement key={node.id} node={node} viewportId={viewportId} />
-        );
+        return <ImageElement key={node.id} node={node} />;
 
       case "text":
-        return (
-          <TextElement key={node.id} node={node} viewportId={viewportId} />
-        );
+        return <TextElement key={node.id} node={node} />;
 
       default:
         return (
-          <div
-            key={node.id}
-            style={node.style}
-            data-node-id={node.id}
-            data-viewport-context={viewportId} // Optional: add viewport context to plain divs
-          />
+          <div key={node.id} style={node.style} data-node-id={node.id}></div>
         );
     }
   };
-
-  // Rest stays exactly the same
-  const viewportFrames = nodeState.nodes.filter(
-    (node) => node.type === "frame" && node.isViewport
-  );
 
   const filteredNodes = nodeState.nodes.filter((node: Node) =>
     filter === "inViewport"
@@ -65,19 +51,5 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     return !parentInFilter;
   });
 
-  if (filter === "outOfViewport") {
-    return <>{topLevelNodes.map((node) => renderNode(node))}</>;
-  } else {
-    return (
-      <>
-        {viewportFrames.map((viewportFrame) => (
-          <Frame key={viewportFrame.id} node={viewportFrame}>
-            {topLevelNodes
-              .filter((node) => node.type !== "frame" || !node.isViewport)
-              .map((node) => renderNode(node, viewportFrame.id))}
-          </Frame>
-        ))}
-      </>
-    );
-  }
+  return <>{topLevelNodes.map(renderNode)}</>;
 };

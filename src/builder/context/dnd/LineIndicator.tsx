@@ -1,20 +1,10 @@
 import { createPortal } from "react-dom";
+import { useBuilder } from "../builderState";
 
-interface LineIndicatorProps {
-  show: boolean;
-  x: number;
-  y: number;
-  width: string | number;
-  height: string | number;
-}
+export const LineIndicator = () => {
+  const { dragState } = useBuilder();
 
-export const LineIndicator = ({
-  show,
-  x,
-  y,
-  width,
-  height,
-}: LineIndicatorProps) => {
+  const { show, x, y, width, height } = dragState.lineIndicator;
   if (!show) return null;
 
   const isVertical = parseFloat(String(height)) > parseFloat(String(width));

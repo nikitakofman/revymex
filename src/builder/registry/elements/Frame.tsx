@@ -17,7 +17,6 @@ export const Frame = ({ children, node }: ElementProps) => {
     return (
       <ResizableWrapper node={node}>
         <div
-          data-viewport-id={node.id}
           {...connect(node)}
           className={`${
             isDropTarget ? "dropTarget border-4 border-blue-900" : ""
@@ -36,7 +35,7 @@ export const Frame = ({ children, node }: ElementProps) => {
                     if (width && !isNaN(parseInt(width))) {
                       nodeDisp.addNode(
                         {
-                          id: nanoid(),
+                          id: `viewport-${nanoid()}`,
                           type: "frame",
                           isViewport: true,
                           viewportWidth: parseInt(width),

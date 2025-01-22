@@ -5,7 +5,6 @@ import {
   calculateDragTransform,
   findIndex,
   findIndexWithinParent,
-  findParentViewport,
 } from "./utils";
 import { nanoid } from "nanoid";
 

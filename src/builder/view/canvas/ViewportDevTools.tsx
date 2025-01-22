@@ -3,16 +3,47 @@ import { useBuilder } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle } from "lucide-react";
 import { PreviewModal } from "./PreviewRenderer";
+import { Node } from "@/builder/reducer/nodeDispatcher";
+import { createPortal } from "react-dom";
+
+/** A BFS helper that collects *all* descendant nodes of a given rootId. */
+function getDescendants(nodes: Node[], rootId: string | number): Node[] {
+  const result: Node[] = [];
+  const queue = [rootId];
+
+  while (queue.length) {
+    const current = queue.shift()!;
+    // Find direct children. Skip placeholders if you don't want them in the list.
+    const children = nodes.filter(
+      (n) => n.parentId === current && n.type !== "placeholder"
+    );
+    for (const child of children) {
+      result.push(child);
+      queue.push(child.id);
+    }
+  }
+  return result;
+}
 
 export const ViewportDevTools: React.FC = () => {
   const { transform, setTransform, nodeState, nodeDisp, dragState } =
     useBuilder();
   const [showTree, setShowTree] = useState(false);
-  const [activeTab, setActiveTab] = useState<"view" | "import">("view");
+
+  // We now have three tabs: "view", "perViewport", and "import"
+  const [activeTab, setActiveTab] = useState<"view" | "perViewport" | "import">(
+    "view"
+  );
+
   const [importValue, setImportValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
   const [showPreview, setShowPreview] = useState(false);
+
+  // For toggling the expanded viewport in the "Per Viewport" tab
+  const [openViewportId, setOpenViewportId] = useState<string | number | null>(
+    null
+  );
 
   const handleResetView = () => {
     setTransform({ x: 0, y: 0, scale: 1 });
@@ -28,7 +59,6 @@ export const ViewportDevTools: React.FC = () => {
       if (!Array.isArray(nodes)) {
         throw new Error("Invalid format: Expected an array of nodes");
       }
-
       nodeDisp.setNodes(nodes);
 
       setImportError(null);
@@ -40,10 +70,13 @@ export const ViewportDevTools: React.FC = () => {
     }
   };
 
-  return (
+  // The viewports themselves
+  const viewports = nodeState.nodes.filter((n) => n.isViewport);
+
+  return createPortal(
     <>
       {/* Fixed devtools UI in top-right corner */}
-      <div className="fixed top-4 right-72 flex gap-2 z-50 p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+      <div className="fixed resize  top-4 right-72 flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
         <button
           className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleResetView}
@@ -75,6 +108,7 @@ export const ViewportDevTools: React.FC = () => {
         >
           <PlayCircle className="w-4 h-4" />
         </button>
+        {/* Just showing selectedIds count */}
         <button
           className={`px-3 py-1 rounded-[var(--radius-sm)] ${
             activeTab === "import"
@@ -91,10 +125,11 @@ export const ViewportDevTools: React.FC = () => {
         onClose={() => setShowPreview(false)}
         nodes={nodeState.nodes}
       />
-      {/* Modal for Tree view and Import */}
+
+      {/* Modal for Tree view / Import / Per-Viewport */}
       {showTree && (
         <div className="fixed inset-0 flex z-50 items-center justify-center bg-black/50">
-          <div className="bg-[var(--bg-surface)] text-[var(--text-primary)] p-4 rounded-[var(--radius-lg)] max-w-[80vw] max-h-[80vh] overflow-hidden flex flex-col shadow-[var(--shadow-lg)] border border-[var(--border-light)]">
+          <div className="bg-[var(--bg-surface)] text-[var(--text-primary)] p-4 rounded-[var(--radius-lg)] max-w-[80vw] resize max-h-[80vh] overflow-hidden flex flex-col shadow-[var(--shadow-lg)] border border-[var(--border-light)]">
             <div className="flex justify-between items-center mb-4">
               <h2 className="font-bold text-lg">Node Tree</h2>
               <button
@@ -105,7 +140,7 @@ export const ViewportDevTools: React.FC = () => {
               </button>
             </div>
 
-            {/* Simple tabs */}
+            {/* Simple tabs: "View" (all), "Per Viewport", "Import" */}
             <div className="flex gap-2 mb-4">
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
@@ -115,7 +150,17 @@ export const ViewportDevTools: React.FC = () => {
                 }`}
                 onClick={() => setActiveTab("view")}
               >
-                View
+                All
+              </button>
+              <button
+                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+                  activeTab === "perViewport"
+                    ? "bg-[var(--button-primary-bg)] text-white"
+                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+                }`}
+                onClick={() => setActiveTab("perViewport")}
+              >
+                Per Viewport
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
@@ -131,11 +176,61 @@ export const ViewportDevTools: React.FC = () => {
 
             {/* Tab content */}
             <div className="flex-1 overflow-auto">
-              {activeTab === "view" ? (
+              {activeTab === "view" && (
                 <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
                   {JSON.stringify(nodeState.nodes, null, 2)}
                 </pre>
-              ) : (
+              )}
+
+              {activeTab === "perViewport" && (
+                <div className="flex gap-4 min-w-[900px] min-h-[600px]">
+                  {viewports.map((viewport) => {
+                    const isOpen = openViewportId === viewport.id;
+                    const descendants = getDescendants(
+                      nodeState.nodes,
+                      viewport.id
+                    );
+
+                    return (
+                      <div
+                        key={viewport.id}
+                        className="flex-1 bg-[var(--bg-surface)] rounded-lg border border-[var(--border-light)] p-4"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex flex-col">
+                            <span className="text-lg font-semibold">
+                              {viewport.viewportWidth}px
+                            </span>
+                            <span className="text-sm text-[var(--text-secondary)]">
+                              {viewport.id}
+                            </span>
+                          </div>
+                          <button
+                            className="px-4 py-2 bg-[var(--control-bg)] rounded-[var(--radius-md)] hover:bg-[var(--control-bg-hover)] font-medium"
+                            onClick={() =>
+                              setOpenViewportId(isOpen ? null : viewport.id)
+                            }
+                          >
+                            {isOpen ? "Hide" : "Show"} Content
+                          </button>
+                        </div>
+
+                        <div className="mt-2">
+                          <div className="mb-2 text-sm text-[var(--text-secondary)]">
+                            {descendants.length} nodes
+                          </div>
+
+                          <pre className="text-sm whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)] max-h-[500px] overflow-auto border border-[var(--border-light)]">
+                            {JSON.stringify(descendants, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {activeTab === "import" && (
                 <div className="flex flex-col w-[300px] gap-4">
                   {importError && (
                     <div className="p-4 bg-[var(--error)]/10 border border-[var(--error)] text-[var(--error)] rounded-[var(--radius-md)]">
@@ -168,6 +263,7 @@ export const ViewportDevTools: React.FC = () => {
           </div>
         </div>
       )}
-    </>
+    </>,
+    document.body
   );
 };
