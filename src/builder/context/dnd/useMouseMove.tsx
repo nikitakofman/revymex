@@ -317,6 +317,8 @@ export const useMouseMove = () => {
 
       dragDisp.hideLineIndicator();
       prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+      console.log("OUT OF CANVAS");
+      nodeDisp.syncViewports();
       return;
     }
 

@@ -16,7 +16,7 @@ interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const ToolContainer = ({ children }: { children: React.ReactNode }) => (
-  <div className="p-4 space-y-4 bg-[var(--bg-panel)] text-[var(--text-primary)]">
+  <div className="p-1 space-y-4 bg-[var(--bg-panel)] text-[var(--text-primary)]">
     {children}
   </div>
 );

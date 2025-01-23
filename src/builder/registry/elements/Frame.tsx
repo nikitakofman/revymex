@@ -59,6 +59,7 @@ export const Frame = ({ children, node }: ElementProps) => {
                         false
                       );
                     }
+                    nodeDisp.syncViewports();
                   }}
                   className="ml-2 bg-white/20 hover:bg-white/30 rounded p-1"
                 >

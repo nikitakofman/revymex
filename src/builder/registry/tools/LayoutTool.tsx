@@ -28,19 +28,27 @@ const LayoutTool = () => {
 
   const handleGridClick = (row: number, col: number) => {
     if (distribution === "stack") {
-      setNodeStyle({
-        display: "flex",
-        flexDirection: direction,
-        justifyContent: justifyMap[col],
-        alignItems: alignMap[row],
-      });
+      setNodeStyle(
+        {
+          display: "flex",
+          flexDirection: direction,
+          justifyContent: justifyMap[col],
+          alignItems: alignMap[row],
+        },
+        undefined,
+        true
+      );
     } else {
-      setNodeStyle({
-        display: "flex",
-        flexDirection: direction,
-        justifyContent: distribution,
-        alignItems: alignMap[row],
-      });
+      setNodeStyle(
+        {
+          display: "flex",
+          flexDirection: direction,
+          justifyContent: distribution,
+          alignItems: alignMap[row],
+        },
+        undefined,
+        true
+      );
     }
   };
 

@@ -18,7 +18,7 @@ export const ImageElement = ({ node }: ElementProps) => {
           width={200}
           height={200}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          src="https://batiment.imag.fr/img/imag.png"
+          src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
           alt="Image"
         />
       </div>

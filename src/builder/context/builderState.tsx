@@ -33,7 +33,8 @@ interface BuilderContextType {
   >;
   setNodeStyle: (
     styles: React.CSSProperties,
-    nodeIds?: (string | number)[]
+    nodeIds?: (string | number)[],
+    sync?: boolean
   ) => void;
   nodeDisp: NodeDispatcher;
   dragDisp: DragDispatcher;
@@ -51,6 +52,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.3 });
   const [isMovingCanvas, setIsMovingCanvas] = useState(false);
 
+  console.log("dragSTATE", dragState);
   // Timer ref to handle debouncing the isMovingCanvas state
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -135,10 +137,17 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   }, [dragState.isDragging]);
 
   const setNodeStyle = useCallback(
-    (styles: React.CSSProperties, nodeIds?: (string | number)[]) => {
+    (
+      styles: React.CSSProperties,
+      nodeIds?: (string | number)[],
+      sync = false
+    ) => {
       const targetIds = nodeIds || dragState.selectedIds;
       if (targetIds.length > 0) {
         nodeDisp.updateNodeStyle(targetIds, styles);
+        if (sync) {
+          nodeDisp.syncViewports();
+        }
       }
     },
     [dragState.selectedIds, nodeDisp]

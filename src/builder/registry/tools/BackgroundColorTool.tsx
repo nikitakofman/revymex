@@ -12,7 +12,13 @@ const BackgroundColorTool = () => {
           <label className="text-sm">Background Color</label>
           <input
             type="color"
-            onChange={(e) => setNodeStyle({ backgroundColor: e.target.value })}
+            onChange={(e) => {
+              setNodeStyle(
+                { backgroundColor: e.target.value },
+                undefined,
+                true
+              );
+            }}
             className="w-full h-8 cursor-pointer"
           />
         </div>

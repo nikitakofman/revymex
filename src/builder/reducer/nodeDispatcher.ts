@@ -12,7 +12,7 @@ export interface Node {
   id: string | number;
   type: "frame" | "image" | "text" | "placeholder" | string;
   style: CSSProperties;
-  sharedId: string;
+  sharedId?: string;
   independentStyles?: {
     [styleProperty: string]: boolean;
   };
@@ -90,30 +90,22 @@ export class NodeDispatcher {
     );
   }
 
-  /**
-   * Update style of multiple nodes by id, no recursion needed in a flat array.
-   */
   updateNodeStyle(nodeIds: (string | number)[], style: Partial<CSSProperties>) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        // Get source node being styled
         const sourceNode = draft.nodes.find((n) => nodeIds.includes(n.id));
         if (!sourceNode) return;
 
-        // Find which viewport this node is in
         const viewportId = findParentViewport(sourceNode.parentId, draft.nodes);
 
-        // If it's not desktop viewport, mark these style properties as independent
         if (viewportId && viewportId !== "viewport-1440") {
           if (!sourceNode.independentStyles) sourceNode.independentStyles = {};
 
-          // Mark each changed style property as independent
           Object.keys(style).forEach((prop) => {
             sourceNode.independentStyles![prop] = true;
           });
         }
 
-        // Apply style to source node
         Object.assign(sourceNode.style, style);
       })
     );
@@ -292,26 +284,21 @@ export class NodeDispatcher {
         const desktop = viewports.find((v) => v.viewportWidth === 1440);
         if (!desktop) return;
 
-        // BFS from desktop
         const desktopSubtree = getSubtree(draft.nodes, desktop.id);
 
-        // For each other viewport
         viewports.forEach((viewport) => {
-          if (viewport.id === desktop.id) return; // skip the desktop
+          if (viewport.id === desktop.id) return;
 
-          // old subtree for this viewport
           const oldSubtree = getSubtree(draft.nodes, viewport.id);
-
-          // gather oldNodes by sharedId
           const oldNodesBySharedId = new Map<string, Node>();
+
           for (const oldNode of oldSubtree) {
-            if (oldNode.isViewport) continue; // never remove the viewport frame
+            if (oldNode.isViewport) continue;
             if (oldNode.sharedId) {
               oldNodesBySharedId.set(oldNode.sharedId, oldNode);
             }
           }
 
-          // remove the old children (not the viewport itself!)
           for (const oldNode of oldSubtree) {
             if (oldNode.isViewport) continue;
             const removeIdx = draft.nodes.findIndex((n) => n.id === oldNode.id);
@@ -320,34 +307,30 @@ export class NodeDispatcher {
             }
           }
 
-          // replicate from desktop
           const idMap = new Map<string | number, string | number>();
 
           for (const desktopNode of desktopSubtree) {
-            // clone
+            const oldNode = oldNodesBySharedId.get(desktopNode.sharedId || "");
             const cloned: Node = {
               ...desktopNode,
-              id: nanoid(),
+              id: oldNode?.id || nanoid(),
               style: { ...desktopNode.style },
             };
 
-            // if old viewport node with same sharedId had "independent" props, keep them
-            const oldVNode = oldNodesBySharedId.get(desktopNode.sharedId);
-            if (oldVNode?.independentStyles) {
-              for (const prop of Object.keys(oldVNode.style)) {
-                if (oldVNode.independentStyles[prop]) {
-                  cloned.style[prop] = oldVNode.style[prop];
+            if (oldNode?.independentStyles) {
+              Object.keys(oldNode.style).forEach((prop) => {
+                if (oldNode.independentStyles![prop]) {
+                  cloned.style[prop] = oldNode.style[prop];
                   cloned.independentStyles = cloned.independentStyles || {};
                   cloned.independentStyles[prop] = true;
                 }
-              }
+              });
             }
 
             idMap.set(desktopNode.id, cloned.id);
             draft.nodes.push(cloned);
           }
 
-          // fix parent references in the cloned subtree
           for (const dNode of desktopSubtree) {
             const newId = idMap.get(dNode.id);
             if (!newId) continue;
@@ -356,10 +339,8 @@ export class NodeDispatcher {
             if (!clonedNode) continue;
 
             if (dNode.parentId === desktop.id) {
-              // direct child => new parent is this viewport
               clonedNode.parentId = viewport.id;
             } else {
-              // re-link to parent's new ID
               const newParent = idMap.get(dNode.parentId || "");
               clonedNode.parentId = newParent ?? null;
             }
@@ -378,7 +359,6 @@ export class NodeDispatcher {
       produce(prev, (draft) => {
         const sourceSubtree = getSubtree(draft.nodes, sourceViewportId);
 
-        // find all other viewports
         const otherViewports = draft.nodes.filter(
           (v) => v.isViewport && v.id !== sourceViewportId
         );
@@ -392,7 +372,7 @@ export class NodeDispatcher {
               oldMap.set(oldNode.sharedId, oldNode);
             }
           }
-          // remove old
+
           for (const oldNode of oldSubtree) {
             if (oldNode.isViewport) continue;
             const idx = draft.nodes.findIndex((x) => x.id === oldNode.id);
@@ -401,7 +381,6 @@ export class NodeDispatcher {
             }
           }
 
-          // replicate
           const idMap = new Map<string | number, string | number>();
           for (const srcNode of sourceSubtree) {
             const cloned: Node = {
@@ -424,7 +403,7 @@ export class NodeDispatcher {
             idMap.set(srcNode.id, cloned.id);
             draft.nodes.push(cloned);
           }
-          // fix parents
+
           for (const srcNode of sourceSubtree) {
             const newId = idMap.get(srcNode.id);
             if (!newId) continue;
@@ -455,7 +434,6 @@ function getSubtree(
 ): Node[] {
   const result: Node[] = [];
 
-  // Optionally include the root itself
   if (includeRoot) {
     const rootNode = nodes.find(
       (n) => n.id === rootId && n.type !== "placeholder"
@@ -483,16 +461,13 @@ function findNodeBySharedId(
   viewportId: string | number,
   sharedId: string
 ): Node | undefined {
-  // We'll do a quick scan of all nodes
-  // and confirm it's within the viewport subtree.
   return allNodes.find((n) => {
     if (n.sharedId !== sharedId) return false;
 
-    // Climb up n.parentId chain; if we reach viewportId, it's in that viewport
     let current: Node | undefined = n;
     while (current) {
       if (current.id === viewportId) {
-        return true; // we found the viewport in the chain
+        return true;
       }
       current = allNodes.find((cand) => cand.id === current!.parentId);
     }

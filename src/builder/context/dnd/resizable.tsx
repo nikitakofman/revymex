@@ -142,10 +142,14 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         });
 
         selectedNodes.forEach((nodeId) => {
-          nodeDisp.updateNodeStyle([nodeId], {
-            width: `${newWidth}${unit}`,
-            height: `${newHeight}${unit}`,
-          });
+          setNodeStyle(
+            {
+              width: `${newWidth}${unit}`,
+              height: `${newHeight}${unit}`,
+            },
+            selectedNodes,
+            true
+          );
 
           if (newX !== node.position?.x || newY !== node.position?.y) {
             nodeDisp.updateNodePosition(nodeId, { x: newX, y: newY });
@@ -255,6 +259,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
+    // Store current selection state
+    const currentSelection = [...dragState.selectedIds];
+
     const currentGap = parseInt(
       getComputedStyle(elementRef.current!).gap || "0"
     );
@@ -285,18 +292,30 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         value: newGap,
       });
 
+      // Update the style
       setNodeStyle(
         {
           gap: `${Math.round(newGap)}px`,
         },
-        [node.id]
+        [node.id],
+        true
       );
+
+      // Restore selection after style update
+      if (dragState.selectedIds.length === 0) {
+        dragState.selectedIds = currentSelection;
+      }
     };
 
     const handleMouseUp = () => {
       dragDisp.hideStyleHelper();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+
+      // Ensure selection is maintained after mouse up
+      if (dragState.selectedIds.length === 0) {
+        dragState.selectedIds = currentSelection;
+      }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
