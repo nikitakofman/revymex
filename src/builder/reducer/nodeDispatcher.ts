@@ -11,7 +11,7 @@ export interface Position {
 export interface Node {
   id: string | number;
   type: "frame" | "image" | "text" | "placeholder" | string;
-  style: CSSProperties;
+  style: CSSProperties & { src?: string };
   sharedId?: string;
   independentStyles?: {
     [styleProperty: string]: boolean;
@@ -23,6 +23,18 @@ export interface Node {
   inViewport?: boolean;
   isViewport?: boolean;
   viewportWidth?: number;
+  isDynamic?: boolean;
+  dynamicParentId?: string | number;
+  dynamicConnections?: {
+    sourceId: string | number;
+    targetId: string | number;
+    type: "click" | "hover";
+  }[];
+  dynamicPosition?: Position;
+  originalState?: {
+    parentId: string | number | null;
+    inViewport: boolean;
+  };
 }
 
 export interface NodeState {
@@ -277,6 +289,77 @@ export class NodeDispatcher {
     );
   }
 
+  updateDynamicPosition(id: string | number, position: Position) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const targetNode = draft.nodes.find((n) => n.id === id);
+        if (targetNode) {
+          targetNode.dynamicPosition = position;
+        }
+      })
+    );
+  }
+
+  updateNodeDynamicStatus(nodeId: string | number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const mainNode = draft.nodes.find((n) => n.id === nodeId);
+        if (!mainNode?.isDynamic) return;
+
+        function updateChildren(parentId: string | number) {
+          const children = draft.nodes.filter((n) => n.parentId === parentId);
+          children.forEach((child) => {
+            child.dynamicParentId = nodeId;
+            updateChildren(child.id);
+          });
+        }
+
+        updateChildren(nodeId);
+      })
+    );
+  }
+
+  storeDynamicNodeState(nodeId: string | number | null) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const node = draft.nodes.find((n) => n.id === nodeId);
+        if (node) {
+          // Store original state before making it absolute
+          node.originalState = {
+            parentId: node.parentId,
+            inViewport: node.inViewport,
+          };
+          // Set up for dynamic mode
+          node.parentId = null;
+          node.inViewport = false;
+        }
+      })
+    );
+  }
+
+  resetDynamicNodePositions() {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const dynamicNodes = draft.nodes.filter((n) => n.dynamicPosition);
+
+        dynamicNodes.forEach((node) => {
+          // Restore the original state
+          if (node.originalState) {
+            node.parentId = node.originalState.parentId;
+            node.inViewport = node.originalState.inViewport;
+            node.style.position = "relative";
+            node.style.left = "";
+            node.style.top = "";
+            node.style.zIndex = "";
+            node.style.transform = "";
+            // Clear the original state since we've restored it
+            delete node.originalState;
+          }
+        });
+      })
+    );
+  }
+
   syncViewports() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -346,6 +429,17 @@ export class NodeDispatcher {
             }
           }
         });
+      })
+    );
+  }
+
+  updateNode(nodeId: string | number, props: Partial<Node>) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const node = draft.nodes.find((n) => n.id === nodeId);
+        if (node) {
+          Object.assign(node, props);
+        }
       })
     );
   }

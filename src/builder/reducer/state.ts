@@ -1,24 +1,7 @@
-import { CSSProperties } from "react";
 import { DragState } from "./dragDispatcher";
-import { Position } from "./nodeDispatcher";
+import { Node } from "./nodeDispatcher";
 
 const VIEWPORT_GAP = 160; // Gap between viewports in pixels
-
-export interface Node {
-  id: string | number;
-  type: "frame" | "image" | "text" | "placeholder" | string;
-  style: CSSProperties;
-  viewportStyles?: {
-    [viewportId: string]: React.CSSProperties; // For when we export/preview
-  };
-  src?: string;
-  text?: string;
-  parentId?: string | number | null;
-  position?: Position;
-  inViewport?: boolean;
-  isViewport?: boolean;
-  viewportWidth?: number;
-}
 
 export interface NodeState {
   nodes: Node[];
@@ -99,6 +82,111 @@ export const nodeInitialState: NodeState = {
       parentId: null,
       position: { x: 100 + 1440 + VIEWPORT_GAP + 768 + VIEWPORT_GAP, y: 100 },
     },
+    {
+      id: "ez4VLzf45AS_tp7IoalXo",
+      type: "frame",
+      style: {
+        width: "150px",
+        height: "150px",
+        position: "relative",
+        backgroundColor: "#ef1515",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      inViewport: true,
+      isDynamic: true,
+      parentId: "viewport-1440",
+      sharedId: "4f82Xkpp_pzkVi4mvj5lm",
+    },
+    {
+      id: "gmzB5qAqsN86mljbgWz5D",
+      type: "frame",
+      style: {
+        width: "150px",
+        height: "150px",
+        position: "relative",
+        backgroundColor: "gray",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      inViewport: true,
+      parentId: "viewport-1440",
+      sharedId: "CqU3kVaMaLinQIEr3Bv1a",
+    },
+    {
+      id: "0UJKRiqHTcy5MhpWEl1MX",
+      type: "frame",
+      style: {
+        width: "150px",
+        height: "150px",
+        position: "relative",
+        backgroundColor: "#ef1515",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      inViewport: true,
+      isDynamic: true,
+      parentId: "viewport-768",
+      sharedId: "4f82Xkpp_pzkVi4mvj5lm",
+    },
+    {
+      id: "A7gGQS30zoHnZCRJJuPlm",
+      type: "frame",
+      style: {
+        width: "150px",
+        height: "150px",
+        position: "relative",
+        backgroundColor: "gray",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      inViewport: true,
+      parentId: "viewport-768",
+      sharedId: "CqU3kVaMaLinQIEr3Bv1a",
+    },
+    {
+      id: "oGkgT6xyRRYcTjpO8JQXK",
+      type: "frame",
+      style: {
+        width: "150px",
+        height: "150px",
+        position: "relative",
+        backgroundColor: "#ef1515",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      inViewport: true,
+      isDynamic: true,
+      parentId: "viewport-375",
+      sharedId: "4f82Xkpp_pzkVi4mvj5lm",
+    },
+    {
+      id: "VEgCDoIoYsoxaBebzYXuh",
+      type: "frame",
+      style: {
+        width: "150px",
+        height: "150px",
+        position: "relative",
+        backgroundColor: "gray",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      inViewport: true,
+      parentId: "viewport-375",
+      sharedId: "CqU3kVaMaLinQIEr3Bv1a",
+    },
   ],
   selectedNodeIds: null,
 };
@@ -131,4 +219,5 @@ export const dragInitialState: DragState = {
     value: undefined,
     dimensions: undefined,
   },
+  dynamicModeNodeId: null,
 };

@@ -7,13 +7,9 @@ import React from "react";
 export const ImageElement = ({ node }: ElementProps) => {
   const connect = useConnect();
 
-  const style = {
-    ...node.style,
-  };
-
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)} style={style}>
+      <div {...connect(node)}>
         <Image
           width={200}
           height={200}

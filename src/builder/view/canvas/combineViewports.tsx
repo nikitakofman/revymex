@@ -14,7 +14,6 @@ interface ResponsiveNode {
 }
 
 function combineNodes(nodes: Node[]): ResponsiveNode[] {
-  // Get all viewports sorted by width (desktop to mobile)
   const viewports = nodes
     .filter((n) => n.isViewport)
     .sort((a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0));
@@ -22,7 +21,6 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
   const idToSharedId = new Map<string, string>();
   const sharedIdToParentId = new Map<string, string>();
 
-  // First pass: build ID mappings
   nodes.forEach((node) => {
     if (node.sharedId) {
       idToSharedId.set(node.id, node.sharedId);
@@ -39,7 +37,6 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
 
   const result = new Map<string, ResponsiveNode>();
 
-  // Helper function to process a node and its children
   const processNode = (node: Node, viewportWidth: number) => {
     if (!node.sharedId) return;
 
@@ -48,13 +45,11 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
       : null;
 
     if (result.has(node.sharedId)) {
-      // Add this viewport's styles to existing node
       result.get(node.sharedId)!.viewportStyles[viewportWidth] = {
         ...node.style,
         src: node.style.src,
       };
     } else {
-      // Create new responsive node
       result.set(node.sharedId, {
         id: node.sharedId,
         type: node.type,
@@ -68,17 +63,13 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
       });
     }
 
-    // Process children
     const children = nodes.filter((n) => n.parentId === node.id);
     children.forEach((child) => processNode(child, viewportWidth));
   };
 
-  // Process each viewport
   viewports.forEach((viewport) => {
-    // Start with viewport node and process its entire tree
     processNode(viewport, viewport.viewportWidth!);
 
-    // Get all nodes in this viewport
     const viewportNodes = nodes.filter(
       (n) =>
         n.parentId === viewport.id ||
@@ -89,7 +80,6 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
           ))
     );
 
-    // Process each node
     viewportNodes.forEach((node) => {
       processNode(node, viewport.viewportWidth!);
     });
@@ -102,7 +92,7 @@ const convertStyleToCss = (
   style: React.CSSProperties & { src?: string }
 ): string => {
   return Object.entries(style)
-    .filter(([key, value]) => value !== "" && key !== "src") // Exclude src from CSS
+    .filter(([key, value]) => value !== "" && key !== "src")
     .map(([key, value]) => {
       const cssKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
       return `  ${cssKey}: ${value};`;
@@ -135,9 +125,8 @@ const ResponsiveNode: React.FC<{
         }px)`;
       }
 
-      // Create a clean version of styles for CSS conversion
       const cleanStyles = { ...styles };
-      delete cleanStyles.src; // Remove src from CSS styles
+      delete cleanStyles.src;
 
       const cssStyles = convertStyleToCss(cleanStyles);
 
@@ -149,7 +138,6 @@ const ResponsiveNode: React.FC<{
     })
     .join("\n\n");
 
-  // Get current src based on viewport width
   const getCurrentSrc = () => {
     const currentViewport = window.innerWidth;
     const applicableViewport = viewportWidths.find(
@@ -168,7 +156,7 @@ const ResponsiveNode: React.FC<{
         flexDirection: "row",
         justifyContent: "center",
         alignItems: "center",
-        ...node.viewportStyles[viewportWidths[0]], // Apply largest viewport styles as default
+        ...node.viewportStyles[viewportWidths[0]],
       };
 
       return (

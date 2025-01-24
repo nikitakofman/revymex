@@ -1,11 +1,6 @@
-import {
-  DragDispatcher,
-  DragState,
-  SnapGuideLine,
-} from "@/builder/reducer/dragDispatcher";
+import { SnapGuideLine } from "@/builder/reducer/dragDispatcher";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { LineIndicatorState } from "../builderState";
-import { MutableRefObject } from "react";
 
 export interface Transform {
   x: number;
@@ -43,53 +38,6 @@ export const findElementUnderMouse = (
   return (
     elementsUnder.find((el) => el.getAttribute(attribute) !== null) || null
   );
-};
-
-export const isUnderClassNameDuringDrag = (
-  e: MouseEvent,
-  className: string,
-  dragState: DragState
-) => {
-  const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-
-  const filteredElements = elementsUnder.filter((el) => {
-    const closestNode = el.closest(
-      `[data-node-id="${dragState.draggedNode?.node.id}"]`
-    );
-    return !closestNode;
-  });
-  if (filteredElements.length === 0) return false;
-
-  return filteredElements.some((el) => el.classList?.contains(className));
-};
-
-export const isOverCanvasOrFrame = (e: MouseEvent, dragState: DragState) => {
-  if (dragState.draggedNode?.node.parentId) {
-    return false;
-  }
-
-  const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-
-  const filteredElements = elementsUnder.filter((el) => {
-    const closestNode = el.closest(
-      `[data-node-id="${dragState.draggedNode?.node.id}"]`
-    );
-    return !closestNode;
-  });
-
-  const isOverFrame = filteredElements.some(
-    (el) => el.getAttribute("data-node-type") === "frame"
-  );
-  const isOverCanvas = filteredElements.some((el) =>
-    el.classList.contains("canvas")
-  );
-
-  return isOverCanvas && !isOverFrame;
-};
-
-export const isOverDropzone = (e: MouseEvent, className: string): boolean => {
-  const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-  return elementsUnder.some((el) => el.classList.contains(className));
 };
 
 export const getDropPosition = (
@@ -155,78 +103,6 @@ export const getDropPosition = (
       width: elementRect.width,
       height: "2px",
     },
-  };
-};
-
-export const getDropTarget = (e: MouseEvent) => {
-  const nodeElement = findElementUnderMouse(e, "data-node-id");
-  if (!nodeElement) {
-    return { targetId: null, position: null };
-  }
-
-  const nodeId = parseInt(nodeElement.getAttribute("data-node-id")!);
-  const nodeType = nodeElement.getAttribute("data-node-type");
-
-  const pos = getDragPosition(
-    e.clientY,
-    nodeElement.getBoundingClientRect(),
-    nodeType
-  );
-  //@ts-expect-error pos type
-  return { targetId: nodeId, position: pos.position };
-};
-
-export const handleCanvasDrop = (
-  e: MouseEvent,
-  contentRef: React.RefObject<HTMLDivElement | null>,
-  transform: { x: number; y: number; scale: number }
-) => {
-  const canvasRect = contentRef.current?.getBoundingClientRect();
-  if (!canvasRect) return;
-
-  const x = (e.clientX - canvasRect.left - transform.x) / transform.scale;
-  const y = (e.clientY - canvasRect.top - transform.y) / transform.scale;
-
-  return { x, y };
-};
-
-/* ------------------------------------------------------------------
-   Position + offset calculations
-   ------------------------------------------------------------------ */
-
-export const calculateTransformedPosition = (
-  e: MouseEvent | React.MouseEvent,
-  contentRef: React.RefObject<HTMLDivElement | null>,
-  transform: { x: number; y: number; scale: number }
-) => {
-  if (!contentRef.current) return null;
-
-  const contentRect = contentRef.current.getBoundingClientRect();
-  const mouseX = (e.clientX - contentRect.left) / transform.scale;
-  const mouseY = (e.clientY - contentRect.top) / transform.scale;
-
-  return { mouseX, mouseY };
-};
-
-export const calculateNodeOffset = (
-  e: React.MouseEvent,
-  nodeElement: HTMLElement,
-  contentRef: React.RefObject<HTMLDivElement | null>,
-  transform: { x: number; y: number; scale: number }
-) => {
-  if (!contentRef.current) return null;
-
-  const contentRect = contentRef.current.getBoundingClientRect();
-  const mouseX = (e.clientX - contentRect.left) / transform.scale;
-  const mouseY = (e.clientY - contentRect.top) / transform.scale;
-
-  const rect = nodeElement.getBoundingClientRect();
-  const nodeX = (rect.left - contentRect.left) / transform.scale;
-  const nodeY = (rect.top - contentRect.top) / transform.scale;
-
-  return {
-    x: mouseX - nodeX,
-    y: mouseY - nodeY,
   };
 };
 
@@ -383,18 +259,6 @@ export function computeSnapAndGuides(
   return { snappedLeft, snappedTop, guides };
 }
 
-export const findNodeById = (
-  arr: Node[],
-  id: string | number | null | undefined
-): Node | null => {
-  if (id == null) return null;
-  return arr.find((node) => node.id === id) || null;
-};
-
-export const findIndex = (nodes: Node[], nodeId: string | number) => {
-  return nodes.findIndex((n) => n.id === nodeId);
-};
-
 export const findIndexWithinParent = (
   nodes: Node[],
   nodeId: string | number,
@@ -403,26 +267,6 @@ export const findIndexWithinParent = (
   const siblings = nodes.filter((node) => node.parentId === parentId);
 
   return siblings.findIndex((node) => node.id === nodeId);
-};
-
-export const insertAtIndexWithinParent = (
-  draft: { nodes: Node[] },
-  node: Node,
-  index: number,
-  parentId: string | number | null
-) => {
-  const firstSiblingIndex = draft.nodes.findIndex(
-    (n) => n.parentId === parentId
-  );
-  const absoluteIndex = firstSiblingIndex + index;
-
-  if (absoluteIndex < 0 || absoluteIndex > draft.nodes.length) {
-    draft.nodes.push(node);
-  } else {
-    draft.nodes.splice(absoluteIndex, 0, node);
-  }
-
-  return draft;
 };
 
 export const computeFrameDropIndicator = (
@@ -585,45 +429,6 @@ export const computeFrameDropIndicator = (
   return null;
 };
 
-export const computeGapMidPoints = (
-  frameElement: Element,
-  frameChildren: { id: string | number; rect: DOMRect }[],
-  transform: { x: number; y: number; scale: number }
-) => {
-  const computedStyle = window.getComputedStyle(frameElement);
-  const isColumn = computedStyle.flexDirection === "column";
-  const frameRect = frameElement.getBoundingClientRect();
-  const midPoints: Array<{ x: number; y: number }> = [];
-
-  for (let i = 0; i < frameChildren.length - 1; i++) {
-    const currentChild = frameChildren[i];
-    const nextChild = frameChildren[i + 1];
-    if (!currentChild || !nextChild) continue;
-
-    if (isColumn) {
-      const centerY = (currentChild.rect.bottom + nextChild.rect.top) / 2;
-
-      midPoints.push({
-        x:
-          (frameRect.left + frameRect.width / 2 - transform.x) /
-          transform.scale,
-        y: (centerY - transform.y) / transform.scale,
-      });
-    } else {
-      const centerX = (currentChild.rect.right + nextChild.rect.left) / 2;
-
-      midPoints.push({
-        x: (centerX - transform.x) / transform.scale,
-        y:
-          (frameRect.top + frameRect.height / 2 - transform.y) /
-          transform.scale,
-      });
-    }
-  }
-
-  return midPoints;
-};
-
 export const computeMidPoints = (
   frameElement: Element,
   frameChildren: { rect: DOMRect }[],
@@ -783,63 +588,6 @@ export const getFilteredElementsUnderMouseDuringDrag = (
   return filteredElements[0].classList.contains(className);
 };
 
-export const handleFrameDrop = (
-  frameElement: Element,
-  e: MouseEvent,
-  draggedNode: Node,
-  nodeState: { nodes: Node[] },
-  prevMousePosRef: MutableRefObject<{ x: number; y: number }>,
-  dragDisp: DragDispatcher
-) => {
-  const frameId = frameElement.getAttribute("data-node-id")!;
-  const frameNode = nodeState.nodes.find((n) => String(n.id) === frameId);
-
-  if (!frameNode) {
-    prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-    return;
-  }
-
-  if (draggedNode.isViewport) {
-    dragDisp.setDropInfo(null, null);
-    dragDisp.hideLineIndicator();
-    return;
-  }
-
-  const frameChildren = nodeState.nodes.filter(
-    (child: Node) => child.parentId === frameId
-  );
-
-  const childRects = frameChildren
-    .map((childNode: Node) => {
-      const el = document.querySelector(
-        `[data-node-id="${childNode.id}"]`
-      ) as HTMLElement | null;
-      return el
-        ? {
-            id: childNode.id,
-            rect: el.getBoundingClientRect(),
-          }
-        : null;
-    })
-    .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
-
-  const result = computeFrameDropIndicator(
-    frameElement,
-    childRects,
-    e.clientX,
-    e.clientY
-  );
-
-  if (result) {
-    dragDisp.setDropInfo(result.dropInfo.targetId, result.dropInfo.position);
-    if (result.lineIndicator.show) {
-      dragDisp.setLineIndicator(result.lineIndicator);
-    } else {
-      dragDisp.hideLineIndicator();
-    }
-  }
-};
-
 export const isWithinViewport = (
   nodeId: string | number | null | undefined,
   nodes: Node[]
@@ -862,60 +610,7 @@ export const findParentViewport = (
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return null;
 
-  // If this node is a viewport, return its id
   if (node.isViewport) return node.id;
 
-  // Otherwise recurse up through parents
   return findParentViewport(node.parentId, nodes);
-};
-
-export const findViewportAndPath = (
-  nodeId: string | number | null,
-  draft: any
-): { viewport: Node | null; path: { type: string; index: number }[] } => {
-  const path: { type: string; index: number }[] = [];
-  let currentId = nodeId;
-
-  while (currentId) {
-    const node = draft.nodes.find((n) => n.id === currentId);
-    if (!node) break;
-
-    if (node.isViewport) {
-      return { viewport: node, path };
-    }
-
-    // Get index among siblings of same type
-    const siblings = draft.nodes.filter(
-      (n) => n.parentId === node.parentId && n.type === node.type
-    );
-    const index = siblings.findIndex((n) => n.id === node.id);
-
-    path.unshift({ type: node.type, index });
-    currentId = node.parentId;
-  }
-
-  return { viewport: null, path };
-};
-
-export const findMatchingNode = (
-  viewport: Node,
-  path: { type: string; index: number }[],
-  draft: any
-): Node | null => {
-  let currentParent = viewport;
-
-  for (const { type, index } of path) {
-    // Find all siblings of the same type
-    const siblings = draft.nodes.filter(
-      (n) => n.parentId === currentParent.id && n.type === type
-    );
-
-    // Get the node at the same index position
-    const child = siblings[index];
-    if (!child) return null;
-
-    currentParent = child;
-  }
-
-  return currentParent;
 };

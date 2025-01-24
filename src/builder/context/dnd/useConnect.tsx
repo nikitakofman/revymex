@@ -4,7 +4,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { useDragStart } from "./useDragStart";
 
 export const useConnect = () => {
-  const { dragDisp, dragState, isMovingCanvas } = useBuilder();
+  const { dragDisp, dragState, nodeDisp } = useBuilder(); // Add dragState from useBuilder
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -43,19 +43,52 @@ export const useConnect = () => {
         mouseDownPosRef.current = null;
       };
 
+      const handleDoubleClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (node.isDynamic) {
+          if (!dragState.dynamicModeNodeId) {
+            // Entering dynamic mode
+            nodeDisp.storeDynamicNodeState(node.id);
+            if (!node.dynamicPosition) {
+              nodeDisp.updateNode(node.id, { dynamicPosition: { x: 0, y: 0 } });
+            }
+          }
+          dragDisp.setDynamicModeNodeId(
+            dragState.dynamicModeNodeId ? null : node.id
+          );
+        }
+      };
+
+      // Calculate the final style based on mode
+      const baseStyle = {
+        ...node.style,
+        userSelect: "none",
+        WebkitUserDrag: "none",
+      };
+
+      // When in dynamic mode, use dynamic positions
+      const style =
+        dragState.dynamicModeNodeId && node.dynamicPosition
+          ? {
+              ...baseStyle,
+              position: "absolute",
+              left: `${node.dynamicPosition.x}px`,
+              top: `${node.dynamicPosition.y}px`,
+            }
+          : baseStyle;
+
       return {
         "data-node-id": node.id,
         "data-node-type": node.type,
         onMouseDown: handleMouseDown,
         onMouseUp: handleMouseUp,
+        onDoubleClick: handleDoubleClick,
         draggable: false,
-        style: {
-          ...node.style,
-          userSelect: "none",
-          WebkitUserDrag: "none",
-        },
+        style,
       };
     },
-    [handleDragStart, dragDisp, dragState.selectedIds, isMovingCanvas]
+    [handleDragStart, dragDisp, dragState.dynamicModeNodeId] // Add dragState.dynamicModeNodeId to dependencies
   );
 };

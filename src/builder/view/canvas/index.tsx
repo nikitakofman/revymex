@@ -10,6 +10,7 @@ import { LineIndicator } from "@/builder/context/dnd/LineIndicator";
 import { SnapGuides } from "@/builder/context/dnd/SnapGuides";
 import { ToolbarDragPreview } from "@/builder/context/dnd/toolbarDragPreview";
 import { StyleUpdateHelper } from "@/builder/context/dnd/StyleUpdateHelper";
+import { ArrowConnectors } from "./ArrowConnectors";
 
 const Canvas = () => {
   const { containerRef, contentRef, dragState } = useBuilder();
@@ -43,9 +44,15 @@ const Canvas = () => {
       <div ref={containerRef} className="w-full h-full canvas relative">
         <SnapGuides />
         <StyleUpdateHelper />
+        <ArrowConnectors />
 
         <div ref={contentRef} className="relative">
-          <RenderNodes filter="outOfViewport" />
+          {dragState.dynamicModeNodeId ? (
+            <RenderNodes filter="dynamicMode" />
+          ) : (
+            <RenderNodes filter="outOfViewport" />
+          )}
+
           <LineIndicator />
         </div>
       </div>

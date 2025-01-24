@@ -23,14 +23,13 @@ export const Frame = ({ children, node }: ElementProps) => {
           } relative`}
           style={node.style}
         >
-          {/* Viewport header - Inside the draggable container */}
           <div className="absolute -top-8 left-0 right-0 h-8 flex items-center justify-center bg-pink-500 text-white rounded-t-lg z-10">
             <div className="flex items-center gap-2">
               <span>{node.viewportWidth}px</span>
-              {node.viewportWidth === 1440 && ( // Only show on desktop viewport
+              {node.viewportWidth === 1440 && (
                 <button
                   onClick={(e) => {
-                    e.stopPropagation(); // Prevent dragging when clicking button
+                    e.stopPropagation();
                     const width = prompt("Enter viewport width in pixels:");
                     if (width && !isNaN(parseInt(width))) {
                       nodeDisp.addNode(

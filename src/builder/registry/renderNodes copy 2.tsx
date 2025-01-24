@@ -6,11 +6,11 @@ import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
 
 interface RenderNodesProps {
-  filter: "inViewport" | "outOfViewport" | "dynamicMode";
+  filter: "inViewport" | "outOfViewport";
 }
 
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
-  const { nodeState, dragState, nodeDisp } = useBuilder();
+  const { nodeState } = useBuilder();
 
   const renderNode = (node: Node) => {
     switch (node.type) {
@@ -18,10 +18,6 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
         const children = nodeState.nodes.filter(
           (child) => child.parentId === node.id
         );
-
-        if (node.isDynamic && !node.dynamicParentId) {
-          nodeDisp.updateNodeDynamicStatus(node.id);
-        }
 
         return (
           <Frame key={node.id} node={node}>
@@ -43,27 +39,11 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     }
   };
 
-  const filteredNodes = nodeState.nodes.filter((node: Node) => {
-    if (filter === "dynamicMode") {
-      return (
-        node.id === dragState.dynamicModeNodeId ||
-        node.dynamicParentId === dragState.dynamicModeNodeId
-      );
-    }
-
-    if (node.dynamicParentId) {
-      const dynamicParent = nodeState.nodes.find(
-        (n) => n.id === node.dynamicParentId
-      );
-      return dynamicParent
-        ? dynamicParent.inViewport === (filter === "inViewport")
-        : false;
-    }
-
-    return filter === "inViewport"
+  const filteredNodes = nodeState.nodes.filter((node: Node) =>
+    filter === "inViewport"
       ? node.inViewport === true
-      : node.inViewport === false;
-  });
+      : node.inViewport === false
+  );
 
   const topLevelNodes = filteredNodes.filter((node) => {
     if (node.parentId == null) return true;

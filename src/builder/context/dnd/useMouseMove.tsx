@@ -37,6 +37,7 @@ export const useMouseMove = () => {
     }
 
     const draggedNode = dragState.draggedNode.node;
+
     const { offset } = dragState.draggedNode;
     const contentRect = contentRef.current.getBoundingClientRect();
 

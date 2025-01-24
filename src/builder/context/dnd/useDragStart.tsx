@@ -3,7 +3,6 @@ import { useBuilder } from "@/builder/context/builderState";
 import {
   calculateDragPositions,
   calculateDragTransform,
-  findIndex,
   findIndexWithinParent,
 } from "./utils";
 import { nanoid } from "nanoid";
@@ -27,7 +26,7 @@ export const useDragStart = () => {
           position: "fixed",
           backgroundColor: fromToolbarType === "frame" ? "gray" : undefined,
         },
-        inViewport: false,
+        inViewport: true,
         parentId: null,
       };
 

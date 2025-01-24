@@ -44,6 +44,7 @@ export interface DragState {
   snapGuides: SnapGuideLine[];
   originalParentId: string | number | null;
   styleHelper: StyleHelper;
+  dynamicModeNodeId?: string | number | null;
 }
 
 export class DragDispatcher {
@@ -167,7 +168,9 @@ export class DragDispatcher {
     );
   }
 
-  setDragSource(source: "canvas" | "viewport" | "toolbar" | "parent" | null) {
+  setDragSource(
+    source: "canvas" | "viewport" | "toolbar" | "parent" | "dynamic" | null
+  ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.dragSource = source;
@@ -220,6 +223,20 @@ export class DragDispatcher {
           value: undefined,
           dimensions: undefined,
         };
+      })
+    );
+  }
+
+  setDynamicModeNodeId(
+    nodeId: string | number | null,
+    resetNodePositions?: () => void
+  ) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        if (!nodeId && resetNodePositions) {
+          resetNodePositions();
+        }
+        draft.dynamicModeNodeId = nodeId;
       })
     );
   }

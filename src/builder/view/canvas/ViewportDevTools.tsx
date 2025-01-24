@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+"use client";
+
+import React, { useLayoutEffect, useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle } from "lucide-react";
@@ -6,14 +8,13 @@ import { PreviewModal } from "./PreviewRenderer";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPortal } from "react-dom";
 
-/** A BFS helper that collects *all* descendant nodes of a given rootId. */
 function getDescendants(nodes: Node[], rootId: string | number): Node[] {
   const result: Node[] = [];
   const queue = [rootId];
 
   while (queue.length) {
     const current = queue.shift()!;
-    // Find direct children. Skip placeholders if you don't want them in the list.
+
     const children = nodes.filter(
       (n) => n.parentId === current && n.type !== "placeholder"
     );
@@ -26,24 +27,30 @@ function getDescendants(nodes: Node[], rootId: string | number): Node[] {
 }
 
 export const ViewportDevTools: React.FC = () => {
-  const { transform, setTransform, nodeState, nodeDisp, dragState } =
+  const { transform, setTransform, nodeState, nodeDisp, dragState, dragDisp } =
     useBuilder();
   const [showTree, setShowTree] = useState(false);
 
-  // We now have three tabs: "view", "perViewport", and "import"
   const [activeTab, setActiveTab] = useState<"view" | "perViewport" | "import">(
     "view"
   );
+
+  const [mounted, setMounted] = useState(false);
+
+  useLayoutEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [importValue, setImportValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
   const [showPreview, setShowPreview] = useState(false);
 
-  // For toggling the expanded viewport in the "Per Viewport" tab
   const [openViewportId, setOpenViewportId] = useState<string | number | null>(
     null
   );
+
+  if (!mounted) return null;
 
   const handleResetView = () => {
     setTransform({ x: 0, y: 0, scale: 1 });
@@ -70,13 +77,22 @@ export const ViewportDevTools: React.FC = () => {
     }
   };
 
-  // The viewports themselves
   const viewports = nodeState.nodes.filter((n) => n.isViewport);
 
   return createPortal(
     <>
-      {/* Fixed devtools UI in top-right corner */}
       <div className="fixed resize  top-4 right-72 flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+        {dragState.dynamicModeNodeId && (
+          <button
+            onClick={() => {
+              nodeDisp.resetDynamicNodePositions();
+              dragDisp.setDynamicModeNodeId(null);
+              nodeDisp.syncViewports(); // Re-sync viewports after restoring
+            }}
+          >
+            Exit Dynamic Mode
+          </button>
+        )}
         <button
           className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleResetView}
