@@ -4,7 +4,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { useDragStart } from "./useDragStart";
 
 export const useConnect = () => {
-  const { dragDisp, dragState, nodeDisp } = useBuilder(); // Add dragState from useBuilder
+  const { dragDisp, dragState, nodeDisp, nodeState } = useBuilder();
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -16,6 +16,13 @@ export const useConnect = () => {
         e.stopPropagation();
 
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+
+        // Clear selection immediately unless shift is pressed
+        if (!e.shiftKey) {
+          dragDisp.clearSelection();
+          // Select the current node immediately
+          dragDisp.selectNode(node.id);
+        }
 
         timeoutRef.current = setTimeout(() => {
           handleDragStart(e, undefined, node);
@@ -32,10 +39,22 @@ export const useConnect = () => {
           const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
 
           if (dx < 5 && dy < 5) {
-            if (!e.shiftKey) {
-              dragDisp.selectNode(node.id);
+            const parentNode = node.parentId
+              ? nodeState.nodes.find((n) => n.id === node.parentId)
+              : null;
+
+            if (!dragState.dynamicModeNodeId && parentNode?.isDynamic) {
+              if (!e.shiftKey) {
+                dragDisp.selectNode(parentNode.id);
+              } else {
+                dragDisp.addToSelection(parentNode.id);
+              }
             } else {
-              dragDisp.addToSelection(node.id);
+              if (!e.shiftKey) {
+                dragDisp.selectNode(node.id);
+              } else {
+                dragDisp.addToSelection(node.id);
+              }
             }
           }
         }
@@ -49,7 +68,6 @@ export const useConnect = () => {
 
         if (node.isDynamic) {
           if (!dragState.dynamicModeNodeId) {
-            // Entering dynamic mode
             nodeDisp.storeDynamicNodeState(node.id);
             if (!node.dynamicPosition) {
               nodeDisp.updateNode(node.id, { dynamicPosition: { x: 0, y: 0 } });
@@ -61,23 +79,29 @@ export const useConnect = () => {
         }
       };
 
-      // Calculate the final style based on mode
-      const baseStyle = {
-        ...node.style,
-        userSelect: "none",
-        WebkitUserDrag: "none",
-      };
+      const handleContextMenu = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-      // When in dynamic mode, use dynamic positions
-      const style =
-        dragState.dynamicModeNodeId && node.dynamicPosition
-          ? {
-              ...baseStyle,
-              position: "absolute",
-              left: `${node.dynamicPosition.x}px`,
-              top: `${node.dynamicPosition.y}px`,
-            }
-          : baseStyle;
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+
+        const parentNode = node.parentId
+          ? nodeState.nodes.find((n) => n.id === node.parentId)
+          : null;
+        const targetNodeId =
+          !dragState.dynamicModeNodeId && parentNode?.isDynamic
+            ? parentNode.id
+            : node.id;
+
+        if (!e.shiftKey) {
+          dragDisp.clearSelection();
+        }
+        dragDisp.selectNode(targetNodeId);
+        dragDisp.setContextMenu(e.clientX, e.clientY, targetNodeId);
+      };
 
       return {
         "data-node-id": node.id,
@@ -85,10 +109,10 @@ export const useConnect = () => {
         onMouseDown: handleMouseDown,
         onMouseUp: handleMouseUp,
         onDoubleClick: handleDoubleClick,
+        onContextMenu: handleContextMenu,
         draggable: false,
-        style,
       };
     },
-    [handleDragStart, dragDisp, dragState.dynamicModeNodeId] // Add dragState.dynamicModeNodeId to dependencies
+    [handleDragStart, dragDisp, dragState.dynamicModeNodeId, nodeState.nodes]
   );
 };

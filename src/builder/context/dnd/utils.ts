@@ -1,11 +1,29 @@
 import { SnapGuideLine } from "@/builder/reducer/dragDispatcher";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { LineIndicatorState } from "../builderState";
+import { HTMLAttributes } from "react";
 
 export interface Transform {
   x: number;
   y: number;
   scale: number;
+}
+
+export type Direction =
+  | "top"
+  | "right"
+  | "bottom"
+  | "left"
+  | "topRight"
+  | "bottomRight"
+  | "bottomLeft"
+  | "topLeft";
+
+export interface ResizableWrapperProps {
+  node: Node;
+  children: React.ReactElement<HTMLAttributes<HTMLElement>>;
+  minWidth?: number;
+  minHeight?: number;
 }
 
 export const getDragPosition = (
@@ -171,7 +189,8 @@ export function computeSnapAndGuides(
   newLeft: number,
   newTop: number,
   draggedNode: Node,
-  allNodes: Node[]
+  allNodes: Node[],
+  dynamicModeNodeId?: string | number | null
 ): SnapResult {
   const draggedW = parseFloat(String(draggedNode.style.width ?? 0)) || 0;
   const draggedH = parseFloat(String(draggedNode.style.height ?? 0)) || 0;
@@ -189,11 +208,25 @@ export function computeSnapAndGuides(
     centerY: newTop + draggedH / 2,
   };
 
-  const otherCanvasNodes = allNodes.filter(
-    (n) => !n.inViewport && n.id !== draggedNode.id
-  );
+  // Filter nodes based on dynamic mode
+  const nodesToSnap = allNodes.filter((n) => {
+    // Don't snap to viewport nodes or the dragged node itself
+    if (n.inViewport || n.id === draggedNode.id) return false;
 
-  for (const node of otherCanvasNodes) {
+    if (dynamicModeNodeId) {
+      // In dynamic mode, only snap to:
+      // 1. The main dynamic node
+      // 2. Nodes that belong to this dynamic system
+      return (
+        n.id === dynamicModeNodeId || n.dynamicParentId === dynamicModeNodeId
+      );
+    }
+
+    // In normal mode, snap to all canvas nodes
+    return !n.inViewport;
+  });
+
+  for (const node of nodesToSnap) {
     const w = parseFloat(String(node.style.width ?? 0)) || 0;
     const h = parseFloat(String(node.style.height ?? 0)) || 0;
     const left = node.position?.x ?? 0;
@@ -264,9 +297,13 @@ export const findIndexWithinParent = (
   nodeId: string | number,
   parentId: string | number | null | undefined
 ) => {
-  const siblings = nodes.filter((node) => node.parentId === parentId);
-
-  return siblings.findIndex((node) => node.id === nodeId);
+  const siblings = nodes.filter(
+    (node) =>
+      node.parentId === parentId &&
+      (node.type === "placeholder" || node.type !== "placeholder")
+  );
+  const index = siblings.findIndex((node) => node.id === nodeId);
+  return index;
 };
 
 export const computeFrameDropIndicator = (
@@ -613,4 +650,41 @@ export const findParentViewport = (
   if (node.isViewport) return node.id;
 
   return findParentViewport(node.parentId, nodes);
+};
+
+export const getHandleCursor = (direction: Direction): string => {
+  switch (direction) {
+    case "top":
+    case "bottom":
+      return "ns-resize";
+    case "left":
+    case "right":
+      return "ew-resize";
+    case "topLeft":
+    case "bottomRight":
+      return "nwse-resize";
+    case "topRight":
+    case "bottomLeft":
+      return "nesw-resize";
+    default:
+      return "pointer";
+  }
+};
+
+export const rgbToHex = (rgb: string): string => {
+  // Extract RGB values
+  const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+  if (!match) return rgb; // Return original if not RGB format
+
+  // Convert to hex
+  const r = parseInt(match[1]);
+  const g = parseInt(match[2]);
+  const b = parseInt(match[3]);
+
+  const toHex = (n: number) => {
+    const hex = n.toString(16);
+    return hex.length === 1 ? "0" + hex : hex;
+  };
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
 };

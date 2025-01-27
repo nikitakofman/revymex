@@ -44,6 +44,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   };
 
   const filteredNodes = nodeState.nodes.filter((node: Node) => {
+    // In dynamic mode, show only dynamic elements
     if (filter === "dynamicMode") {
       return (
         node.id === dragState.dynamicModeNodeId ||
@@ -51,15 +52,12 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
       );
     }
 
+    // Outside dynamic mode, never show elements with dynamicParentId
     if (node.dynamicParentId) {
-      const dynamicParent = nodeState.nodes.find(
-        (n) => n.id === node.dynamicParentId
-      );
-      return dynamicParent
-        ? dynamicParent.inViewport === (filter === "inViewport")
-        : false;
+      return false;
     }
 
+    // For inViewport/outOfViewport filtering
     return filter === "inViewport"
       ? node.inViewport === true
       : node.inViewport === false;

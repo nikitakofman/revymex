@@ -13,6 +13,7 @@ import { DragState } from "../reducer/dragDispatcher";
 import { dragInitialState, nodeInitialState } from "../reducer/state";
 import { NodeDispatcher } from "../reducer/nodeDispatcher";
 import { DragDispatcher } from "../reducer/dragDispatcher";
+import { debounce } from "lodash";
 
 export interface LineIndicatorState {
   show: boolean;
@@ -32,7 +33,7 @@ interface BuilderContextType {
     React.SetStateAction<{ x: number; y: number; scale: number }>
   >;
   setNodeStyle: (
-    styles: React.CSSProperties,
+    styles: React.CSSProperties & { src?: string },
     nodeIds?: (string | number)[],
     sync?: boolean
   ) => void;
@@ -52,19 +53,15 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.3 });
   const [isMovingCanvas, setIsMovingCanvas] = useState(false);
 
-  console.log("dragSTATE", dragState);
-  // Timer ref to handle debouncing the isMovingCanvas state
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
 
-  // Clear the timer and set isMoving to false
   const stopMoving = useCallback(() => {
     setIsMovingCanvas(false);
   }, []);
 
-  // Start moving and setup the debounce timer
   const startMoving = useCallback(() => {
     setIsMovingCanvas(true);
 
@@ -72,8 +69,17 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       clearTimeout(moveTimerRef.current);
     }
 
-    moveTimerRef.current = setTimeout(stopMoving, 150);
+    moveTimerRef.current = setTimeout(stopMoving, 100);
   }, [stopMoving]);
+
+  // Add this before the handleWheel definition:
+  const debouncedSetTransform = useMemo(
+    () =>
+      debounce((newTransform: { x: number; y: number; scale: number }) => {
+        setTransform(newTransform);
+      }, 5), // 5ms debounce
+    []
+  );
 
   const handleWheel = useCallback(
     (e: WheelEvent) => {
@@ -84,6 +90,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       startMoving();
 
       if (e.ctrlKey || e.metaKey) {
+        // ZOOM operation - use debouncing
         const rect = containerRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -97,12 +104,13 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         const newX = mouseX - pointX * newScale;
         const newY = mouseY - pointY * newScale;
 
-        setTransform({
+        debouncedSetTransform({
           x: newX,
           y: newY,
           scale: newScale,
         });
       } else {
+        // PAN operation - update immediately
         setTransform((prev) => ({
           ...prev,
           x: prev.x - e.deltaX,
@@ -110,12 +118,13 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         }));
       }
     },
-    [transform]
+    [transform, startMoving, debouncedSetTransform]
   );
 
   useEffect(() => {
     if (contentRef.current) {
-      contentRef.current.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+      contentRef.current.style.willChange = "transform";
+      contentRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
       contentRef.current.style.transformOrigin = "0 0";
     }
   }, [transform]);

@@ -114,3 +114,25 @@ export const ToolGrid = ({ children }: ToolGridProps) => (
     {children}
   </div>
 );
+
+interface LabelProps {
+  children: React.ReactNode;
+  full?: boolean;
+  className?: string;
+}
+
+export const Label: React.FC<LabelProps> = ({
+  children,
+  full = false,
+  className = "",
+}) => {
+  return (
+    <label
+      className={`text-xs font-bold text-text-base ${
+        full ? "w-full" : ""
+      } ${className}`}
+    >
+      {children}
+    </label>
+  );
+};

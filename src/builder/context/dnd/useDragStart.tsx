@@ -8,13 +8,29 @@ import {
 import { nanoid } from "nanoid";
 
 export const useDragStart = () => {
-  const { dragDisp, nodeDisp, transform, contentRef, nodeState, setNodeStyle } =
-    useBuilder();
+  const {
+    dragDisp,
+    nodeDisp,
+    transform,
+    contentRef,
+    nodeState,
+    setNodeStyle,
+    dragState,
+  } = useBuilder();
+
+  const getDynamicParentNode = (node: Node): Node | null => {
+    let currentNode = node;
+    while (currentNode.parentId) {
+      const parent = nodeState.nodes.find((n) => n.id === currentNode.parentId);
+      if (!parent) break;
+      if (parent.isDynamic) return parent;
+      currentNode = parent;
+    }
+    return null;
+  };
 
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
     e.preventDefault();
-
-    console.log("dragstart");
 
     if (fromToolbarType) {
       const newNode: Node = {
@@ -39,11 +55,19 @@ export const useDragStart = () => {
       dragDisp.setIsDragging(true);
       dragDisp.setDraggedItem(fromToolbarType);
       dragDisp.setDragSource("toolbar");
-
       return;
     }
 
     if (!node || !contentRef.current) return;
+
+    // If not in dynamic mode and clicking a child of dynamic element,
+    // treat it as clicking the dynamic parent
+    if (!dragState.dynamicModeNodeId) {
+      const dynamicParent = getDynamicParentNode(node);
+      if (dynamicParent && !node.isDynamic) {
+        node = dynamicParent;
+      }
+    }
 
     const element = document.querySelector(`[data-node-id="${node.id}"]`);
     if (!element) return;

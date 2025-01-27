@@ -40,11 +40,17 @@ export interface DragState {
   placeholderId: string | number | null;
   originalIndex: number | null;
   lineIndicator: LineIndicatorState;
-  dragSource: "canvas" | "viewport" | "toolbar" | "parent" | null;
+  dragSource: "canvas" | "viewport" | "toolbar" | "parent" | "dynamic" | null;
   snapGuides: SnapGuideLine[];
   originalParentId: string | number | null;
   styleHelper: StyleHelper;
   dynamicModeNodeId?: string | number | null;
+  contextMenu: {
+    show: boolean;
+    x: number;
+    y: number;
+    nodeId: string | null;
+  } | null;
 }
 
 export class DragDispatcher {
@@ -142,6 +148,22 @@ export class DragDispatcher {
       produce(prev, (draft) => {
         draft.placeholderId = placeholderId;
         draft.originalIndex = originalIndex;
+      })
+    );
+  }
+
+  setContextMenu(x: number, y: number, nodeId: string) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.contextMenu = { show: true, x, y, nodeId };
+      })
+    );
+  }
+
+  hideContextMenu() {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.contextMenu = null;
       })
     );
   }
@@ -248,7 +270,6 @@ export class DragDispatcher {
         draft.draggedItem = null;
         draft.draggedNode = null;
         draft.dropInfo = { targetId: null, position: null };
-        draft.selectedIds = [];
         draft.placeholderId = null;
         draft.originalIndex = null;
         draft.snapGuides = [];

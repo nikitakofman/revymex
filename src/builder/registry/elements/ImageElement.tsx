@@ -9,7 +9,7 @@ export const ImageElement = ({ node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)}>
+      <div {...connect(node)} style={node.style}>
         <Image
           width={200}
           height={200}

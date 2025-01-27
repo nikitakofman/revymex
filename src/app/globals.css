@@ -20,6 +20,8 @@
     --accent-muted: #bfdbfe;
     --accent-surface: #eff6ff;
 
+    --accent-secondary: #9a66ff;
+
     --border-light: #e2e8f0;
     --border-default: #cbd5e1;
     --border-focus: #3b82f6;
@@ -69,6 +71,8 @@
     --accent-hover: #60a5fa;
     --accent-muted: #1d4ed8;
     --accent-surface: rgba(59, 130, 246, 0.1);
+
+    --accent-secondary: #9a66ff;
 
     --border-light: #334155;
     --border-default: #475569;

@@ -52,6 +52,13 @@ export const useMouseMove = () => {
         console.log("hovering over frame");
         const frameId = frameElement.getAttribute("data-node-id")!;
         const frameNode = nodeState.nodes.find((n) => String(n.id) === frameId);
+
+        // Only prevent dropping into dynamic frames when not in dynamic mode
+        if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
+          dragDisp.setDropInfo(null, null, e.clientX, e.clientY);
+          return;
+        }
+
         if (!frameNode) {
           prevMousePosRef.current = { x: e.clientX, y: e.clientY };
           return;
@@ -137,7 +144,8 @@ export const useMouseMove = () => {
         newLeft,
         newTop,
         draggedNode,
-        nodeState.nodes
+        nodeState.nodes,
+        dragState.dynamicModeNodeId
       );
       newLeft = snappedLeft;
       newTop = snappedTop;
@@ -219,6 +227,14 @@ export const useMouseMove = () => {
         const frameChildren = nodeState.nodes.filter(
           (child) => child.parentId === frameId
         );
+        const frameNode = nodeState.nodes.find((n) => n.id === frameId);
+
+        // Prevent dropping into dynamic frames when not in dynamic mode
+        if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
+          dragDisp.setDropInfo(null, null);
+          dragDisp.hideLineIndicator();
+          return;
+        }
 
         const childRects = frameChildren
           .map((childNode) => {
@@ -306,7 +322,8 @@ export const useMouseMove = () => {
         offset.x + x,
         offset.y + y,
         draggedNode,
-        nodeState.nodes
+        nodeState.nodes,
+        dragState.dynamicModeNodeId
       );
       setNodeStyle({
         position: "fixed",
@@ -318,8 +335,15 @@ export const useMouseMove = () => {
 
       dragDisp.hideLineIndicator();
       prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-      console.log("OUT OF CANVAS");
-      nodeDisp.syncViewports();
+
+      // Modified sync condition:
+      // Sync if we're not in dynamic mode AND (not a dynamic element OR moving from viewport)
+      if (
+        !dragState.dynamicModeNodeId &&
+        (!draggedNode.isDynamic || draggedNode.inViewport)
+      ) {
+        nodeDisp.syncViewports();
+      }
       return;
     }
 

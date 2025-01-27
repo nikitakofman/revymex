@@ -1,5 +1,9 @@
 import { useBuilder } from "@/builder/context/builderState";
-import { findParentViewport, isWithinViewport } from "./utils";
+import {
+  findIndexWithinParent,
+  findParentViewport,
+  isWithinViewport,
+} from "./utils";
 import { useRef } from "react";
 import { nanoid } from "nanoid";
 
@@ -30,35 +34,40 @@ export const useMouseUp = () => {
       nodeState.nodes
     );
 
-    // First handle dropping into frames - this should work the same way always
     if (dragState.dropInfo.targetId) {
       const { targetId, position } = dragState.dropInfo;
       const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
 
-      if (dragState.draggedItem) {
-        // New item from toolbar
+      const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
 
-        console.log("shouod be in viewport", shouldBeInViewport);
-        nodeDisp.addNode(
-          {
-            ...draggedNode,
-            sharedId,
-            style: {
-              ...draggedNode.style,
-              position: "relative",
-              zIndex: "",
-              transform: "",
-              left: "",
-              top: "",
-            },
+      if (dragState.draggedItem) {
+        const newNode = {
+          ...draggedNode,
+          sharedId,
+          style: {
+            ...draggedNode.style,
+            position: "relative",
+            zIndex: "",
+            transform: "",
+            left: "",
+            top: "",
           },
-          targetId,
-          position,
-          true
-        );
+        };
+
+        if (targetFrame?.dynamicParentId) {
+          newNode.dynamicParentId = targetFrame.dynamicParentId;
+        }
+
+        nodeDisp.addNode(newNode, targetId, position, shouldBeInViewport);
       } else {
-        // Moving existing item
         nodeDisp.moveNode(realNodeId, true, { targetId, position });
+
+        if (targetFrame?.dynamicParentId) {
+          nodeDisp.updateNode(realNodeId, {
+            dynamicParentId: targetFrame.dynamicParentId,
+          });
+        }
+
         setNodeStyle(
           {
             position: "relative",
@@ -71,27 +80,41 @@ export const useMouseUp = () => {
         );
       }
 
-      nodeDisp.syncViewports();
+      if (!dragState.dynamicModeNodeId) {
+        nodeDisp.syncViewports();
+      }
       dragDisp.hideLineIndicator();
       dragDisp.resetDragState();
       originalIndexRef.current = null;
       return;
     }
 
-    // Handle placeholder reordering
     const placeholderIndex = nodeState.nodes.findIndex(
       (node) => node.type === "placeholder"
     );
 
     if (placeholderIndex !== -1) {
       const placeholderId = nodeState.nodes[placeholderIndex].id;
+      const placeholderNode = nodeState.nodes[placeholderIndex];
+
+      console.log("REODERING");
+
+      console.log("placeholderId", placeholderId);
+      console.log("placeholderNode", placeholderNode);
+      // Get target position from placeholder
+      const targetIndex = findIndexWithinParent(
+        nodeState.nodes.filter((n) => n.id !== draggedNode.id), // Filter out dragged node
+        placeholderNode.id,
+        placeholderNode.parentId
+      );
+
+      console.log("tazret", targetIndex);
+
       nodeDisp.removeNode(placeholderId);
       nodeDisp.removeNode(realNodeId);
-      nodeDisp.insertAtIndex(
-        draggedNode,
-        placeholderIndex,
-        draggedNode.parentId
-      );
+
+      // Use placeholder's target index
+      nodeDisp.insertAtIndex(draggedNode, targetIndex, draggedNode.parentId);
 
       setNodeStyle(
         {
@@ -107,8 +130,7 @@ export const useMouseUp = () => {
       if (sourceViewportId) {
         nodeDisp.syncFromViewport(sourceViewportId);
       }
-    } else if (dragState.draggedItem) {
-      // Dropping new item in canvas
+    } else if (dragState.draggedItem && !draggedNode.dynamicParentId) {
       const { dropX, dropY } = dragState.dropInfo;
       const containerRect = containerRef.current?.getBoundingClientRect();
       const itemWidth = parseInt(draggedNode.style.width as string) || 150;
@@ -132,14 +154,13 @@ export const useMouseUp = () => {
         },
       };
 
-      // Only add dynamic position if in dynamic mode and dropping in canvas
       if (dragState.dynamicModeNodeId) {
         newNode.dynamicPosition = { x: adjustedX, y: adjustedY };
+        newNode.dynamicParentId = dragState.dynamicModeNodeId;
       }
 
       nodeDisp.addNode(newNode, null, null, false);
     } else if (containerRef.current) {
-      // Moving existing item to canvas
       const rect = document
         .querySelector(`[data-node-id="${realNodeId}"]`)
         ?.getBoundingClientRect();
@@ -156,6 +177,11 @@ export const useMouseUp = () => {
           x: finalX,
           y: finalY,
         });
+        if (draggedNode.id !== dragState.dynamicModeNodeId) {
+          nodeDisp.updateNode(draggedNode.id, {
+            dynamicParentId: dragState.dynamicModeNodeId,
+          });
+        }
       }
 
       nodeDisp.moveNode(realNodeId, false, {

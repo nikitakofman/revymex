@@ -11,9 +11,11 @@ import { SnapGuides } from "@/builder/context/dnd/SnapGuides";
 import { ToolbarDragPreview } from "@/builder/context/dnd/toolbarDragPreview";
 import { StyleUpdateHelper } from "@/builder/context/dnd/StyleUpdateHelper";
 import { ArrowConnectors } from "./ArrowConnectors";
+import { ContextMenu } from "@/builder/context/dnd/ContextMenu";
 
 const Canvas = () => {
-  const { containerRef, contentRef, dragState } = useBuilder();
+  const { containerRef, contentRef, dragState, isMovingCanvas, dragDisp } =
+    useBuilder();
   const handleMouseMove = useMouseMove();
   const handleMouseUp = useMouseUp();
 
@@ -35,16 +37,32 @@ const Canvas = () => {
     }
   }, [dragState.isDragging]);
 
+  const handleCanvasClick = (e: React.MouseEvent) => {
+    // Only clear selection if clicking directly on the canvas background
+    if (e.target === containerRef.current || e.target === contentRef.current) {
+      dragDisp.clearSelection();
+    }
+  };
+
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-[#1D1D1D]">
       <ViewportDevTools />
       <Toolbar />
       <ToolbarDragPreview />
 
-      <div ref={containerRef} className="w-full h-full canvas relative">
+      <div
+        ref={containerRef}
+        style={{
+          willChange: "transform",
+          transform: "translateZ(0)",
+          backfaceVisibility: "hidden",
+        }}
+        className="w-full h-full canvas relative"
+        onClick={handleCanvasClick}
+      >
         <SnapGuides />
         <StyleUpdateHelper />
-        <ArrowConnectors />
+        {!isMovingCanvas && <ArrowConnectors />}
 
         <div ref={contentRef} className="relative">
           {dragState.dynamicModeNodeId ? (
@@ -54,6 +72,7 @@ const Canvas = () => {
           )}
 
           <LineIndicator />
+          <ContextMenu />
         </div>
       </div>
       <RightToolbar />

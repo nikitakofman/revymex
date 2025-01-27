@@ -43,8 +43,6 @@ export const Frame = ({ children, node }: ElementProps) => {
                             height: "1000px",
                             position: "absolute",
                             backgroundColor: "white",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: "8px",
                             boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                             left: "100px",
                             top: "100px",

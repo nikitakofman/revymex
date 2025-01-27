@@ -1,6 +1,13 @@
-import React, { useRef, useState, useCallback, HTMLAttributes } from "react";
+import React, {
+  useRef,
+  useState,
+  useCallback,
+  HTMLAttributes,
+  useEffect,
+} from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { ConnectionHandle } from "./ConnectionHandle";
 
 type Direction =
   | "top"
@@ -39,6 +46,41 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
   const isSelected = dragState.selectedIds.includes(node.id);
 
+  const getBorderWidth = () => {
+    if (!elementRef.current) return 0;
+    try {
+      return parseFloat(getComputedStyle(elementRef.current).borderWidth);
+    } catch (e) {
+      return e;
+    }
+  };
+
+  const [forceUpdate, setForceUpdate] = useState(0);
+
+  // Add useEffect to listen for position changes
+  useEffect(() => {
+    const updatePositions = () => {
+      if (isSelected) {
+        setForceUpdate((prev) => prev + 1);
+      }
+    };
+
+    // Update on position change or when element is selected
+    updatePositions();
+
+    // Listen for any element moves or resizes
+    const observer = new ResizeObserver(updatePositions);
+    if (elementRef.current) {
+      observer.observe(elementRef.current);
+    }
+
+    return () => {
+      if (elementRef.current) {
+        observer.disconnect();
+      }
+    };
+  }, [node.position, isSelected]);
+
   const handleResizeStart = useCallback(
     (e: React.PointerEvent, direction: Direction) => {
       if (!elementRef.current) return;
@@ -58,7 +100,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       setIsResizing(true);
 
-      // Initial helper position and dimensions
       dragDisp.updateStyleHelper({
         type: "dimensions",
         position: { x: e.clientX, y: e.clientY },
@@ -130,7 +171,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
             break;
         }
 
-        // Update helper with new position and dimensions
         dragDisp.updateStyleHelper({
           type: "dimensions",
           position: { x: moveEvent.clientX, y: moveEvent.clientY },
@@ -196,61 +236,72 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     }
   };
 
-  const getBorderResizeStyles = (direction: Direction): React.CSSProperties => {
-    const borderSize = 4 / transform.scale;
+  const getBorderResizeStyles = useCallback(
+    (direction: Direction): React.CSSProperties => {
+      const borderSize = 4 / transform.scale;
+      const borderWidth = getBorderWidth();
+      const offset = -borderWidth!;
 
-    switch (direction) {
-      case "top":
-        return {
-          top: 0,
-          left: 0,
-          right: 0,
-          height: borderSize,
-          transform: "translateY(-50%)",
-        };
-      case "right":
-        return {
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: borderSize,
-          transform: "translateX(50%)",
-        };
-      case "bottom":
-        return {
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: borderSize,
-          transform: "translateY(50%)",
-        };
-      case "left":
-        return {
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: borderSize,
-          transform: "translateX(-50%)",
-        };
-      default:
-        return {};
-    }
-  };
+      switch (direction) {
+        case "top":
+          return {
+            top: offset,
+            left: offset,
+            right: offset,
+            height: borderSize,
+            transform: "translateY(-50%)",
+          };
+        case "right":
+          return {
+            top: offset,
+            right: offset,
+            bottom: offset,
+            width: borderSize,
+            transform: "translateX(50%)",
+          };
+        case "bottom":
+          return {
+            bottom: offset,
+            left: offset,
+            right: offset,
+            height: borderSize,
+            transform: "translateY(50%)",
+          };
+        case "left":
+          return {
+            top: offset,
+            left: offset,
+            bottom: offset,
+            width: borderSize,
+            transform: "translateX(-50%)",
+          };
+        default:
+          return {};
+      }
+    },
+    [forceUpdate, transform.scale]
+  );
 
-  const getHandleStyles = (direction: Direction): React.CSSProperties => {
-    switch (direction) {
-      case "topLeft":
-        return { top: 0, left: 0 };
-      case "topRight":
-        return { top: 0, right: 0 };
-      case "bottomRight":
-        return { bottom: 0, right: 0 };
-      case "bottomLeft":
-        return { bottom: 0, left: 0 };
-      default:
-        return {};
-    }
-  };
+  const getHandleStyles = useCallback(
+    (direction: Direction): React.CSSProperties => {
+      const borderWidth = getBorderWidth();
+      const offset = -borderWidth!;
+
+      switch (direction) {
+        case "topLeft":
+          return { top: offset, left: offset };
+        case "topRight":
+          return { top: offset, right: offset };
+        case "bottomRight":
+          return { bottom: offset, right: offset };
+        case "bottomLeft":
+          return { bottom: offset, left: offset };
+        default:
+          return {};
+      }
+    },
+    [forceUpdate, transform.scale]
+  );
 
   const startAdjustingGap = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -259,7 +310,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Store current selection state
     const currentSelection = [...dragState.selectedIds];
 
     const currentGap = parseInt(
@@ -268,7 +318,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     const isHorizontal =
       getComputedStyle(elementRef.current!).flexDirection === "row";
 
-    // Show initial helper
     dragDisp.updateStyleHelper({
       type: "gap",
       position: { x: e.clientX, y: e.clientY },
@@ -285,14 +334,12 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       const newGap = Math.max(0, currentGap + delta);
 
-      // Update helper with new position and value
       dragDisp.updateStyleHelper({
         type: "gap",
         position: { x: moveEvent.clientX, y: moveEvent.clientY },
         value: newGap,
       });
 
-      // Update the style
       setNodeStyle(
         {
           gap: `${Math.round(newGap)}px`,
@@ -301,7 +348,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         true
       );
 
-      // Restore selection after style update
       if (dragState.selectedIds.length === 0) {
         dragState.selectedIds = currentSelection;
       }
@@ -312,7 +358,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
 
-      // Ensure selection is maintained after mouse up
       if (dragState.selectedIds.length === 0) {
         dragState.selectedIds = currentSelection;
       }
@@ -399,11 +444,14 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
   const ResizeHandles = () => (
     <>
-      {/* Corner handles */}
       {["topRight", "bottomRight", "bottomLeft", "topLeft"].map((direction) => (
         <div
           key={direction}
-          className="absolute bg-blue-500 rounded-full border-2 border-white"
+          className={`absolute ${
+            node.isDynamic || dragState.dynamicModeNodeId
+              ? "bg-[var(--accent-secondary)]"
+              : "bg-blue-500"
+          } rounded-full`}
           style={{
             ...getHandleStyles(direction as Direction),
             cursor: getHandleCursor(direction as Direction),
@@ -413,6 +461,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
             transform: `translate(${
               direction.includes("Right") ? "50%" : "-50%"
             }, ${direction.includes("bottom") ? "50%" : "-50%"})`,
+            border: `${1 / transform.scale}px solid white`,
+            transformOrigin: "center",
             pointerEvents: "all",
           }}
           onPointerDown={(e) => handleResizeStart(e, direction as Direction)}
@@ -440,19 +490,35 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     ref: elementRef,
     style: {
       ...children.props.style,
-      outline:
-        !isMovingCanvas && isSelected
-          ? `${2 / transform.scale}px solid #3b82f6`
-          : undefined,
       pointerEvents: isSelected ? "all" : undefined,
     },
     children: (
       <>
         {children.props.children}
+        {!isMovingCanvas && isSelected && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              position: "absolute",
+              inset: `-${getBorderWidth()}px`,
+              border:
+                node.isDynamic || dragState.dynamicModeNodeId
+                  ? `${2 / transform.scale}px solid var(--accent-secondary)`
+                  : `${2 / transform.scale}px solid #3b82f6`,
+              zIndex: 999,
+              borderRadius: 0,
+              boxSizing: "content-box",
+              pointerEvents: "none",
+            }}
+          />
+        )}
         {isSelected && !isResizing && !isMovingCanvas && (
           <>
             <ResizeHandles />
-            {renderGapHandles()}
+            {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) &&
+              renderGapHandles()}
+            <ConnectionHandle node={node} transform={transform} />
+            {/* Rest of your selected state UI */}
           </>
         )}
       </>
