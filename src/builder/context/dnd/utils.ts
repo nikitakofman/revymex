@@ -1,5 +1,5 @@
 import { SnapGuideLine } from "@/builder/reducer/dragDispatcher";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { Node, NodeState } from "@/builder/reducer/nodeDispatcher";
 import { LineIndicatorState } from "../builderState";
 import { HTMLAttributes } from "react";
 
@@ -138,7 +138,8 @@ export const calculateDragPositions = (
   element: Element,
   contentRect: DOMRect,
   transform: Transform,
-  shouldNegateHeight: boolean = false
+  //eslint-disable-next-line
+  shouldNegateHieght?: boolean
 ): DragPos => {
   const elementRect = element.getBoundingClientRect();
 
@@ -146,8 +147,7 @@ export const calculateDragPositions = (
   const mouseOffsetY = e.clientY - elementRect.top;
 
   const elementX = (elementRect.left - contentRect.left) / transform.scale;
-  const heightOffset =
-    shouldNegateHeight && element.closest(".viewport") ? elementRect.height : 0;
+  const heightOffset = elementRect.height;
   const elementY =
     (elementRect.top - contentRect.top + heightOffset) / transform.scale;
 
@@ -208,21 +208,15 @@ export function computeSnapAndGuides(
     centerY: newTop + draggedH / 2,
   };
 
-  // Filter nodes based on dynamic mode
   const nodesToSnap = allNodes.filter((n) => {
-    // Don't snap to viewport nodes or the dragged node itself
     if (n.inViewport || n.id === draggedNode.id) return false;
 
     if (dynamicModeNodeId) {
-      // In dynamic mode, only snap to:
-      // 1. The main dynamic node
-      // 2. Nodes that belong to this dynamic system
       return (
         n.id === dynamicModeNodeId || n.dynamicParentId === dynamicModeNodeId
       );
     }
 
-    // In normal mode, snap to all canvas nodes
     return !n.inViewport;
   });
 
@@ -526,61 +520,84 @@ export const computeSiblingReorderZones = (
   siblings: Node[],
   isColumn: boolean,
   mouseX: number,
-  mouseY: number
+  mouseY: number,
+  prevMouseX: number,
+  prevMouseY: number
 ): ReorderZoneResult | null => {
-  const BUFFER = 50;
-
-  const siblingZones = siblings
+  const siblingZones: ReorderZone[] = siblings
     .map((node, index) => {
       const element = document.querySelector(`[data-node-id="${node.id}"]`);
       if (!element) return null;
-
       const rect = element.getBoundingClientRect();
-
-      const zone: ReorderZone = {
-        id: node.id,
-        index,
-        rect,
-        hitRect: isColumn
-          ? {
-              top: rect.top,
-              bottom: rect.bottom,
-              left: 0,
-              right: window.innerWidth,
-            }
-          : {
-              top: 0,
-              bottom: window.innerHeight,
-              left: rect.left,
-              right: rect.right,
-            },
-      };
-
-      return zone;
+      return { id: node.id, index, rect };
     })
     .filter((x): x is ReorderZone => x !== null);
 
-  const sortedZones = isColumn
-    ? siblingZones.sort((a, b) => a.rect.top - b.rect.top)
-    : siblingZones.sort((a, b) => a.rect.left - b.rect.left);
+  if (siblingZones.length === 0) return null;
 
-  for (const zone of sortedZones) {
-    const mousePos = isColumn ? mouseY : mouseX;
-    const zoneStart = isColumn ? zone.rect.top : zone.rect.left;
-    const zoneEnd = isColumn ? zone.rect.bottom : zone.rect.right;
+  let zonesUnder: ReorderZone[];
+  if (isColumn) {
+    zonesUnder = siblingZones.filter(
+      (zone) => mouseY >= zone.rect.top && mouseY <= zone.rect.bottom
+    );
+  } else {
+    zonesUnder = siblingZones.filter(
+      (zone) => mouseX >= zone.rect.left && mouseX <= zone.rect.right
+    );
+  }
+  if (zonesUnder.length === 0) return null;
 
-    if (mousePos >= zoneStart - BUFFER && mousePos <= zoneEnd + BUFFER) {
-      const zoneMiddle = (zoneStart + zoneEnd) / 2;
-      const position = mousePos < zoneMiddle ? "before" : "after";
-
+  if (isColumn) {
+    if (mouseY > prevMouseY) {
+      const chosenZone = zonesUnder.reduce((prev, curr) =>
+        curr.rect.top < prev.rect.top ? curr : prev
+      );
+      return { targetId: chosenZone.id, position: "after" };
+    } else if (mouseY < prevMouseY) {
+      const chosenZone = zonesUnder.reduce((prev, curr) =>
+        curr.rect.bottom > prev.rect.bottom ? curr : prev
+      );
+      return { targetId: chosenZone.id, position: "before" };
+    } else {
+      const chosenZone = zonesUnder.reduce((prev, curr) => {
+        const prevCenter = (prev.rect.top + prev.rect.bottom) / 2;
+        const currCenter = (curr.rect.top + curr.rect.bottom) / 2;
+        return Math.abs(mouseY - currCenter) < Math.abs(mouseY - prevCenter)
+          ? curr
+          : prev;
+      });
+      const centerY = (chosenZone.rect.top + chosenZone.rect.bottom) / 2;
       return {
-        targetId: zone.id,
-        position,
+        targetId: chosenZone.id,
+        position: mouseY < centerY ? "before" : "after",
+      };
+    }
+  } else {
+    if (mouseX > prevMouseX) {
+      const chosenZone = zonesUnder.reduce((prev, curr) =>
+        curr.rect.left < prev.rect.left ? curr : prev
+      );
+      return { targetId: chosenZone.id, position: "after" };
+    } else if (mouseX < prevMouseX) {
+      const chosenZone = zonesUnder.reduce((prev, curr) =>
+        curr.rect.right > prev.rect.right ? curr : prev
+      );
+      return { targetId: chosenZone.id, position: "before" };
+    } else {
+      const chosenZone = zonesUnder.reduce((prev, curr) => {
+        const prevCenter = (prev.rect.left + prev.rect.right) / 2;
+        const currCenter = (curr.rect.left + curr.rect.right) / 2;
+        return Math.abs(mouseX - currCenter) < Math.abs(mouseX - prevCenter)
+          ? curr
+          : prev;
+      });
+      const centerX = (chosenZone.rect.left + chosenZone.rect.right) / 2;
+      return {
+        targetId: chosenZone.id,
+        position: mouseX < centerX ? "before" : "after",
       };
     }
   }
-
-  return null;
 };
 
 export const computeSiblingReorderResult = (
@@ -588,7 +605,9 @@ export const computeSiblingReorderResult = (
   allNodes: Node[],
   parentElement: Element,
   mouseX: number,
-  mouseY: number
+  mouseY: number,
+  prevMouseX: number,
+  prevMouseY: number
 ): ReorderZoneResult | null => {
   const siblings = allNodes.filter(
     (node) =>
@@ -598,14 +617,16 @@ export const computeSiblingReorderResult = (
   );
 
   const computedStyle = window.getComputedStyle(parentElement);
-  const isColumn = computedStyle.flexDirection?.includes("column");
+  const isColumn = computedStyle.flexDirection?.includes("column") || false;
 
   return computeSiblingReorderZones(
     draggedNode,
     siblings,
     isColumn,
     mouseX,
-    mouseY
+    mouseY,
+    prevMouseX,
+    prevMouseY
   );
 };
 
@@ -672,11 +693,9 @@ export const getHandleCursor = (direction: Direction): string => {
 };
 
 export const rgbToHex = (rgb: string): string => {
-  // Extract RGB values
   const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-  if (!match) return rgb; // Return original if not RGB format
+  if (!match) return rgb;
 
-  // Convert to hex
   const r = parseInt(match[1]);
   const g = parseInt(match[2]);
   const b = parseInt(match[3]);
@@ -687,4 +706,99 @@ export const rgbToHex = (rgb: string): string => {
   };
 
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+};
+
+export const parentHasRotate = (node: Node, nodeState: NodeState): boolean => {
+  if (!node) return false;
+
+  let currentId = node.parentId;
+
+  while (currentId) {
+    const ancestor = document.querySelector(`[data-node-id="${currentId}"]`);
+    if (!ancestor) break;
+
+    if (window.getComputedStyle(ancestor).rotate !== "none") {
+      return true;
+    }
+
+    if (!nodeState) break;
+
+    const parentNode = nodeState.nodes.find((n) => n.id === currentId);
+    currentId = parentNode?.parentId;
+  }
+
+  return false;
+};
+
+export const calculateRotationCalibration = (
+  rotation: string | number | undefined,
+  transform: { scale: number },
+  width: number = 0,
+  height: number = 0
+) => {
+  const rotationDeg = parseRotation(rotation as string);
+  const rotationRad = ((rotationDeg % 360) * Math.PI) / 180;
+
+  const baseCalibration = 1;
+  const peakCalibration = 100;
+
+  const referenceSize = 500;
+  const sizeFactor = Math.abs(
+    ((width + height) / 2 - referenceSize) / referenceSize
+  );
+
+  const diagonalFactor = Math.abs(Math.sin(2 * rotationRad));
+
+  const combinedFactor = diagonalFactor * (1 + sizeFactor);
+
+  const calibrationX =
+    (baseCalibration + (peakCalibration - baseCalibration) * combinedFactor) *
+    transform.scale;
+  const calibrationY =
+    (baseCalibration + (peakCalibration - baseCalibration) * combinedFactor) *
+    transform.scale;
+
+  return { calibrationX, calibrationY };
+};
+
+export const getCalibrationAdjustedPosition = (
+  position: { x: number; y: number },
+  rotation: string | number | undefined,
+  transform: { scale: number }
+) => {
+  const { calibrationX, calibrationY } = calculateRotationCalibration(
+    rotation,
+    transform
+  );
+
+  return {
+    x: position.x + calibrationX / transform.scale,
+    y: position.y + calibrationY / transform.scale,
+  };
+};
+
+//@ts-expect-error - unused
+export function rotatePoint(x, y, angleDeg) {
+  const rad = (Math.PI / 180) * angleDeg;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
+  };
+}
+
+//@ts-expect-error - unused
+export function inverseRotatePoint(x, y, angleDeg) {
+  return rotatePoint(x, y, -angleDeg);
+}
+
+export const parseRotation = (rotate: string) => {
+  if (typeof rotate === "string" && rotate.endsWith("deg")) {
+    return parseFloat(rotate);
+  }
+  if (typeof rotate === "number") {
+    return rotate;
+  }
+  return 0;
 };

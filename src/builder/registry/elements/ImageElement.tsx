@@ -9,11 +9,17 @@ export const ImageElement = ({ node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)} style={node.style}>
+      <div {...connect(node)}>
         <Image
           width={200}
           height={200}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            borderRadius: node.style.borderRadius,
+            pointerEvents: "none", // Prevent image from capturing mouse events
+          }}
           src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
           alt="Image"
         />

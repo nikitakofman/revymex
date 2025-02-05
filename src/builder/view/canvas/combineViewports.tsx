@@ -111,9 +111,29 @@ const ResponsiveNode: React.FC<{
 
   const cssRules = viewportWidths
     .map((viewport, index) => {
-      const styles = node.viewportStyles[viewport];
-      let mediaQuery;
+      const styles = { ...node.viewportStyles[viewport] };
 
+      // Extract border properties except borderRadius
+      const {
+        border,
+        borderTop,
+        borderRight,
+        borderBottom,
+        borderLeft,
+        borderWidth,
+        borderStyle,
+        borderColor,
+        ...mainStyles
+      } = styles;
+
+      // Keep borderRadius in mainStyles for the element itself
+      const { borderRadius } = styles;
+
+      // Check if we have any border properties
+      const hasBorder =
+        border || borderWidth || borderStyle || borderColor || borderRadius;
+
+      let mediaQuery;
       if (index === viewportWidths.length - 1) {
         mediaQuery = `@media (max-width: ${viewportWidths[index - 1] - 1}px)`;
       } else if (index === 0) {
@@ -125,44 +145,68 @@ const ResponsiveNode: React.FC<{
         }px)`;
       }
 
-      const cleanStyles = { ...styles };
-      delete cleanStyles.src;
-
-      const cssStyles = convertStyleToCss(cleanStyles);
-
       return `${mediaQuery} {
-      #${node.id} {
-  ${cssStyles}
-      }
-    }`;
+        #${node.id} {
+          position: relative;
+          ${convertStyleToCss(mainStyles)}
+        }
+        ${
+          hasBorder
+            ? `
+        #${node.id}::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 1;
+          border: ${border || ""};
+          border-width: ${borderWidth || ""};
+          border-style: ${borderStyle || "solid"};
+          border-color: ${borderColor || "transparent"};
+          border-radius: ${borderRadius || 0};
+          box-sizing: border-box;
+        }`
+            : ""
+        }
+      }`;
     })
     .join("\n\n");
 
-  const getCurrentSrc = () => {
-    const currentViewport = window.innerWidth;
-    const applicableViewport = viewportWidths.find(
-      (width) => currentViewport >= width
-    );
-    return applicableViewport
-      ? node.viewportStyles[applicableViewport].src
-      : node.viewportStyles[viewportWidths[viewportWidths.length - 1]].src;
-  };
+  const defaultStyles = node.viewportStyles[viewportWidths[0]];
+  // Extract border properties except borderRadius
+  const {
+    border,
+    borderTop,
+    borderRight,
+    borderBottom,
+    borderLeft,
+    borderWidth,
+    borderStyle,
+    borderColor,
+    ...cleanStyles
+  } = defaultStyles;
+
+  // Keep borderRadius in the main element styles
+  if (!cleanStyles.borderRadius) {
+    delete cleanStyles.borderRadius;
+  }
 
   switch (node.type) {
     case "frame":
-      const frameDefaultStyles = {
-        position: "relative",
-        display: "flex",
-        flexDirection: "row",
-        justifyContent: "center",
-        alignItems: "center",
-        ...node.viewportStyles[viewportWidths[0]],
-      };
-
       return (
         <>
           <style>{cssRules}</style>
-          <div id={node.id} style={frameDefaultStyles}>
+          <div
+            id={node.id}
+            style={{
+              position: "relative",
+              display: "flex",
+              flexDirection: "row",
+              justifyContent: "center",
+              alignItems: "center",
+              ...cleanStyles,
+            }}
+          >
             {children.map((child) => (
               <ResponsiveNode key={child.id} node={child} allNodes={allNodes} />
             ))}
@@ -172,15 +216,15 @@ const ResponsiveNode: React.FC<{
 
     case "image":
       const defaultSrc =
-        node.viewportStyles[viewportWidths[0]]?.src ||
-        "https://batiment.imag.fr/img/imag.png";
-
+        cleanStyles?.src || "https://batiment.imag.fr/img/imag.png";
       return (
         <>
           <style>{cssRules}</style>
-          <picture>
+          <picture
+            id={node.id}
+            style={{ position: "relative", ...cleanStyles }}
+          >
             {viewportWidths.map((viewport, index) => {
-              const nextViewport = viewportWidths[index + 1];
               const src = node.viewportStyles[viewport]?.src;
               if (!src) return null;
 
@@ -205,9 +249,14 @@ const ResponsiveNode: React.FC<{
               }
             })}
             <img
-              id={node.id}
               src={defaultSrc}
-              style={{ position: "relative" }}
+              style={{
+                position: "relative",
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                borderRadius: cleanStyles.borderRadius, // Apply borderRadius to img as well
+              }}
               alt=""
             />
           </picture>
@@ -218,7 +267,7 @@ const ResponsiveNode: React.FC<{
       return (
         <>
           <style>{cssRules}</style>
-          <div id={node.id} style={{ position: "relative" }}>
+          <div id={node.id} style={{ position: "relative", ...cleanStyles }}>
             {node.text}
           </div>
         </>

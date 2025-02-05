@@ -1,9 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Check, ChevronDown, X, Pipette } from "lucide-react";
+import { ChevronDown, X, Pipette } from "lucide-react";
+import { useBuilder } from "@/builder/context/builderState";
+import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 
 type ColorMode = "hex" | "rgb" | "hsl" | "hsv";
 
-// Color conversion utilities
+interface ColorPickerProps {
+  name?: string;
+  label?: string;
+  position?: "left" | "bottom";
+  value?: string;
+  onChange?: (color: string) => void;
+  usePseudoElement?: boolean;
+  pseudoElement?: "::before" | "::after";
+}
+
 const hexToRgb = (hex: string) => {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result
@@ -188,13 +199,6 @@ const hsvToRgb = ({ h, s, v }: { h: number; s: number; v: number }) => {
   };
 };
 
-interface ColorPickerProps {
-  value: string;
-  onChange: (color: string) => void;
-  label?: string;
-  position?: "left" | "bottom";
-}
-
 const ColorPreview = ({
   color,
   size = 16,
@@ -217,11 +221,15 @@ const ColorPreview = ({
 );
 
 export const ColorPicker = ({
-  value,
-  onChange,
+  name,
   label,
   position = "left",
+  value: externalValue,
+  onChange: externalOnChange,
+  usePseudoElement = false,
+  pseudoElement = "::after",
 }: ColorPickerProps) => {
+  const { setNodeStyle } = useBuilder();
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
   const [hsv, setHsv] = useState({ h: 0, s: 100, v: 100 });
@@ -232,11 +240,30 @@ export const ColorPicker = ({
   const saturationRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
 
+  const computedStyle = useComputedStyle({
+    property: name || "",
+    usePseudoElement,
+    pseudoElement,
+    isColor: true,
+    defaultValue: "#000000",
+  });
+
+  const currentValue =
+    externalValue ||
+    (computedStyle.mixed ? "#000000" : (computedStyle.value as string));
+
   useEffect(() => {
-    // Convert initial color to HSV
-    const rgb = hexToRgb(value);
+    const rgb = hexToRgb(currentValue);
     setHsv(rgbToHsv(rgb));
-  }, [value]);
+  }, [currentValue]);
+
+  const handleColorChange = (color: string) => {
+    if (externalOnChange) {
+      externalOnChange(color);
+    } else if (name) {
+      setNodeStyle({ [name]: color }, undefined, true);
+    }
+  };
 
   const handleSaturationMouseDown = (e: React.MouseEvent) => {
     setIsDraggingColor(true);
@@ -263,7 +290,7 @@ export const ColorPicker = ({
 
     setHsv(newHsv);
     const rgb = hsvToRgb(newHsv);
-    onChange(rgbToHex(rgb));
+    handleColorChange(rgbToHex(rgb));
   };
 
   const handleHueMove = (e: MouseEvent | React.MouseEvent) => {
@@ -279,7 +306,7 @@ export const ColorPicker = ({
 
     setHsv(newHsv);
     const rgb = hsvToRgb(newHsv);
-    onChange(rgbToHex(rgb));
+    handleColorChange(rgbToHex(rgb));
   };
 
   useEffect(() => {
@@ -307,26 +334,6 @@ export const ColorPicker = ({
   const currentRgb = hsvToRgb(hsv);
   const currentHsl = rgbToHsl(currentRgb);
 
-  const handleInputChange = (input: string) => {
-    // Handle color input based on current mode
-    switch (colorMode) {
-      case "hex":
-        if (/^#[0-9A-F]{6}$/i.test(input)) {
-          onChange(input);
-        }
-        break;
-      case "rgb":
-        // Handle RGB input
-        break;
-      case "hsl":
-        // Handle HSL input
-        break;
-      case "hsv":
-        // Handle HSV input
-        break;
-    }
-  };
-
   return (
     <div className="relative" ref={pickerRef}>
       <div className="flex tabular-nums items-center gap-2 justify-between">
@@ -339,8 +346,9 @@ export const ColorPicker = ({
           onClick={() => setIsOpen(!isOpen)}
           className="flex items-center gap-2 h-7 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] hover:border-[var(--control-border-hover)] focus:border-[var(--border-focus)] text-[var(--text-primary)] rounded-[var(--radius-lg)] focus:outline-none transition-colors"
         >
-          <ColorPreview color={value} />
-          <span>{value.toUpperCase()}</span>
+          <ColorPreview color={currentValue} />
+          <span>{currentValue.toUpperCase()}</span>
+          {/* need fix here */}
           <ChevronDown className="w-3 h-3 text-[var(--text-secondary)]" />
         </button>
       </div>
@@ -383,7 +391,6 @@ export const ColorPicker = ({
             </div>
           </div>
 
-          {/* Color saturation/value box */}
           <div
             ref={saturationRef}
             className="relative w-full h-40 rounded-lg mb-3 cursor-crosshair"
@@ -403,7 +410,6 @@ export const ColorPicker = ({
             />
           </div>
 
-          {/* Hue slider */}
           <div
             ref={hueRef}
             className="relative h-4 rounded-md mb-3 cursor-pointer"
@@ -421,14 +427,17 @@ export const ColorPicker = ({
             />
           </div>
 
-          {/* Color mode inputs */}
           <div className="space-y-2">
             {colorMode === "hex" && (
               <div className="flex gap-2">
                 <input
                   type="text"
-                  value={value.toUpperCase()}
-                  onChange={(e) => handleInputChange(e.target.value)}
+                  value={currentValue.toUpperCase()}
+                  onChange={(e) => {
+                    if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
+                      handleColorChange(e.target.value);
+                    }
+                  }}
                   className="flex-1 h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                 />
                 <button className="h-8 w-8 flex items-center justify-center bg-[var(--control-bg)] border border-[var(--control-border)] rounded">
@@ -452,7 +461,7 @@ export const ColorPicker = ({
                       const rgb = { ...currentRgb, r: Number(e.target.value) };
                       const newHsv = rgbToHsv(rgb);
                       setHsv(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -470,7 +479,7 @@ export const ColorPicker = ({
                       const rgb = { ...currentRgb, g: Number(e.target.value) };
                       const newHsv = rgbToHsv(rgb);
                       setHsv(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -488,7 +497,7 @@ export const ColorPicker = ({
                       const rgb = { ...currentRgb, b: Number(e.target.value) };
                       const newHsv = rgbToHsv(rgb);
                       setHsv(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -512,7 +521,7 @@ export const ColorPicker = ({
                       const rgb = hslToRgb(hsl);
                       const newHsv = rgbToHsv(rgb);
                       setHsv(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -531,7 +540,7 @@ export const ColorPicker = ({
                       const rgb = hslToRgb(hsl);
                       const newHsv = rgbToHsv(rgb);
                       setHsv(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -550,7 +559,7 @@ export const ColorPicker = ({
                       const rgb = hslToRgb(hsl);
                       const newHsv = rgbToHsv(rgb);
                       setHsv(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -573,7 +582,7 @@ export const ColorPicker = ({
                       const newHsv = { ...hsv, h: Number(e.target.value) };
                       setHsv(newHsv);
                       const rgb = hsvToRgb(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -591,7 +600,7 @@ export const ColorPicker = ({
                       const newHsv = { ...hsv, s: Number(e.target.value) };
                       setHsv(newHsv);
                       const rgb = hsvToRgb(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -609,7 +618,7 @@ export const ColorPicker = ({
                       const newHsv = { ...hsv, v: Number(e.target.value) };
                       setHsv(newHsv);
                       const rgb = hsvToRgb(newHsv);
-                      onChange(rgbToHex(rgb));
+                      handleColorChange(rgbToHex(rgb));
                     }}
                     className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
                   />
@@ -622,5 +631,3 @@ export const ColorPicker = ({
     </div>
   );
 };
-
-export default ColorPicker;

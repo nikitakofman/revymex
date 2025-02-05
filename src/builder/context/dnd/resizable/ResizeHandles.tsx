@@ -1,81 +1,85 @@
 import React from "react";
-
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Direction, getHandleCursor } from "../utils";
+import { useBuilder } from "../../builderState";
 
 interface ResizeHandlesProps {
   node: Node;
-  transform: { scale: number };
-  dragState: { dynamicModeNodeId: string | null; selectedIds: string[] };
-  getBorderWidth: () => number;
   handleResizeStart: (e: React.PointerEvent, direction: Direction) => void;
 }
 
 export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   node,
-  transform,
-  dragState,
-  getBorderWidth,
   handleResizeStart,
 }) => {
+  const { dragState, transform } = useBuilder();
+
   const getBorderResizeStyles = (direction: Direction): React.CSSProperties => {
     const borderSize = 4 / transform.scale;
-    const borderWidth = getBorderWidth();
-    const offset = -borderWidth;
+    const baseStyles = {
+      position: "absolute",
+      transformOrigin: "center",
+    } as React.CSSProperties;
 
     switch (direction) {
       case "top":
         return {
-          top: offset,
-          left: offset,
-          right: offset,
+          ...baseStyles,
+          top: 0,
+          left: 0,
+          right: 0,
           height: borderSize,
           transform: "translateY(-50%)",
         };
       case "right":
         return {
-          top: offset,
-          right: offset,
-          bottom: offset,
+          ...baseStyles,
+          top: 0,
+          right: 0,
+          bottom: 0,
           width: borderSize,
           transform: "translateX(50%)",
         };
       case "bottom":
         return {
-          bottom: offset,
-          left: offset,
-          right: offset,
+          ...baseStyles,
+          bottom: 0,
+          left: 0,
+          right: 0,
           height: borderSize,
           transform: "translateY(50%)",
         };
       case "left":
         return {
-          top: offset,
-          left: offset,
-          bottom: offset,
+          ...baseStyles,
+          top: 0,
+          left: 0,
+          bottom: 0,
           width: borderSize,
           transform: "translateX(-50%)",
         };
       default:
-        return {};
+        return baseStyles;
     }
   };
 
   const getHandleStyles = (direction: Direction): React.CSSProperties => {
-    const borderWidth = getBorderWidth();
-    const offset = -borderWidth;
+    const basePosition = {
+      position: "absolute",
+      transformOrigin: "center",
+    } as React.CSSProperties;
 
     switch (direction) {
       case "topLeft":
-        return { top: offset, left: offset };
+        return { ...basePosition, top: 0, left: 0 };
       case "topRight":
-        return { top: offset, right: offset };
+        return { ...basePosition, top: 0, right: 0 };
       case "bottomRight":
-        return { bottom: offset, right: offset };
+        return { ...basePosition, bottom: 0, right: 0 };
       case "bottomLeft":
-        return { bottom: offset, left: offset };
+        return { ...basePosition, bottom: 0, left: 0 };
       default:
-        return {};
+        return basePosition;
     }
   };
 
@@ -99,7 +103,6 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
               direction.includes("Right") ? "50%" : "-50%"
             }, ${direction.includes("bottom") ? "50%" : "-50%"})`,
             border: `${1 / transform.scale}px solid white`,
-            transformOrigin: "center",
             pointerEvents: "all",
           }}
           onPointerDown={(e) => handleResizeStart(e, direction as Direction)}

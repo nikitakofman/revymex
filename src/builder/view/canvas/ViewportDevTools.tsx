@@ -31,9 +31,9 @@ export const ViewportDevTools: React.FC = () => {
     useBuilder();
   const [showTree, setShowTree] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"view" | "perViewport" | "import">(
-    "view"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "view" | "perViewport" | "import" | "drag"
+  >("view");
 
   const [mounted, setMounted] = useState(false);
 
@@ -99,8 +99,37 @@ export const ViewportDevTools: React.FC = () => {
         >
           Reset View
         </button>
-        <div className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)]">
-          {Math.round(transform.scale * 100)}%
+        <div className="flex items-center gap-2 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)]">
+          <input
+            type="number"
+            value={Math.round(transform.scale * 100)}
+            onChange={(e) =>
+              setTransform({
+                ...transform,
+                scale: Number(e.target.value) / 100,
+              })
+            }
+            className="w-16 px-1 bg-[var(--control-bg-hover)] rounded-sm"
+          />
+          <span>%</span>
+          <input
+            type="number"
+            value={Math.round(transform.x)}
+            onChange={(e) =>
+              setTransform({ ...transform, x: Number(e.target.value) })
+            }
+            className="w-16 px-1 bg-[var(--control-bg-hover)] rounded-sm"
+          />
+          <span>X</span>
+          <input
+            type="number"
+            value={Math.round(transform.y)}
+            onChange={(e) =>
+              setTransform({ ...transform, y: Number(e.target.value) })
+            }
+            className="w-16 px-1 bg-[var(--control-bg-hover)] rounded-sm"
+          />
+          <span>Y</span>
         </div>
         <button
           className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
@@ -188,6 +217,16 @@ export const ViewportDevTools: React.FC = () => {
               >
                 Import
               </button>
+              <button
+                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+                  activeTab === "import"
+                    ? "bg-[var(--button-primary-bg)] text-white"
+                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+                }`}
+                onClick={() => setActiveTab("drag")}
+              >
+                DregState
+              </button>
             </div>
 
             {/* Tab content */}
@@ -195,6 +234,12 @@ export const ViewportDevTools: React.FC = () => {
               {activeTab === "view" && (
                 <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
                   {JSON.stringify(nodeState.nodes, null, 2)}
+                </pre>
+              )}
+
+              {activeTab === "drag" && (
+                <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
+                  {JSON.stringify(dragState, null, 2)}
                 </pre>
               )}
 

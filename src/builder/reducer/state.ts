@@ -1,7 +1,7 @@
 import { DragState } from "./dragDispatcher";
 import { Node } from "./nodeDispatcher";
 
-const VIEWPORT_GAP = 160; // Gap between viewports in pixels
+const VIEWPORT_GAP = 160;
 
 export interface NodeState {
   nodes: Node[];
@@ -214,4 +214,12 @@ export const dragInitialState: DragState = {
     dimensions: undefined,
   },
   dynamicModeNodeId: null,
+  contextMenu: null,
+  gripHandleDirection: null,
+  hoverNodeId: null,
+  dragPositions: {
+    x: 0,
+    y: 0,
+  },
+  isOverCanvas: false,
 };

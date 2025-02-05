@@ -40,6 +40,13 @@ interface BuilderContextType {
   nodeDisp: NodeDispatcher;
   dragDisp: DragDispatcher;
   isMovingCanvas: boolean;
+  elementRef: React.RefObject<HTMLDivElement | null>;
+  isResizing: boolean;
+  setIsResizing: React.Dispatch<React.SetStateAction<boolean>>;
+  isAdjustingGap: boolean;
+  setIsAdjustingGap: React.Dispatch<React.SetStateAction<boolean>>;
+  isRotating: boolean;
+  setIsRotating: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
@@ -50,8 +57,12 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const elementRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.3 });
   const [isMovingCanvas, setIsMovingCanvas] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isAdjustingGap, setIsAdjustingGap] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
 
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -173,6 +184,13 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     nodeDisp,
     dragDisp,
     isMovingCanvas,
+    elementRef,
+    isResizing,
+    setIsResizing,
+    isAdjustingGap,
+    setIsAdjustingGap,
+    isRotating,
+    setIsRotating,
   };
 
   return (

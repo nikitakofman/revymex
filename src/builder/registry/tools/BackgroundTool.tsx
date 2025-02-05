@@ -1,28 +1,17 @@
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  CSSProperties,
-  useCallback,
-} from "react";
-import {
-  ToolbarContainer,
-  ToolbarSection,
-  ToolbarSegmentedControl,
-} from "./_components/test-ui";
+import React, { useState, useRef, useEffect } from "react";
+import { ToolbarSection, ToolbarSegmentedControl } from "./_components/test-ui";
 import { ColorPicker } from "./_components/ColorPicker";
 import { Plus, Trash2 } from "lucide-react";
-import { ToolbarSlider } from "./_components/ToolbarSlider";
 import { useBuilder } from "@/builder/context/builderState";
-import { rgbToHex } from "@/builder/context/dnd/utils";
+import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
+
+type BackgroundType = "solid" | "linear" | "radial";
 
 interface GradientStop {
   color: string;
   position: number;
   id: string;
 }
-
-type BackgroundType = "solid" | "linear" | "radial";
 
 interface GradientStopButtonProps {
   color: string;
@@ -107,88 +96,22 @@ const GradientStopButton = ({
 
 export const BackgroundTool = () => {
   const [backgroundType, setBackgroundType] = useState<BackgroundType>("solid");
-  const [solidColor, setSolidColor] = useState("#FFFFFF");
+  const { setNodeStyle } = useBuilder();
+
+  const computedBackground = useComputedStyle({
+    property: "background",
+    parseValue: false,
+    defaultValue: "#FFFFFF",
+  });
+
   const [gradientStops, setGradientStops] = useState<GradientStop[]>([
     { color: "#FFFFFF", position: 0, id: "1" },
     { color: "#000000", position: 100, id: "2" },
   ]);
   const [selectedStopId, setSelectedStopId] = useState(gradientStops[0].id);
-  const [gradientAngle, setGradientAngle] = useState(90);
-  const [gradientRadius, setGradientRadius] = useState(100);
-  const { setNodeStyle, dragState } = useBuilder();
-
-  useEffect(() => {
-    const computed = getComputedBackground();
-    if (computed && computed.type !== "mixed") {
-      if (computed.type === "solid") {
-        setBackgroundType("solid");
-        setSolidColor(computed.value);
-      } else if (computed.type === "linear" || computed.type === "radial") {
-        setBackgroundType(computed.type);
-      }
-    }
-  }, [dragState.selectedIds]);
-
-  const getComputedBackground = useCallback(() => {
-    if (!dragState.selectedIds.length) return null;
-
-    const computedValues = dragState.selectedIds
-      .map((id) => {
-        const element = document.querySelector(
-          `[data-node-id="${id}"]`
-        ) as HTMLElement;
-        if (!element) return null;
-
-        const computedStyle = window.getComputedStyle(element);
-
-        let background = computedStyle.backgroundColor;
-
-        if (computedStyle.background.includes("gradient")) {
-          background = computedStyle.background;
-        }
-
-        if (
-          !background ||
-          background === "none" ||
-          background === "transparent"
-        ) {
-          return { type: "solid", value: "#FFFFFF" };
-        }
-
-        if (background.includes("linear-gradient")) {
-          return { type: "linear", value: background };
-        } else if (background.includes("radial-gradient")) {
-          return { type: "radial", value: background };
-        } else {
-          return { type: "solid", value: rgbToHex(background) };
-        }
-      })
-      .filter(Boolean);
-
-    if (!computedValues.length) return null;
-
-    const firstValue = computedValues[0];
-    const allSameType = computedValues.every(
-      (v) => v?.type === firstValue?.type
-    );
-    const allSameValue = computedValues.every(
-      (v) => v?.value === firstValue?.value
-    );
-
-    if (!allSameType || !allSameValue) {
-      return { type: "mixed", value: "mixed" };
-    }
-
-    return firstValue;
-  }, [dragState.selectedIds]);
 
   const updateBackground = (value: string) => {
     setNodeStyle({ background: value }, undefined, true);
-  };
-
-  const handleSolidColorChange = (color: string) => {
-    setSolidColor(color);
-    updateBackground(color);
   };
 
   const handleStopColorChange = (color: string) => {
@@ -229,28 +152,14 @@ export const BackgroundTool = () => {
     updateGradientBackground(newStops);
   };
 
-  const handleGradientAngleChange = (angle: number) => {
-    setGradientAngle(angle);
-    updateGradientBackground(gradientStops, angle);
-  };
-
-  const handleGradientRadiusChange = (radius: number) => {
-    setGradientRadius(radius);
-    updateGradientBackground(gradientStops, gradientAngle, radius);
-  };
-
-  const updateGradientBackground = (
-    stops: GradientStop[],
-    angle = gradientAngle,
-    radius = gradientRadius
-  ) => {
+  const updateGradientBackground = (stops: GradientStop[]) => {
     const gradientStopsString = stops
       .map((stop) => `${stop.color} ${stop.position}%`)
       .join(", ");
 
     const gradientValue =
       backgroundType === "linear"
-        ? `linear-gradient(${angle}deg, ${gradientStopsString})`
+        ? `linear-gradient(90deg, ${gradientStopsString})`
         : `radial-gradient(circle at center, ${gradientStopsString})`;
 
     updateBackground(gradientValue);
@@ -259,7 +168,11 @@ export const BackgroundTool = () => {
   const handleBackgroundTypeChange = (value: BackgroundType) => {
     setBackgroundType(value);
     if (value === "solid") {
-      updateBackground(solidColor);
+      setNodeStyle({
+        background: computedBackground.mixed
+          ? "#FFFFFF"
+          : (computedBackground.value as string),
+      });
     } else {
       updateGradientBackground(gradientStops);
     }
@@ -267,134 +180,98 @@ export const BackgroundTool = () => {
 
   const selectedStop = gradientStops.find((stop) => stop.id === selectedStopId);
 
-  const computedBackground = getComputedBackground();
-  const isMixed = computedBackground?.type === "mixed";
-
   return (
-    <ToolbarContainer>
-      <ToolbarSection title="Background">
-        <div className="flex flex-col space-y-4">
-          {/* Preview */}
-          <div
-            className="h-16 w-full rounded-lg border border-[var(--control-border)] relative"
-            style={{
-              background: isMixed
-                ? "var(--control-bg)"
-                : backgroundType === "solid"
-                ? solidColor
-                : backgroundType === "linear"
-                ? `linear-gradient(${gradientAngle}deg, ${gradientStops
-                    .map((stop) => `${stop.color} ${stop.position}%`)
-                    .join(", ")})`
-                : `radial-gradient(circle at center, ${gradientStops
-                    .map((stop) => `${stop.color} ${stop.position}%`)
-                    .join(", ")})`,
-            }}
-          >
-            {isMixed && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs text-[var(--text-secondary)]">
-                  Mixed
-                </span>
-              </div>
-            )}
-          </div>
-          <ToolbarSegmentedControl
-            value={backgroundType}
-            size="sm"
-            onChange={handleBackgroundTypeChange}
-            options={[
-              { label: "Solid", value: "solid" },
-              { label: "Linear", value: "linear" },
-              { label: "Radial", value: "radial" },
-            ]}
-          />
-
-          {backgroundType === "solid" ? (
-            <ColorPicker
-              label="Color"
-              value={solidColor}
-              onChange={handleSolidColorChange}
-            />
-          ) : (
-            <div className="space-y-4">
-              {/* Gradient Bar */}
-              <div className="relative h-[9.8px] bg-[var(--control-bg)] rounded">
-                <div
-                  className="absolute inset-x-0 h-full rounded"
-                  style={{
-                    background: `linear-gradient(to right, ${gradientStops
-                      .map((stop) => `${stop.color} ${stop.position}%`)
-                      .join(", ")})`,
-                  }}
-                />
-                {gradientStops.map((stop) => (
-                  <GradientStopButton
-                    key={stop.id}
-                    color={stop.color}
-                    position={stop.position}
-                    isSelected={stop.id === selectedStopId}
-                    onClick={() => setSelectedStopId(stop.id)}
-                    onDrag={(position) =>
-                      handleStopPositionChange(position, stop.id)
-                    }
-                  />
-                ))}
-              </div>
-
-              {/* Controls */}
-              <div className="flex items-center gap-2 justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={addGradientStop}
-                    className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                  </button>
-                  <button
-                    onClick={removeGradientStop}
-                    className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded"
-                    disabled={gradientStops.length <= 2}
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-                  </button>
-                </div>
-                {selectedStop && (
-                  <ColorPicker
-                    value={selectedStop.color}
-                    onChange={handleStopColorChange}
-                  />
-                )}
-              </div>
-
-              {/* Gradient Settings */}
-              {backgroundType === "linear" && (
-                <ToolbarSlider
-                  label="Angle"
-                  unit="°"
-                  value={gradientAngle}
-                  min={0}
-                  max={360}
-                  onChange={handleGradientAngleChange}
-                />
-              )}
-
-              {backgroundType === "radial" && (
-                <ToolbarSlider
-                  label="Size"
-                  unit="%"
-                  value={gradientRadius}
-                  min={0}
-                  max={100}
-                  onChange={handleGradientRadiusChange}
-                />
-              )}
+    <ToolbarSection title="Background">
+      <div className="flex flex-col space-y-4">
+        <div
+          className="h-16 w-full rounded-lg border border-[var(--control-border)] relative"
+          style={{
+            background: computedBackground.mixed
+              ? "var(--control-bg)"
+              : backgroundType === "solid"
+              ? computedBackground.value
+              : backgroundType === "linear"
+              ? `linear-gradient(90deg, ${gradientStops
+                  .map((stop) => `${stop.color} ${stop.position}%`)
+                  .join(", ")})`
+              : `radial-gradient(circle at center, ${gradientStops
+                  .map((stop) => `${stop.color} ${stop.position}%`)
+                  .join(", ")})`,
+          }}
+        >
+          {computedBackground.mixed && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-xs text-[var(--text-secondary)]">
+                Mixed
+              </span>
             </div>
           )}
         </div>
-      </ToolbarSection>
-    </ToolbarContainer>
+
+        <ToolbarSegmentedControl
+          value={backgroundType}
+          size="sm"
+          onChange={handleBackgroundTypeChange}
+          options={[
+            { label: "Solid", value: "solid" },
+            { label: "Linear", value: "linear" },
+            { label: "Radial", value: "radial" },
+          ]}
+        />
+
+        {backgroundType === "solid" ? (
+          <ColorPicker label="Color" name="background" />
+        ) : (
+          <div className="space-y-4">
+            <div className="relative h-[9.8px] bg-[var(--control-bg)] rounded">
+              <div
+                className="absolute inset-x-0 h-full rounded"
+                style={{
+                  background: `linear-gradient(to right, ${gradientStops
+                    .map((stop) => `${stop.color} ${stop.position}%`)
+                    .join(", ")})`,
+                }}
+              />
+              {gradientStops.map((stop) => (
+                <GradientStopButton
+                  key={stop.id}
+                  color={stop.color}
+                  position={stop.position}
+                  isSelected={stop.id === selectedStopId}
+                  onClick={() => setSelectedStopId(stop.id)}
+                  onDrag={(position) =>
+                    handleStopPositionChange(position, stop.id)
+                  }
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={addGradientStop}
+                  className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded"
+                >
+                  <Plus className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                </button>
+                <button
+                  onClick={removeGradientStop}
+                  className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded"
+                  disabled={gradientStops.length <= 2}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                </button>
+              </div>
+              {selectedStop && (
+                <ColorPicker
+                  value={selectedStop.color}
+                  onChange={handleStopColorChange}
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </ToolbarSection>
   );
 };
-
-export default BackgroundTool;

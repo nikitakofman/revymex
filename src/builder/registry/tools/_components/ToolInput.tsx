@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { ToolSelect } from "./test-ui";
+import { Label } from "./Label";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -59,7 +60,12 @@ export function ToolInput({
         ) as HTMLElement;
         if (!element) return null;
 
-        const computedStyle = window.getComputedStyle(element);
+        // For border properties, get the computed style from ::after
+        const isBorderProperty = props.name?.startsWith("border");
+        const computedStyle = isBorderProperty
+          ? window.getComputedStyle(element, "::after")
+          : window.getComputedStyle(element);
+
         const propertyName = props.name;
         if (!propertyName) return null;
 
@@ -230,9 +236,7 @@ export function ToolInput({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      {label && (
-        <span className="text-xs text-[var(--text-secondary)]">{label}</span>
-      )}
+      {label && <Label>{label}</Label>}
       <div className="flex gap-2">
         <div className="relative group">
           {isMixed ? (

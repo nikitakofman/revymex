@@ -52,39 +52,6 @@ export const TypographyTool = () => {
   );
 };
 
-// tools/BorderTool.tsx
-export const BorderTool = () => {
-  return (
-    <ToolbarSection title="Border">
-      <ToolInput
-        type="number"
-        label="Width"
-        value="1"
-        showUnit
-        name="borderWidth"
-      />
-      <ToolInput
-        type="select"
-        label="Style"
-        value="solid"
-        options={[
-          { label: "Solid", value: "solid" },
-          { label: "Dashed", value: "dashed" },
-          { label: "Dotted", value: "dotted" },
-        ]}
-      />
-      <ColorPicker label="Color" value="#000000" />
-      <ToolInput
-        type="number"
-        label="Radius"
-        value="0"
-        showUnit
-        name="borderRadius"
-      />
-    </ToolbarSection>
-  );
-};
-
 // tools/EffectsTool.tsx
 export const EffectsTool = () => {
   return (
@@ -135,37 +102,6 @@ export const OverflowTool = () => {
           { label: "Auto", value: "auto" },
         ]}
       />
-    </ToolbarSection>
-  );
-};
-
-// tools/TransformTool.tsx
-export const TransformTool = () => {
-  return (
-    <ToolbarSection title="Transform">
-      <ToolInput
-        type="number"
-        label="Rotate"
-        value="0"
-        unit="deg"
-        name="rotate"
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <ToolInput
-          type="number"
-          label="Scale X"
-          value="1"
-          step={0.1}
-          name="transform.scaleX"
-        />
-        <ToolInput
-          type="number"
-          label="Scale Y"
-          value="1"
-          step={0.1}
-          name="transform.scaleY"
-        />
-      </div>
     </ToolbarSection>
   );
 };

@@ -328,7 +328,7 @@ export class NodeDispatcher {
           node.originalState = {
             parentId: node.parentId,
             inViewport: node.inViewport,
-          };
+          } as Node["originalState"];
           // Set up for dynamic mode
           node.parentId = null;
           node.inViewport = false;
@@ -448,7 +448,7 @@ export class NodeDispatcher {
    * Sync from a given viewport to all the others, including desktop.
    * BFS from that viewport, replicate to other frames, but skip removing the viewport node itself.
    */
-  syncFromViewport(sourceViewportId: string) {
+  syncFromViewport(sourceViewportId: string | number) {
     this.setState((prev) =>
       produce(prev, (draft) => {
         const sourceSubtree = getSubtree(draft.nodes, sourceViewportId);
@@ -483,7 +483,7 @@ export class NodeDispatcher {
               style: { ...srcNode.style },
             };
 
-            const oldVnode = oldMap.get(srcNode.sharedId);
+            const oldVnode = oldMap.get(srcNode.sharedId as string);
             if (oldVnode?.independentStyles) {
               for (const prop of Object.keys(oldVnode.style)) {
                 if (oldVnode.independentStyles[prop]) {
@@ -517,10 +517,7 @@ export class NodeDispatcher {
     );
   }
 }
-/**
- * Returns all descendants of `rootId` (excluding the root itself),
- * skipping placeholder nodes. Uses BFS or DFS; BFS shown here.
- */
+
 function getSubtree(
   nodes: Node[],
   rootId: string | number,
@@ -549,22 +546,4 @@ function getSubtree(
     }
   }
   return result;
-}
-function findNodeBySharedId(
-  allNodes: Node[],
-  viewportId: string | number,
-  sharedId: string
-): Node | undefined {
-  return allNodes.find((n) => {
-    if (n.sharedId !== sharedId) return false;
-
-    let current: Node | undefined = n;
-    while (current) {
-      if (current.id === viewportId) {
-        return true;
-      }
-      current = allNodes.find((cand) => cand.id === current!.parentId);
-    }
-    return false;
-  });
 }

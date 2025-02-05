@@ -87,7 +87,7 @@ export const ContextMenu = () => {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {menuItems.map((item, index) => (
+        {menuItems.map((item) => (
           <div
             key={item.label}
             className="px-3 py-1.5 hover:bg-[var(--bg-hover)] cursor-pointer flex justify-between items-center text-[var(--text-primary)] text-sm"

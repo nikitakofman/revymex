@@ -2,10 +2,13 @@ import { useBuilder } from "@/builder/context/builderState";
 import {
   findIndexWithinParent,
   findParentViewport,
+  getCalibrationAdjustedPosition,
   isWithinViewport,
 } from "./utils";
 import { useRef } from "react";
 import { nanoid } from "nanoid";
+import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useAutoScroll } from "../hooks/useAutoScroll";
 
 export const useMouseUp = () => {
   const {
@@ -19,11 +22,14 @@ export const useMouseUp = () => {
   } = useBuilder();
 
   const originalIndexRef = useRef<number | null>(null);
+  const { stopAutoScroll } = useAutoScroll();
 
-  return (e: MouseEvent) => {
+  return () => {
     if (!dragState.isDragging || !dragState.draggedNode) {
       return;
     }
+
+    stopAutoScroll();
 
     const draggedNode = dragState.draggedNode.node;
     const realNodeId = draggedNode.id;
@@ -51,7 +57,7 @@ export const useMouseUp = () => {
             transform: "",
             left: "",
             top: "",
-          },
+          } as Node["style"],
         };
 
         if (targetFrame?.dynamicParentId) {
@@ -96,19 +102,12 @@ export const useMouseUp = () => {
     if (placeholderIndex !== -1) {
       const placeholderId = nodeState.nodes[placeholderIndex].id;
       const placeholderNode = nodeState.nodes[placeholderIndex];
-
-      console.log("REODERING");
-
-      console.log("placeholderId", placeholderId);
-      console.log("placeholderNode", placeholderNode);
       // Get target position from placeholder
       const targetIndex = findIndexWithinParent(
         nodeState.nodes.filter((n) => n.id !== draggedNode.id), // Filter out dragged node
         placeholderNode.id,
         placeholderNode.parentId
       );
-
-      console.log("tazret", targetIndex);
 
       nodeDisp.removeNode(placeholderId);
       nodeDisp.removeNode(realNodeId);
@@ -136,41 +135,46 @@ export const useMouseUp = () => {
       const itemWidth = parseInt(draggedNode.style.width as string) || 150;
       const itemHeight = parseInt(draggedNode.style.height as string) || 150;
 
-      const relativeX = dropX! - containerRect!.left;
-      const relativeY = dropY! - containerRect!.top;
-
-      const adjustedX =
-        (relativeX - transform.x) / transform.scale - itemWidth / 2;
-      const adjustedY =
-        (relativeY - transform.y) / transform.scale - itemHeight / 2;
+      // Calculate centered position by subtracting half width/height
+      const centeredX = dropX! - itemWidth / 2;
+      const centeredY = dropY! - itemHeight / 2;
 
       const newNode = {
         ...draggedNode,
         style: {
           ...draggedNode.style,
           position: "absolute",
-          left: `${adjustedX}px`,
-          top: `${adjustedY}px`,
-        },
+          left: `${centeredX}px`,
+          top: `${centeredY}px`,
+        } as Node["style"],
       };
 
       if (dragState.dynamicModeNodeId) {
-        newNode.dynamicPosition = { x: adjustedX, y: adjustedY };
+        newNode.dynamicPosition = { x: centeredX, y: centeredY };
         newNode.dynamicParentId = dragState.dynamicModeNodeId;
       }
+
+      console.log("IN HERE I DROP FROM CANVAS");
 
       nodeDisp.addNode(newNode, null, null, false);
     } else if (containerRef.current) {
       const rect = document
         .querySelector(`[data-node-id="${realNodeId}"]`)
         ?.getBoundingClientRect();
-      if (!rect) return;
 
       const containerRect = containerRef.current.getBoundingClientRect();
-      const finalX =
-        (rect.left - containerRect.left - transform.x) / transform.scale;
-      const finalY =
-        (rect.top - containerRect.top - transform.y) / transform.scale;
+      let finalX =
+        (rect!.left - containerRect.left - transform.x) / transform.scale;
+      let finalY =
+        (rect!.top - containerRect.top - transform.y) / transform.scale;
+
+      const adjustedPosition = getCalibrationAdjustedPosition(
+        { x: finalX, y: finalY },
+        draggedNode.style.rotate,
+        transform
+      );
+      finalX = adjustedPosition.x;
+      finalY = adjustedPosition.y;
 
       if (dragState.dynamicModeNodeId) {
         nodeDisp.updateDynamicPosition(draggedNode.id, {
@@ -183,6 +187,11 @@ export const useMouseUp = () => {
           });
         }
       }
+
+      setNodeStyle(
+        { position: "absolute", left: `${finalX}px`, top: `${finalY}px` },
+        [realNodeId]
+      );
 
       nodeDisp.moveNode(realNodeId, false, {
         newPosition: { x: finalX, y: finalY },

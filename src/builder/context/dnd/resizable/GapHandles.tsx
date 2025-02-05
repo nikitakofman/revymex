@@ -1,25 +1,26 @@
-import React from "react";
+import React, { useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 
-interface GapHandlesProps {
-  node: Node;
-  isSelected: boolean;
-  isMovingCanvas: boolean;
-  isResizing: boolean;
-  elementRef: React.RefObject<HTMLDivElement>;
-  transform: { scale: number };
-}
-
-export const GapHandles: React.FC<GapHandlesProps> = ({
+export const GapHandles = ({
   node,
   isSelected,
-  isMovingCanvas,
-  isResizing,
   elementRef,
-  transform,
+}: {
+  node: Node;
+  isSelected: boolean;
+  elementRef: React.RefObject<HTMLDivElement>;
 }) => {
-  const { dragState, setNodeStyle, nodeState, dragDisp } = useBuilder();
+  const {
+    setNodeStyle,
+    nodeState,
+    dragDisp,
+    transform,
+    setIsAdjustingGap,
+    isResizing,
+    isMovingCanvas,
+  } = useBuilder();
+  const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
 
   const startAdjustingGap = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -27,7 +28,6 @@ export const GapHandles: React.FC<GapHandlesProps> = ({
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const currentSelection = [...dragState.selectedIds];
     const currentGap = parseInt(
       getComputedStyle(elementRef.current!).gap || "0"
     );
@@ -44,6 +44,8 @@ export const GapHandles: React.FC<GapHandlesProps> = ({
       moveEvent.preventDefault();
       moveEvent.stopPropagation();
 
+      setIsAdjustingGap(true);
+
       const deltaX = (moveEvent.clientX - startX) / transform.scale;
       const deltaY = (moveEvent.clientY - startY) / transform.scale;
       const delta = isHorizontal ? deltaX : deltaY;
@@ -57,9 +59,9 @@ export const GapHandles: React.FC<GapHandlesProps> = ({
 
       setNodeStyle({ gap: `${Math.round(newGap)}px` }, [node.id], true);
 
-      if (dragState.selectedIds.length === 0) {
-        dragState.selectedIds = currentSelection;
-      }
+      // if (dragState.selectedIds.length === 0) {
+      //   dragState.selectedIds = currentSelection;
+      // }
     };
 
     const handleMouseUp = () => {
@@ -67,9 +69,13 @@ export const GapHandles: React.FC<GapHandlesProps> = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
 
-      if (dragState.selectedIds.length === 0) {
-        dragState.selectedIds = currentSelection;
-      }
+      setIsAdjustingGap(false);
+
+      window.dispatchEvent(new Event("resize"));
+
+      // dragDisp.setPartialDragState({ selectedIds: currentSelection });
+
+      // console.log("dragState  ", dragState.selectedIds);
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -104,7 +110,7 @@ export const GapHandles: React.FC<GapHandlesProps> = ({
   if (frameChildren.length < 2) return null;
 
   const frameRect = frameElement.getBoundingClientRect();
-  const gapHandles = [];
+  const gapElements = [];
 
   for (let i = 0; i < frameChildren.length - 1; i++) {
     const firstElement = frameChildren[i];
@@ -113,39 +119,85 @@ export const GapHandles: React.FC<GapHandlesProps> = ({
     if (isColumn) {
       const firstElementBottomEdge = firstElement.rect.bottom;
       const secondElementTopEdge = secondElement.rect.top;
+      const gapHeight = secondElementTopEdge - firstElementBottomEdge;
       const centerY = (firstElementBottomEdge + secondElementTopEdge) / 2;
-      const relativeCenter = (centerY - frameRect.top) / transform.scale;
+      const relativeTop =
+        (firstElementBottomEdge - frameRect.top) / transform.scale;
+      const gapHeightScaled = gapHeight / transform.scale;
 
-      gapHandles.push(
+      gapElements.push(
         <div
-          key={`gap-${firstElement.id}-${secondElement.id}`}
-          className="w-10 h-2 bg-pink-400 absolute cursor-row-resize"
+          key={`gap-bg-${firstElement.id}-${secondElement.id}`}
+          className="absolute pointer-events-none  transition-opacity duration-150"
+          style={{
+            top: `${relativeTop}px`,
+            left: 0,
+            width: "100%",
+            height: `${gapHeightScaled}px`,
+            backgroundColor: "rgba(244, 114, 182, 0.1)",
+            opacity: hoveredGapIndex === i ? 1 : 0,
+          }}
+        />
+      );
+
+      gapElements.push(
+        <div
+          key={`gap-handle-${firstElement.id}-${secondElement.id}`}
+          className="w-10 h-2 bg-pink-400 absolute rounded-t-full rounded-b-full cursor-row-resize pointer-events-auto"
           style={{
             transform: "translateY(-50%)",
-            top: `${relativeCenter}px`,
+            top: `${(centerY - frameRect.top) / transform.scale}px`,
+            left: "50%",
+            marginLeft: "-20px",
+            zIndex: 1,
           }}
           onMouseDown={startAdjustingGap}
+          onMouseEnter={() => setHoveredGapIndex(i)}
+          onMouseLeave={() => setHoveredGapIndex(null)}
         />
       );
     } else {
       const firstElementRightEdge = firstElement.rect.right;
       const secondElementLeftEdge = secondElement.rect.left;
+      const gapWidth = secondElementLeftEdge - firstElementRightEdge;
       const centerX = (firstElementRightEdge + secondElementLeftEdge) / 2;
-      const relativeCenter = (centerX - frameRect.left) / transform.scale;
+      const relativeLeft =
+        (firstElementRightEdge - frameRect.left) / transform.scale;
+      const gapWidthScaled = gapWidth / transform.scale;
 
-      gapHandles.push(
+      gapElements.push(
         <div
-          key={`gap-${firstElement.id}-${secondElement.id}`}
-          className="h-10 w-2 bg-pink-400 absolute cursor-col-resize"
+          key={`gap-bg-${firstElement.id}-${secondElement.id}`}
+          className="absolute pointer-events-none transition-opacity duration-150"
+          style={{
+            left: `${relativeLeft}px`,
+            top: 0,
+            width: `${gapWidthScaled}px`,
+            height: "100%",
+            backgroundColor: "rgba(244, 114, 182, 0.1)",
+            opacity: hoveredGapIndex === i ? 1 : 0,
+          }}
+        />
+      );
+
+      gapElements.push(
+        <div
+          key={`gap-handle-${firstElement.id}-${secondElement.id}`}
+          className="h-10 w-2 bg-pink-400 absolute rounded-t-full rounded-b-full cursor-col-resize pointer-events-auto"
           style={{
             transform: "translateX(-50%)",
-            left: `${relativeCenter}px`,
+            left: `${(centerX - frameRect.left) / transform.scale}px`,
+            top: "50%",
+            marginTop: "-20px",
+            zIndex: 1,
           }}
           onMouseDown={startAdjustingGap}
+          onMouseEnter={() => setHoveredGapIndex(i)}
+          onMouseLeave={() => setHoveredGapIndex(null)}
         />
       );
     }
   }
 
-  return <>{gapHandles}</>;
+  return <>{gapElements}</>;
 };

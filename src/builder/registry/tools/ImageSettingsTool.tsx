@@ -1,15 +1,9 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import React, { useState, useCallback } from "react";
 import { ImageIcon, Search, RefreshCw } from "lucide-react";
-import {
-  ToolContainer,
-  ToolSection,
-  ToolLabel,
-  ToolButton,
-  ToolInput,
-  ToolSelect,
-  ToolGrid,
-} from "./_components/tool-ui-kit";
+import { ToolInput } from "./_components/ToolInput";
+import { ToolbarSection } from "./_components/test-ui";
+import { ToolSelect } from "./_components/ToolSelect";
+import { useBuilder } from "@/builder/context/builderState";
 
 interface FilterValues {
   blur: number;
@@ -46,37 +40,22 @@ function ImageSearchModal({ onSelectImage, onClose }: ImageSearchModalProps) {
   const [query, setQuery] = useState("minimal");
   const [images, setImages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loaderRef = useRef<HTMLDivElement>(null);
 
-  const fetchImages = async (
-    searchQuery: string = "minimal",
-    pageNum: number = 1
-  ) => {
-    if (!hasMore || loading) return;
+  const fetchImages = async (searchQuery: string = "minimal") => {
+    if (loading) return;
 
     setLoading(true);
     try {
       const response = await fetch(
-        `https://api.unsplash.com/search/photos?query=${searchQuery}&per_page=20&page=${pageNum}`,
+        `https://api.unsplash.com/search/photos?query=${searchQuery}&per_page=20&page=1`,
         {
           headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` },
         }
       );
       const data = await response.json();
-      const newImages = data.results;
-
-      if (pageNum === 1) {
-        setImages(newImages);
-      } else {
-        setImages((prev) => [...prev, ...newImages]);
-      }
-      setHasMore(newImages.length > 0);
+      setImages(data.results);
     } catch (error) {
       console.error("Error fetching images:", error);
-      setHasMore(false);
     } finally {
       setLoading(false);
     }
@@ -92,64 +71,24 @@ function ImageSearchModal({ onSelectImage, onClose }: ImageSearchModalProps) {
     }
   };
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchImages(query, 1);
-    return () => controller.abort();
-  }, [query]);
-
-  useEffect(() => {
-    if (page > 1) {
-      fetchImages(query, page);
-    }
-  }, [page, query]);
-
-  useEffect(() => {
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loading && hasMore) {
-          setPage((prev) => prev + 1);
-        }
-      },
-      { threshold: 0.5 }
-    );
-
-    if (loaderRef.current) {
-      observerRef.current.observe(loaderRef.current);
-    }
-
-    return () => {
-      if (observerRef.current && loaderRef.current) {
-        observerRef.current.unobserve(loaderRef.current);
-      }
-    };
-  }, [loading, hasMore]);
-
   return (
-    <div className="p-4 bg-[--bg-surface] rounded-[--radius-md] shadow-[--shadow-lg]">
-      <div className="flex gap-2 mb-4">
+    <div className="mt-2 p-3 bg-[--bg-surface] rounded-lg border border-[--border-default]">
+      <div className="flex gap-2 mb-3">
         <ToolInput
           value={query}
-          onChange={(value) => {
-            setQuery(value);
-            setPage(1);
-            setImages([]);
-          }}
+          onChange={(value) => setQuery(value)}
           placeholder="Search images..."
         />
-        <ToolButton
-          onClick={() => {
-            setPage(1);
-            setImages([]);
-            fetchImages(query, 1);
-          }}
+        <button
+          className="px-3 py-1.5 bg-[--bg-default] hover:bg-[--bg-hover] rounded-md text-sm flex items-center transition-colors"
+          onClick={() => fetchImages(query)}
         >
-          <Search className="w-4 h-4 mr-2" />
+          <Search className="w-3.5 h-3.5 mr-1.5" />
           Search
-        </ToolButton>
+        </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-1.5">
         {images.map((image) => (
           <div
             key={image.id}
@@ -163,19 +102,18 @@ function ImageSearchModal({ onSelectImage, onClose }: ImageSearchModalProps) {
             <img
               src={image.urls.small}
               alt={image.alt_description}
-              className="w-full h-full object-cover rounded-[--radius-sm]"
+              className="w-full h-full object-cover rounded-md"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all rounded-[--radius-sm]" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all rounded-md" />
           </div>
         ))}
       </div>
 
       {loading && (
-        <div className="flex justify-center mt-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[--accent]" />
+        <div className="flex justify-center mt-3">
+          <RefreshCw className="w-5 h-5 animate-spin text-[--text-default]" />
         </div>
       )}
-      <div ref={loaderRef} className="h-4" />
     </div>
   );
 }
@@ -190,7 +128,7 @@ export function ImageSettings() {
       setNodeStyle({ src: imageUrl }, undefined, true);
       setShowImageSearch(false);
     },
-    [dragState.selectedIds, setNodeStyle]
+    [setNodeStyle]
   );
 
   const handleFilterChange = (key: keyof FilterValues, value: number) => {
@@ -218,60 +156,73 @@ export function ImageSettings() {
   };
 
   return (
-    <ToolContainer>
-      <ToolSection>
-        <ToolLabel>Image Source</ToolLabel>
-        <ToolButton onClick={() => setShowImageSearch(true)} className="w-full">
-          <ImageIcon className="w-4 h-4 mr-2" />
-          Choose Image
-        </ToolButton>
+    <>
+      <ToolbarSection title="Image">
+        <div className="space-y-4">
+          <button
+            onClick={() => setShowImageSearch(true)}
+            className="w-full px-3 py-1.5 bg-[--bg-default] hover:bg-[--bg-hover] rounded-md text-sm flex items-center justify-center transition-colors"
+          >
+            <ImageIcon className="w-3.5 h-3.5 mr-1.5" />
+            Choose Image
+          </button>
 
-        {showImageSearch && (
-          <ImageSearchModal
-            onSelectImage={handleImageSelect}
-            onClose={() => setShowImageSearch(false)}
-          />
-        )}
-      </ToolSection>
-
-      <ToolSection>
-        <div className="flex items-center justify-between">
-          <ToolLabel>Filters</ToolLabel>
-          <ToolButton variant="default" onClick={resetFilters}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Reset
-          </ToolButton>
+          {showImageSearch && (
+            <ImageSearchModal
+              onSelectImage={handleImageSelect}
+              onClose={() => setShowImageSearch(false)}
+            />
+          )}
         </div>
+      </ToolbarSection>
 
-        <div className="grid grid-cols-2 gap-2">
+      <ToolbarSection title="Filters">
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button
+              className="px-3 py-1.5 bg-[--bg-default] hover:bg-[--bg-hover] rounded-md text-sm flex items-center transition-colors"
+              onClick={resetFilters}
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              Reset
+            </button>
+          </div>
+
           {Object.entries(filters).map(([key, value]) => (
             <ToolInput
               key={key}
               label={key}
+              name={key}
               type="number"
               value={value}
               onChange={(value) =>
                 handleFilterChange(key as keyof FilterValues, parseFloat(value))
               }
+              showUnit
             />
           ))}
         </div>
-      </ToolSection>
+      </ToolbarSection>
 
-      <ToolSection>
-        <ToolSelect
-          label="Object Fit"
-          options={[
-            { label: "Cover", value: "cover" },
-            { label: "Contain", value: "contain" },
-            { label: "Fill", value: "fill" },
-            { label: "Scale Down", value: "scale-down" },
-          ]}
-          onChange={(value) =>
-            setNodeStyle({ objectFit: value }, dragState.selectedIds)
-          }
-        />
-      </ToolSection>
-    </ToolContainer>
+      <ToolbarSection title="Display">
+        <div className="space-y-4">
+          <ToolSelect
+            label="Object Fit"
+            name="objectFit"
+            options={[
+              { label: "Cover", value: "cover" },
+              { label: "Contain", value: "contain" },
+              { label: "Fill", value: "fill" },
+              { label: "Scale Down", value: "scale-down" },
+            ]}
+            onChange={(value) =>
+              setNodeStyle({ objectFit: value }, dragState.selectedIds)
+            }
+          />
+        </div>
+      </ToolbarSection>
+    </>
   );
 }
+
+export default ImageSettings;

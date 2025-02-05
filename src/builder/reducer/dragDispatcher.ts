@@ -11,7 +11,12 @@ export interface DropInfo {
 
 export interface DraggedNode {
   node: Node;
-  offset: { x: number; y: number; mouseX: number; mouseY: number };
+  offset: {
+    x: number;
+    y: number;
+    mouseX: number;
+    mouseY: number;
+  };
 }
 
 export interface SnapGuideLine {
@@ -21,7 +26,7 @@ export interface SnapGuideLine {
 
 interface StyleHelper {
   show: boolean;
-  type: "dimensions" | "gap" | null;
+  type: "dimensions" | "gap" | "rotate" | null;
   position: { x: number; y: number };
   value?: number;
   dimensions?: {
@@ -40,7 +45,14 @@ export interface DragState {
   placeholderId: string | number | null;
   originalIndex: number | null;
   lineIndicator: LineIndicatorState;
-  dragSource: "canvas" | "viewport" | "toolbar" | "parent" | "dynamic" | null;
+  dragSource:
+    | "canvas"
+    | "viewport"
+    | "toolbar"
+    | "parent"
+    | "dynamic"
+    | "gripHandle"
+    | null;
   snapGuides: SnapGuideLine[];
   originalParentId: string | number | null;
   styleHelper: StyleHelper;
@@ -51,6 +63,10 @@ export interface DragState {
     y: number;
     nodeId: string | null;
   } | null;
+  gripHandleDirection: "horizontal" | "vertical" | null;
+  hoverNodeId: string | number | null;
+  dragPositions: { x: number; y: number };
+  isOverCanvas: boolean;
 }
 
 export class DragDispatcher {
@@ -76,7 +92,14 @@ export class DragDispatcher {
 
   setDraggedNode(
     node: Node,
-    offset: { x: number; y: number; mouseX: number; mouseY: number }
+    offset: {
+      x: number;
+      y: number;
+      mouseX: number;
+      mouseY: number;
+      parentRotation?: number;
+      elementQuery?: object;
+    }
   ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -152,7 +175,7 @@ export class DragDispatcher {
     );
   }
 
-  setContextMenu(x: number, y: number, nodeId: string) {
+  setContextMenu(x: number, y: number, nodeId: string | null) {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.contextMenu = { show: true, x, y, nodeId };
@@ -217,7 +240,7 @@ export class DragDispatcher {
   }
 
   updateStyleHelper(params: {
-    type: "dimensions" | "gap";
+    type: "dimensions" | "gap" | "rotate";
     position: { x: number; y: number };
     value?: number;
     dimensions?: { width: number; height: number; unit: "px" | "%" };
@@ -263,6 +286,32 @@ export class DragDispatcher {
     );
   }
 
+  setDragPositions(x: number, y: number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        if (draft.draggedNode) {
+          draft.dragPositions = { x, y };
+        }
+      })
+    );
+  }
+
+  setIsOverCanvas(isOverCanvas: boolean) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.isOverCanvas = isOverCanvas;
+      })
+    );
+  }
+
+  setHoverNodeId(nodeId: string | number | null) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.hoverNodeId = nodeId;
+      })
+    );
+  }
+
   resetDragState() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -281,6 +330,8 @@ export class DragDispatcher {
           value: undefined,
           dimensions: undefined,
         };
+        draft.isOverCanvas = false;
+        draft.dragPositions = { x: 0, y: 0 };
       })
     );
   }

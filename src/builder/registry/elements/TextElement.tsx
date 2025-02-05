@@ -7,7 +7,6 @@ const TextElement = ({ node }: ElementProps) => {
   const connect = useConnect();
 
   const style = {
-    ...node.style,
     fontSize: "30px",
     fontWeight: "bold",
     color: "black",

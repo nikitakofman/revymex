@@ -24,7 +24,7 @@ export const ToolbarButton = ({ icon, onClick, active, children }) => {
 
 export const ToolbarLabel = ({ children }) => {
   return (
-    <span className="text-sm font-bold text-[var(--text-secondary)]">
+    <span className="text-xs font-extrabold text-[var(--text-secondary)]">
       {children}
     </span>
   );

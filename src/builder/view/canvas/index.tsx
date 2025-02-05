@@ -7,7 +7,7 @@ import RightToolbar from "../toolbar/rightToolbar";
 import { useMouseMove } from "@/builder/context/dnd/useMouseMove";
 import { useMouseUp } from "@/builder/context/dnd/useMouseUp";
 import { LineIndicator } from "@/builder/context/dnd/LineIndicator";
-import { SnapGuides } from "@/builder/context/dnd/SnapGuides";
+import SnapGuides from "@/builder/context/dnd/SnapGuides";
 import { ToolbarDragPreview } from "@/builder/context/dnd/toolbarDragPreview";
 import { StyleUpdateHelper } from "@/builder/context/dnd/StyleUpdateHelper";
 import { ArrowConnectors } from "./ArrowConnectors";
@@ -38,14 +38,13 @@ const Canvas = () => {
   }, [dragState.isDragging]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    // Only clear selection if clicking directly on the canvas background
     if (e.target === containerRef.current || e.target === contentRef.current) {
       dragDisp.clearSelection();
     }
   };
 
   return (
-    <div className="fixed inset-0 flex overflow-hidden bg-[#1D1D1D]">
+    <div className="fixed inset-0 flex overflow-hidden bg-[var(--bg-canvas)]">
       <ViewportDevTools />
       <Toolbar />
       <ToolbarDragPreview />
@@ -56,15 +55,23 @@ const Canvas = () => {
           willChange: "transform",
           transform: "translateZ(0)",
           backfaceVisibility: "hidden",
+          isolation: "isolate",
         }}
         className="w-full h-full canvas relative"
         onClick={handleCanvasClick}
       >
         <SnapGuides />
         <StyleUpdateHelper />
+        {/* <DragLayer /> */}
         {!isMovingCanvas && <ArrowConnectors />}
 
-        <div ref={contentRef} className="relative">
+        <div
+          ref={contentRef}
+          className="relative"
+          style={{
+            isolation: "isolate",
+          }}
+        >
           {dragState.dynamicModeNodeId ? (
             <RenderNodes filter="dynamicMode" />
           ) : (

@@ -1,9 +1,8 @@
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useCallback, RefObject } from "react";
 import { useBuilder } from "@/builder/context/builderState";
-import { ConnectionHandle } from "../ConnectionHandle";
-import { ResizeHandles } from "./ResizeHandles";
-import { GapHandles } from "./GapHandles";
+
 import { Direction, ResizableWrapperProps } from "../utils";
+import { VisualHelpers } from "./VisualHelpers";
 
 export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   node,
@@ -15,22 +14,14 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     nodeDisp,
     dragState,
     transform,
-    isMovingCanvas,
     setNodeStyle,
     dragDisp,
+    setIsResizing,
   } = useBuilder();
-  const elementRef = useRef<HTMLDivElement>(null);
-  const [isResizing, setIsResizing] = useState(false);
+  const elementRef = useRef<HTMLDivElement | null>(
+    null
+  ) as RefObject<HTMLDivElement>;
   const isSelected = dragState.selectedIds.includes(node.id);
-
-  const getBorderWidth = () => {
-    if (!elementRef.current) return 0;
-    try {
-      return parseFloat(getComputedStyle(elementRef.current).borderWidth);
-    } catch (e) {
-      return 0;
-    }
-  };
 
   const handleResizeStart = useCallback(
     (e: React.PointerEvent, direction: Direction) => {
@@ -48,8 +39,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       const unit = computedStyle.width.includes("%") ? "%" : "px";
       const startX = e.clientX;
       const startY = e.clientY;
-
-      console.log("unit", unit);
 
       setIsResizing(true);
 
@@ -171,55 +160,23 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     ]
   );
 
-  return React.cloneElement(children, {
-    ref: elementRef,
-    style: {
-      ...children.props.style,
-      pointerEvents: isSelected ? "all" : undefined,
-    },
-    children: (
-      <>
-        {children.props.children}
-        {!isMovingCanvas && isSelected && (
-          <div
-            className="absolute pointer-events-none"
-            style={{
-              position: "absolute",
-              inset: `-${getBorderWidth()}px`,
-              border:
-                node.isDynamic || dragState.dynamicModeNodeId
-                  ? `${2 / transform.scale}px solid var(--accent-secondary)`
-                  : `${2 / transform.scale}px solid #3b82f6`,
-              zIndex: 999,
-              borderRadius: 0,
-              boxSizing: "content-box",
-              pointerEvents: "none",
-            }}
-          />
-        )}
-        {isSelected && !isResizing && !isMovingCanvas && (
-          <>
-            <ResizeHandles
-              node={node}
-              transform={transform}
-              dragState={dragState}
-              getBorderWidth={getBorderWidth}
-              handleResizeStart={handleResizeStart}
-            />
-            {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) && (
-              <GapHandles
-                node={node}
-                isSelected={isSelected}
-                isMovingCanvas={isMovingCanvas}
-                isResizing={isResizing}
-                elementRef={elementRef}
-                transform={transform}
-              />
-            )}
-            <ConnectionHandle node={node} transform={transform} />
-          </>
-        )}
-      </>
-    ),
-  } as React.HTMLAttributes<HTMLElement>);
+  return (
+    <>
+      {React.cloneElement(children, {
+        ref: elementRef,
+        style: {
+          ...children.props.style,
+          pointerEvents: isSelected ? "all" : undefined,
+        },
+        children: children.props.children,
+      } as React.HTMLAttributes<HTMLElement>)}
+
+      <VisualHelpers
+        elementRef={elementRef}
+        node={node}
+        isSelected={isSelected}
+        handleResizeStart={handleResizeStart}
+      />
+    </>
+  );
 };

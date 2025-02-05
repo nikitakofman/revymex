@@ -1,13 +1,18 @@
+import { useBuilder } from "@/builder/context/builderState";
 import { ToolbarSection } from "./_components/test-ui";
 import { ToolInput } from "./_components/ToolInput";
-import { ToolSelect } from "./_components/test-ui";
-import { useCallback, useState } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { ToolSelect } from "./_components/ToolSelect";
+import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
+import PlaceholderToolInput from "./_components/ToolInputPlaceholder";
 
 export const PositionTool = () => {
-  const { dragState, nodeState } = useBuilder();
-  const [xUnit, setXUnit] = useState("px");
-  const [yUnit, setYUnit] = useState("px");
+  const { dragState } = useBuilder();
+
+  const positionStyle = useComputedStyle({
+    property: "position",
+    parseValue: false,
+    defaultValue: "static",
+  });
 
   const positionOptions = [
     { label: "Default", value: "static" },
@@ -16,55 +21,35 @@ export const PositionTool = () => {
     { label: "Fixed", value: "fixed" },
   ];
 
-  const getPositionType = useCallback(() => {
-    if (!dragState.selectedIds.length) return "static";
+  const position = positionStyle.mixed
+    ? "static"
+    : (positionStyle.value as string);
+  const showCoordinates = position === "absolute" || position === "fixed";
 
-    const element = document.querySelector(
-      `[data-node-id="${dragState.selectedIds[0]}"]`
-    ) as HTMLElement;
-    if (!element) return "static";
-
-    const computedStyle = window.getComputedStyle(element);
-    return computedStyle.position || "static";
-  }, [dragState.selectedIds, nodeState]);
-
-  const positionType = getPositionType();
-  const showCoordinates =
-    positionType === "absolute" || positionType === "fixed";
+  const isDragging = dragState.dragPositions && dragState.isDragging;
 
   return (
     <ToolbarSection title="Position">
       <div className="flex flex-col gap-3">
-        {/* Position Type */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-[var(--text-secondary)]">Type</span>
-          <ToolSelect
-            value={positionType}
-            onChange={(value) => {}}
-            options={positionOptions}
-          />
-        </div>
-
-        {/* Only show X and Y for absolute/fixed positioning */}
-        {showCoordinates && (
+        {isDragging ? (
           <div className="grid grid-cols-2 gap-3">
-            <ToolInput
-              type="number"
-              label="X"
-              value="0"
-              name="left"
-              unit={xUnit}
-              onUnitChange={setXUnit}
-            />
-            <ToolInput
-              type="number"
-              label="Y"
-              value="0"
-              name="top"
-              unit={yUnit}
-              onUnitChange={setYUnit}
-            />
+            <PlaceholderToolInput value={dragState.dragPositions.x} label="x" />
+            <PlaceholderToolInput value={dragState.dragPositions.y} label="y" />
           </div>
+        ) : (
+          <>
+            <ToolSelect
+              label="Type"
+              name="position"
+              options={positionOptions}
+            />
+            {showCoordinates && (
+              <div className="grid grid-cols-2 gap-3">
+                <ToolInput type="number" label="X" name="left" />
+                <ToolInput type="number" label="Y" name="top" />
+              </div>
+            )}
+          </>
         )}
       </div>
     </ToolbarSection>

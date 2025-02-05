@@ -1,29 +1,36 @@
 import { useBuilder } from "@/builder/context/builderState";
 import {
-  calculateDragPositions,
-  calculateDragTransform,
   getDropPosition,
-  computeSnapAndGuides,
   computeFrameDropIndicator,
   computeSiblingReorderResult,
   getFilteredElementsUnderMouseDuringDrag,
+  getCalibrationAdjustedPosition,
 } from "./utils";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import { EDGE_SIZE, useAutoScroll } from "../hooks/useAutoScroll";
 
 export const useMouseMove = () => {
   const {
     dragState,
     transform,
     contentRef,
-    setNodeStyle,
     nodeDisp,
     dragDisp,
     nodeState,
+    containerRef,
   } = useBuilder();
 
+  const { startAutoScroll, updateScrollPosition, stopAutoScroll } =
+    useAutoScroll();
   const prevMousePosRef = useRef({ x: 0, y: 0 });
-
   const originalIndexRef = useRef<number | null>(null);
+  const isAutoScrollingRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      stopAutoScroll();
+    };
+  }, [stopAutoScroll]);
 
   return (e: MouseEvent) => {
     e.preventDefault();
@@ -31,31 +38,122 @@ export const useMouseMove = () => {
     if (
       !dragState.isDragging ||
       !dragState.draggedNode ||
-      !contentRef.current
+      !contentRef.current ||
+      !containerRef.current
     ) {
+      if (isAutoScrollingRef.current) {
+        stopAutoScroll();
+        isAutoScrollingRef.current = false;
+      }
       return;
     }
 
     const draggedNode = dragState.draggedNode.node;
 
-    const { offset } = dragState.draggedNode;
-    const contentRect = contentRef.current.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    const rect = document
+      .querySelector(`[data-node-dragged]`)
+      ?.getBoundingClientRect();
+
+    let finalX;
+    let finalY;
+    if (rect) {
+      finalX =
+        (rect!.left - containerRect.left - transform.x) / transform.scale;
+      finalY = (rect!.top - containerRect.top - transform.y) / transform.scale;
+
+      // Apply calibration adjustment
+      const adjustedPosition = getCalibrationAdjustedPosition(
+        { x: finalX, y: finalY },
+        draggedNode.style.rotate,
+        transform
+      );
+
+      finalX = Math.round(adjustedPosition.x);
+      finalY = Math.round(adjustedPosition.y);
+
+      dragDisp.setDragPositions(finalX, finalY);
+    }
+
+    const isNearEdge =
+      e.clientX <= containerRect.left + EDGE_SIZE ||
+      e.clientX >= containerRect.right - EDGE_SIZE ||
+      e.clientY <= containerRect.top + EDGE_SIZE ||
+      e.clientY >= containerRect.bottom - EDGE_SIZE;
+
+    if (isNearEdge) {
+      if (!isAutoScrollingRef.current) {
+        startAutoScroll(e.clientX, e.clientY, containerRef.current);
+        isAutoScrollingRef.current = true;
+      } else {
+        updateScrollPosition(e.clientX, e.clientY);
+      }
+    } else if (isAutoScrollingRef.current) {
+      stopAutoScroll();
+      isAutoScrollingRef.current = false;
+    }
+
+    const canvasX =
+      (e.clientX - containerRect.left - transform.x) / transform.scale;
+    const canvasY =
+      (e.clientY - containerRect.top - transform.y) / transform.scale;
+
+    if (dragState.dragSource === "gripHandle") {
+      const draggedElement = document.querySelector(
+        `[data-node-id="${draggedNode.id}"]`
+      ) as HTMLElement | null;
+
+      if (!draggedElement) return;
+
+      const parentElement = document.querySelector(
+        `[data-node-id="${draggedNode.parentId}"]`
+      );
+
+      if (parentElement) {
+        const reorderResult = computeSiblingReorderResult(
+          draggedNode,
+          nodeState.nodes,
+          parentElement,
+          e.clientX,
+          e.clientY,
+          prevMousePosRef.current.x,
+          prevMousePosRef.current.y
+        );
+        if (reorderResult) {
+          const placeholder = nodeState.nodes.find(
+            (n) => n.type === "placeholder"
+          );
+          if (placeholder) {
+            nodeDisp.moveNode(placeholder.id, true, {
+              targetId: reorderResult.targetId,
+              position: reorderResult.position,
+            });
+          }
+        }
+      }
+
+      dragDisp.setDropInfo(
+        dragState.dropInfo.targetId,
+        dragState.dropInfo.position,
+        canvasX,
+        canvasY
+      );
+      return;
+    }
 
     if (dragState.draggedItem) {
       const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-
       const frameElement = elementsUnder.find(
         (el) => el.getAttribute("data-node-type") === "frame"
       );
 
       if (frameElement) {
-        console.log("hovering over frame");
         const frameId = frameElement.getAttribute("data-node-id")!;
         const frameNode = nodeState.nodes.find((n) => String(n.id) === frameId);
 
-        // Only prevent dropping into dynamic frames when not in dynamic mode
         if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
-          dragDisp.setDropInfo(null, null, e.clientX, e.clientY);
+          dragDisp.setDropInfo(null, null, canvasX, canvasY);
           return;
         }
 
@@ -67,17 +165,13 @@ export const useMouseMove = () => {
         const frameChildren = nodeState.nodes.filter(
           (child) => child.parentId === frameId
         );
-
         const childRects = frameChildren
           .map((childNode) => {
             const el = document.querySelector(
               `[data-node-id="${childNode.id}"]`
             ) as HTMLElement | null;
             return el
-              ? {
-                  id: childNode.id,
-                  rect: el.getBoundingClientRect(),
-                }
+              ? { id: childNode.id, rect: el.getBoundingClientRect() }
               : null;
           })
           .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
@@ -89,12 +183,12 @@ export const useMouseMove = () => {
           e.clientY
         );
 
-        console.log("result", result);
-
         if (result) {
           dragDisp.setDropInfo(
             result.dropInfo.targetId,
-            result.dropInfo.position
+            result.dropInfo.position,
+            canvasX,
+            canvasY
           );
           if (result.lineIndicator.show) {
             dragDisp.setLineIndicator(result.lineIndicator);
@@ -106,7 +200,11 @@ export const useMouseMove = () => {
         prevMousePosRef.current = { x: e.clientX, y: e.clientY };
         return;
       } else {
-        dragDisp.setDropInfo(null, null, e.clientX, e.clientY);
+        console.log("CANVAS X: IN MOUSE MOVE ", canvasX);
+
+        console.log("CANVAS Y: IN MOUSE MOVE ", canvasY);
+
+        dragDisp.setDropInfo(null, null, canvasX, canvasY);
       }
     }
 
@@ -115,65 +213,14 @@ export const useMouseMove = () => {
       draggedNode.id,
       "canvas"
     );
-
     const draggedElement = document.querySelector(
       `[data-node-id="${draggedNode.id}"]`
     ) as HTMLElement | null;
     if (!draggedElement) return;
 
-    const { cursorX, cursorY } = calculateDragPositions(
-      e,
-      draggedElement,
-      contentRect,
-      transform
-    );
-    const { x, y } = calculateDragTransform(
-      cursorX,
-      cursorY,
-      offset.x,
-      offset.y,
-      offset.mouseX,
-      offset.mouseY
-    );
-
-    let newLeft = offset.x + x;
-    let newTop = offset.y + y;
-
-    if (!draggedNode.inViewport) {
-      const { snappedLeft, snappedTop, guides } = computeSnapAndGuides(
-        newLeft,
-        newTop,
-        draggedNode,
-        nodeState.nodes,
-        dragState.dynamicModeNodeId
-      );
-      newLeft = snappedLeft;
-      newTop = snappedTop;
-      dragDisp.setSnapGuides(guides);
-    } else {
-      dragDisp.clearSnapGuides();
-    }
-
-    setNodeStyle(
-      {
-        position: "fixed",
-        left: `${newLeft}px`,
-        top: `${newTop}px`,
-        zIndex: 1000,
-      },
-      [draggedNode.id]
-    );
-
     const isReorderingNode =
       dragState.dragSource === "viewport" &&
       (draggedNode.inViewport || originalIndexRef.current !== null);
-
-    setNodeStyle({
-      position: "fixed",
-      left: `${offset.x + x}px`,
-      top: `${offset.y + y}px`,
-      zIndex: 1000,
-    });
 
     if (isReorderingNode) {
       const parentElement = document.querySelector(
@@ -187,7 +234,9 @@ export const useMouseMove = () => {
         nodeState.nodes,
         parentElement,
         e.clientX,
-        e.clientY
+        e.clientY,
+        prevMousePosRef.current.x,
+        prevMousePosRef.current.y
       );
 
       if (reorderResult) {
@@ -201,7 +250,6 @@ export const useMouseMove = () => {
           });
         }
       }
-
       dragDisp.hideLineIndicator();
     } else {
       dragDisp.hideLineIndicator();
@@ -211,14 +259,13 @@ export const useMouseMove = () => {
         return !closestNode;
       });
 
-      // First check for frame elements
       const frameElement = filteredElements.find(
         (el) => el.getAttribute("data-node-type") === "frame"
       );
 
       if (frameElement) {
         if (draggedNode.isViewport) {
-          dragDisp.setDropInfo(null, null);
+          dragDisp.setDropInfo(null, null, canvasX, canvasY);
           dragDisp.hideLineIndicator();
           return;
         }
@@ -229,9 +276,8 @@ export const useMouseMove = () => {
         );
         const frameNode = nodeState.nodes.find((n) => n.id === frameId);
 
-        // Prevent dropping into dynamic frames when not in dynamic mode
         if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
-          dragDisp.setDropInfo(null, null);
+          dragDisp.setDropInfo(null, null, canvasX, canvasY);
           dragDisp.hideLineIndicator();
           return;
         }
@@ -242,10 +288,7 @@ export const useMouseMove = () => {
               `[data-node-id="${childNode.id}"]`
             ) as HTMLElement | null;
             return el
-              ? {
-                  id: childNode.id,
-                  rect: el.getBoundingClientRect(),
-                }
+              ? { id: childNode.id, rect: el.getBoundingClientRect() }
               : null;
           })
           .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
@@ -260,7 +303,9 @@ export const useMouseMove = () => {
         if (result) {
           dragDisp.setDropInfo(
             result.dropInfo.targetId,
-            result.dropInfo.position
+            result.dropInfo.position,
+            canvasX,
+            canvasY
           );
           if (result.lineIndicator.show) {
             dragDisp.setLineIndicator(result.lineIndicator);
@@ -272,7 +317,6 @@ export const useMouseMove = () => {
         }
       }
 
-      // If not over a frame, check for other sibling elements
       const siblingElement = filteredElements.find((el) => {
         if (!el.hasAttribute("data-node-id")) return false;
         return el.getAttribute("data-node-type") !== "placeholder";
@@ -292,13 +336,14 @@ export const useMouseMove = () => {
         if (position !== "inside") {
           dragDisp.setLineIndicator(lineIndicator);
         }
-        dragDisp.setDropInfo(siblingId, position);
+        dragDisp.setDropInfo(siblingId, position, canvasX, canvasY);
       } else {
-        dragDisp.setDropInfo(null, null);
+        dragDisp.setDropInfo(null, null, canvasX, canvasY);
       }
     }
 
     if (overCanvas) {
+      dragDisp.setIsOverCanvas(true);
       const placeholder = nodeState.nodes.find((n) => n.type === "placeholder");
       if (placeholder && isReorderingNode) {
         if (originalIndexRef.current === null) {
@@ -310,34 +355,12 @@ export const useMouseMove = () => {
       }
 
       nodeDisp.moveNode(draggedNode.id, false);
-
-      setNodeStyle({
-        position: "fixed",
-        left: `${offset.x + x}px`,
-        top: `${offset.y + y}px`,
-        zIndex: 1000,
-      });
-
-      const { snappedLeft, snappedTop, guides } = computeSnapAndGuides(
-        offset.x + x,
-        offset.y + y,
-        draggedNode,
-        nodeState.nodes,
-        dragState.dynamicModeNodeId
-      );
-      setNodeStyle({
-        position: "fixed",
-        left: `${snappedLeft}px`,
-        top: `${snappedTop}px`,
-        zIndex: 1000,
-      });
-      dragDisp.setSnapGuides(guides);
-
       dragDisp.hideLineIndicator();
+
+      dragDisp.setDropInfo(null, null, canvasX, canvasY);
+
       prevMousePosRef.current = { x: e.clientX, y: e.clientY };
 
-      // Modified sync condition:
-      // Sync if we're not in dynamic mode AND (not a dynamic element OR moving from viewport)
       if (
         !dragState.dynamicModeNodeId &&
         (!draggedNode.isDynamic || draggedNode.inViewport)
