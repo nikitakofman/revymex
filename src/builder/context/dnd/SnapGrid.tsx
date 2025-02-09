@@ -1,5 +1,5 @@
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import React from "react";
+import { Node } from "@/builder/reducer/nodeDispatcher";
 
 interface SnapLine {
   position: number;
@@ -17,27 +17,22 @@ class SnapGrid {
 
   private buildSnapPoints(nodes: Node[]) {
     nodes.forEach((node) => {
-      if (!node.style || node.type === "placeholder") return;
-      if (node.inViewport) return; // Skip nodes in viewport
+      if (!node.style) return;
 
-      // Parse positions and ensure they are numbers
       const left = parseFloat(node.style.left as string) || 0;
       const top = parseFloat(node.style.top as string) || 0;
       const width = parseFloat(node.style.width as string) || 0;
       const height = parseFloat(node.style.height as string) || 0;
 
-      // Round to prevent floating point issues
       const roundedLeft = Math.round(left);
       const roundedTop = Math.round(top);
       const roundedWidth = Math.round(width);
       const roundedHeight = Math.round(height);
 
-      // Add horizontal lines
       this.addHorizontalLine(roundedTop, node.id);
       this.addHorizontalLine(roundedTop + roundedHeight, node.id);
       this.addHorizontalLine(roundedTop + roundedHeight / 2, node.id);
 
-      // Add vertical lines
       this.addVerticalLine(roundedLeft, node.id);
       this.addVerticalLine(roundedLeft + roundedWidth, node.id);
       this.addVerticalLine(roundedLeft + roundedWidth / 2, node.id);
@@ -67,12 +62,9 @@ class SnapGrid {
     let verticalSnap: { position: number; type: string } | null = null;
     const snapGuides: SnapLine[] = [];
 
-    // Find closest horizontal line
     let minHorizontalDist = threshold + 1;
     this.horizontalLines.forEach((sourceNodes, linePosition) => {
-      if (sourceNodes.has(nodeId)) return; // Skip self-snapping
-
-      // Check each point that could snap horizontally (top, bottom, centerY)
+      if (sourceNodes.has(nodeId)) return;
       points.forEach((point) => {
         if (
           point.type === "top" ||
@@ -83,12 +75,13 @@ class SnapGrid {
           if (distance <= threshold && distance < minHorizontalDist) {
             minHorizontalDist = distance;
             horizontalSnap = { position: linePosition, type: point.type };
-            // Add or update the guide
-            const existingGuideIndex = snapGuides.findIndex(
-              (g) =>
-                g.orientation === "horizontal" && g.position === linePosition
-            );
-            if (existingGuideIndex === -1) {
+
+            if (
+              !snapGuides.some(
+                (g) =>
+                  g.orientation === "horizontal" && g.position === linePosition
+              )
+            ) {
               snapGuides.push({
                 position: linePosition,
                 orientation: "horizontal",
@@ -100,12 +93,9 @@ class SnapGrid {
       });
     });
 
-    // Find closest vertical line
     let minVerticalDist = threshold + 1;
     this.verticalLines.forEach((sourceNodes, linePosition) => {
-      if (sourceNodes.has(nodeId)) return; // Skip self-snapping
-
-      // Check each point that could snap vertically (left, right, centerX)
+      if (sourceNodes.has(nodeId)) return;
       points.forEach((point) => {
         if (
           point.type === "left" ||
@@ -116,11 +106,13 @@ class SnapGrid {
           if (distance <= threshold && distance < minVerticalDist) {
             minVerticalDist = distance;
             verticalSnap = { position: linePosition, type: point.type };
-            // Add or update the guide
-            const existingGuideIndex = snapGuides.findIndex(
-              (g) => g.orientation === "vertical" && g.position === linePosition
-            );
-            if (existingGuideIndex === -1) {
+
+            if (
+              !snapGuides.some(
+                (g) =>
+                  g.orientation === "vertical" && g.position === linePosition
+              )
+            ) {
               snapGuides.push({
                 position: linePosition,
                 orientation: "vertical",
@@ -141,8 +133,6 @@ class SnapGrid {
 
   getAllLines(): SnapLine[] {
     const lines: SnapLine[] = [];
-
-    // Add horizontal lines
     this.horizontalLines.forEach((sourceNodes, position) => {
       lines.push({
         position,
@@ -150,8 +140,6 @@ class SnapGrid {
         sourceNodeId: Array.from(sourceNodes)[0],
       });
     });
-
-    // Add vertical lines
     this.verticalLines.forEach((sourceNodes, position) => {
       lines.push({
         position,
@@ -159,7 +147,6 @@ class SnapGrid {
         sourceNodeId: Array.from(sourceNodes)[0],
       });
     });
-
     return lines;
   }
 
@@ -169,21 +156,19 @@ class SnapGrid {
   }
 }
 
-export const useSnapGrid = (nodes: Node[]) => {
+export const useSnapGrid = (filteredNodes: Node[]) => {
   const snapGridRef = React.useRef<SnapGrid | null>(null);
-  const nodesRef = React.useRef(nodes);
+  const prevNodesRef = React.useRef<Node[]>([]);
 
   React.useEffect(() => {
-    // Only rebuild if nodes have actually changed
-    if (nodes !== nodesRef.current) {
-      snapGridRef.current = new SnapGrid(nodes);
-      nodesRef.current = nodes;
+    if (filteredNodes !== prevNodesRef.current) {
+      snapGridRef.current = new SnapGrid(filteredNodes);
+      prevNodesRef.current = filteredNodes;
     }
-
     return () => {
       snapGridRef.current?.clear();
     };
-  }, [nodes]);
+  }, [filteredNodes]);
 
   return snapGridRef.current;
 };

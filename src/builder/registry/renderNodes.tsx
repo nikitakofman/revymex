@@ -6,6 +6,8 @@ import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
 import DraggedNode, { VirtualReference } from "./DraggedNode";
 
+import { getFilteredNodes } from "../context/dnd/utils";
+
 interface RenderNodesProps {
   filter: "inViewport" | "outOfViewport" | "dynamicMode";
 }
@@ -32,8 +34,16 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
       });
     };
     window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
   }, []);
+
+  const filteredNodes = getFilteredNodes(
+    nodeState.nodes,
+    filter,
+    dragState.dynamicModeNodeId
+  );
 
   const renderNode = (node: Node) => {
     const isDragged =
@@ -46,9 +56,9 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
             (child) => child.parentId === node.id
           );
 
-          if (node.isDynamic && !node.dynamicParentId) {
-            nodeDisp.updateNodeDynamicStatus(node.id);
-          }
+          // if (node.isDynamic && !node.dynamicParentId) {
+          //   nodeDisp.updateNodeDynamicStatus(node.id);
+          // }
 
           return (
             <Frame key={node.id} node={node}>
@@ -73,9 +83,10 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     if (isDragged) {
       return (
         <DraggedNode
+          key={`dragged-${node.id}`}
           node={node}
           content={content}
-          virtualReference={virtualReference || null}
+          virtualReference={virtualReference}
           transform={transform}
           offset={dragState.draggedNode!.offset}
         />
@@ -85,27 +96,10 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     return content;
   };
 
-  const filteredNodes = nodeState.nodes.filter((node: Node) => {
-    if (filter === "dynamicMode") {
-      return (
-        node.id === dragState.dynamicModeNodeId ||
-        node.dynamicParentId === dragState.dynamicModeNodeId
-      );
-    }
-
-    if (node.dynamicParentId) {
-      return false;
-    }
-
-    return filter === "inViewport"
-      ? node.inViewport === true
-      : node.inViewport === false;
-  });
-
   const topLevelNodes = filteredNodes.filter((node) => {
     if (node.parentId == null) return true;
-    const parentInFilter = filteredNodes.some((n) => n.id === node.parentId);
-    return !parentInFilter;
+
+    return !filteredNodes.some((n) => n.id === node.parentId);
   });
 
   return <>{topLevelNodes.map(renderNode)}</>;

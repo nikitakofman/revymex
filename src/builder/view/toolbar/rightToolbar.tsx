@@ -5,15 +5,12 @@ import { ToolbarDivider } from "@/builder/registry/tools/_components/test-ui";
 import DimensionsTool from "@/builder/registry/tools/DimensionsTool";
 import { BackgroundTool } from "@/builder/registry/tools/BackgroundTool";
 import SpacingTool from "@/builder/registry/tools/SpacingTool";
-import {
-  EffectsTool,
-  OverflowTool,
-  TypographyTool,
-} from "@/builder/registry/tools/allTools";
+import { EffectsTool, OverflowTool } from "@/builder/registry/tools/allTools";
 import { PositionTool } from "@/builder/registry/tools/PositionTool";
 import { useBuilder } from "@/builder/context/builderState";
 import { BorderTool } from "@/builder/registry/tools/BorderTool";
 import { TransformTool } from "@/builder/registry/tools/TransformTool";
+import { TypographyTool } from "@/builder/registry/tools/TypographyTool";
 
 const RIghtToolbar = () => {
   const { dragState } = useBuilder();
@@ -39,15 +36,13 @@ const RIghtToolbar = () => {
       <ToolbarDivider />
       <TransformTool />
       <ToolbarDivider />
+      <TypographyTool />
+      <ToolbarDivider />
       <ImageSettings />
       <ToolbarDivider />
       <OverflowTool />
       <ToolbarDivider />
-      <ToolbarDivider />
       <EffectsTool />
-      <ToolbarDivider />
-
-      <TypographyTool />
     </div>
   );
 };

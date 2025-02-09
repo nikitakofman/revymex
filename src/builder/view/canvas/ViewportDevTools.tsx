@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useLayoutEffect, useState } from "react";
+import React, { useLayoutEffect, useState, useCallback, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle } from "lucide-react";
@@ -8,13 +8,19 @@ import { PreviewModal } from "./PreviewRenderer";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPortal } from "react-dom";
 
+interface Operation {
+  method: string;
+  timestamp: number;
+  args: any[];
+  options?: any;
+}
+
 function getDescendants(nodes: Node[], rootId: string | number): Node[] {
   const result: Node[] = [];
   const queue = [rootId];
 
   while (queue.length) {
     const current = queue.shift()!;
-
     const children = nodes.filter(
       (n) => n.parentId === current && n.type !== "placeholder"
     );
@@ -26,13 +32,120 @@ function getDescendants(nodes: Node[], rootId: string | number): Node[] {
   return result;
 }
 
+const NodeDispOperations: React.FC<{
+  operations: Operation[];
+  onClear: () => void;
+}> = ({ operations, onClear }) => {
+  const [hideSkipHistory, setHideSkipHistory] = useState(false);
+
+  // Filter operations based on hideSkipHistory state
+  const filteredOperations = useMemo(() => {
+    if (!hideSkipHistory) return operations;
+    return operations.filter((op) => !op.options?.skipHistory);
+  }, [operations, hideSkipHistory]);
+
+  // Group operations by method for better visualization
+  const groupedOps = useMemo(() => {
+    const groups: { [key: string]: number } = {};
+    filteredOperations.forEach((op) => {
+      groups[op.method] = (groups[op.method] || 0) + 1;
+    });
+    return groups;
+  }, [filteredOperations]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold">NodeDispatcher Operations</h3>
+          <span className="text-sm text-[var(--text-secondary)]">
+            ({filteredOperations.length} total)
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setHideSkipHistory(!hideSkipHistory)}
+            className={`px-2 py-1 rounded-[var(--radius-sm)] ${
+              hideSkipHistory
+                ? "bg-[var(--button-primary-bg)] text-white"
+                : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+            }`}
+          >
+            Hide skipHistory
+          </button>
+          <button
+            onClick={onClear}
+            className="px-2 py-1 bg-[var(--control-bg)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {/* Method summary */}
+      <div className="mb-4 p-2 bg-[var(--control-bg)] rounded-[var(--radius-sm)]">
+        {Object.entries(groupedOps).map(([method, count]) => (
+          <div key={method} className="flex justify-between text-sm">
+            <span>{method}</span>
+            <span>{count}x</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {filteredOperations.map((op, i) => (
+          <div
+            key={op.timestamp + i}
+            className="mb-4 p-3 bg-[var(--control-bg)] rounded-[var(--radius-md)] border border-[var(--border-light)]"
+          >
+            <div className="flex justify-between items-start mb-2">
+              <span className="font-medium text-[var(--text-primary)]">
+                {op.method}
+              </span>
+              <span className="text-xs text-[var(--text-secondary)]">
+                {new Date(op.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+            {op.options && (
+              <div className="mb-2">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
+                  Options:
+                </span>
+                <pre className="text-xs mt-1 p-1 bg-[var(--bg-surface)] rounded">
+                  {JSON.stringify(op.options, null, 2)}
+                </pre>
+              </div>
+            )}
+            <div>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                Args:
+              </span>
+              <pre className="text-xs mt-1 p-1 bg-[var(--bg-surface)] rounded whitespace-pre-wrap break-all">
+                {JSON.stringify(op.args, null, 2)}
+              </pre>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const ViewportDevTools: React.FC = () => {
-  const { transform, setTransform, nodeState, nodeDisp, dragState, dragDisp } =
-    useBuilder();
+  const {
+    transform,
+    setTransform,
+    nodeState,
+    nodeDisp,
+    dragState,
+    dragDisp,
+    operations,
+    clearOperations,
+  } = useBuilder();
   const [showTree, setShowTree] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
-    "view" | "perViewport" | "import" | "drag"
+    "view" | "perViewport" | "import" | "drag" | "nodeDisp"
   >("view");
 
   const [mounted, setMounted] = useState(false);
@@ -67,7 +180,6 @@ export const ViewportDevTools: React.FC = () => {
         throw new Error("Invalid format: Expected an array of nodes");
       }
       nodeDisp.setNodes(nodes);
-
       setImportError(null);
       setImportValue("");
     } catch (error) {
@@ -81,13 +193,14 @@ export const ViewportDevTools: React.FC = () => {
 
   return createPortal(
     <>
-      <div className="fixed resize  top-4 right-72 flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+      <div className="fixed resize top-4 right-72 flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
         {dragState.dynamicModeNodeId && (
           <button
+            className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
             onClick={() => {
               nodeDisp.resetDynamicNodePositions();
               dragDisp.setDynamicModeNodeId(null);
-              nodeDisp.syncViewports(); // Re-sync viewports after restoring
+              nodeDisp.syncViewports();
             }}
           >
             Exit Dynamic Mode
@@ -153,12 +266,11 @@ export const ViewportDevTools: React.FC = () => {
         >
           <PlayCircle className="w-4 h-4" />
         </button>
-        {/* Just showing selectedIds count */}
         <button
           className={`px-3 py-1 rounded-[var(--radius-sm)] ${
-            activeTab === "import"
+            dragState.selectedIds.length > 0
               ? "bg-[var(--button-primary-bg)] text-white"
-              : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+              : "bg-[var(--control-bg)] text-[var(--text-primary)]"
           }`}
         >
           {dragState.selectedIds.length}
@@ -171,7 +283,6 @@ export const ViewportDevTools: React.FC = () => {
         nodes={nodeState.nodes}
       />
 
-      {/* Modal for Tree view / Import / Per-Viewport */}
       {showTree && (
         <div className="fixed inset-0 flex z-50 items-center justify-center bg-black/50">
           <div className="bg-[var(--bg-surface)] text-[var(--text-primary)] p-4 rounded-[var(--radius-lg)] max-w-[80vw] resize max-h-[80vh] overflow-hidden flex flex-col shadow-[var(--shadow-lg)] border border-[var(--border-light)]">
@@ -185,7 +296,6 @@ export const ViewportDevTools: React.FC = () => {
               </button>
             </div>
 
-            {/* Simple tabs: "View" (all), "Per Viewport", "Import" */}
             <div className="flex gap-2 mb-4">
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
@@ -219,17 +329,26 @@ export const ViewportDevTools: React.FC = () => {
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
-                  activeTab === "import"
+                  activeTab === "drag"
                     ? "bg-[var(--button-primary-bg)] text-white"
                     : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
                 }`}
                 onClick={() => setActiveTab("drag")}
               >
-                DregState
+                DragState
+              </button>
+              <button
+                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+                  activeTab === "nodeDisp"
+                    ? "bg-[var(--button-primary-bg)] text-white"
+                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+                }`}
+                onClick={() => setActiveTab("nodeDisp")}
+              >
+                NodeDisp
               </button>
             </div>
 
-            {/* Tab content */}
             <div className="flex-1 overflow-auto">
               {activeTab === "view" && (
                 <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
@@ -241,6 +360,13 @@ export const ViewportDevTools: React.FC = () => {
                 <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
                   {JSON.stringify(dragState, null, 2)}
                 </pre>
+              )}
+
+              {activeTab === "nodeDisp" && (
+                <NodeDispOperations
+                  operations={operations}
+                  onClear={clearOperations}
+                />
               )}
 
               {activeTab === "perViewport" && (

@@ -110,20 +110,44 @@ export class NodeDispatcher {
   updateNodeStyle(nodeIds: (string | number)[], style: Partial<CSSProperties>) {
     this.setState((prev) =>
       produce(prev, (draft) => {
+        // Find source node and update its style
         const sourceNode = draft.nodes.find((n) => nodeIds.includes(n.id));
         if (!sourceNode) return;
 
-        const viewportId = findParentViewport(sourceNode.parentId, draft.nodes);
-
-        if (viewportId && viewportId !== "viewport-1440") {
+        // Get source viewport and handle independent styles
+        const sourceViewportId = findParentViewport(
+          sourceNode.parentId,
+          draft.nodes
+        );
+        if (sourceViewportId && sourceViewportId !== "viewport-1440") {
           if (!sourceNode.independentStyles) sourceNode.independentStyles = {};
-
           Object.keys(style).forEach((prop) => {
             sourceNode.independentStyles![prop] = true;
           });
         }
 
+        // Update source node style
         Object.assign(sourceNode.style, style);
+
+        // If we're in a viewport, sync changes to other viewports
+        if (sourceNode.sharedId) {
+          // Find all related nodes by sharedId in other viewports
+          const relatedNodes = draft.nodes.filter(
+            (n) => n.sharedId === sourceNode.sharedId && n.id !== sourceNode.id
+          );
+
+          // Update each related node's style
+          relatedNodes.forEach((node) => {
+            // Check if this style should be synced (not independent)
+            const shouldSync =
+              !node.independentStyles ||
+              !Object.keys(style).some((prop) => node.independentStyles![prop]);
+
+            if (shouldSync) {
+              Object.assign(node.style, style);
+            }
+          });
+        }
       })
     );
   }

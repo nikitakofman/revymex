@@ -215,6 +215,7 @@ export const useConnect = () => {
       handleDragStart,
       dragDisp,
       dragState.dynamicModeNodeId,
+      dragState.hoverNodeId,
       nodeState.nodes,
       nodeDisp,
       dragState.dragSource,

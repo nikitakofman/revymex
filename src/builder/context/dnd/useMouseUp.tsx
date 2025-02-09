@@ -2,7 +2,6 @@ import { useBuilder } from "@/builder/context/builderState";
 import {
   findIndexWithinParent,
   findParentViewport,
-  getCalibrationAdjustedPosition,
   isWithinViewport,
 } from "./utils";
 import { useRef } from "react";
@@ -82,7 +81,8 @@ export const useMouseUp = () => {
             left: "",
             top: "",
           },
-          [realNodeId]
+          [realNodeId],
+          undefined
         );
       }
 
@@ -102,18 +102,20 @@ export const useMouseUp = () => {
     if (placeholderIndex !== -1) {
       const placeholderId = nodeState.nodes[placeholderIndex].id;
       const placeholderNode = nodeState.nodes[placeholderIndex];
-      // Get target position from placeholder
+
       const targetIndex = findIndexWithinParent(
-        nodeState.nodes.filter((n) => n.id !== draggedNode.id), // Filter out dragged node
+        nodeState.nodes.filter((n) => n.id !== draggedNode.id),
         placeholderNode.id,
         placeholderNode.parentId
       );
 
       nodeDisp.removeNode(placeholderId);
-      nodeDisp.removeNode(realNodeId);
 
-      // Use placeholder's target index
-      nodeDisp.insertAtIndex(draggedNode, targetIndex, draggedNode.parentId);
+      nodeDisp.reorderNode(
+        draggedNode.id,
+        placeholderNode.parentId,
+        targetIndex
+      );
 
       setNodeStyle(
         {
@@ -123,7 +125,9 @@ export const useMouseUp = () => {
           left: "",
           top: "",
         },
-        [realNodeId]
+        [realNodeId],
+        undefined,
+        true
       );
 
       if (sourceViewportId) {
@@ -131,11 +135,9 @@ export const useMouseUp = () => {
       }
     } else if (dragState.draggedItem && !draggedNode.dynamicParentId) {
       const { dropX, dropY } = dragState.dropInfo;
-      const containerRect = containerRef.current?.getBoundingClientRect();
       const itemWidth = parseInt(draggedNode.style.width as string) || 150;
       const itemHeight = parseInt(draggedNode.style.height as string) || 150;
 
-      // Calculate centered position by subtracting half width/height
       const centeredX = dropX! - itemWidth / 2;
       const centeredY = dropY! - itemHeight / 2;
 
@@ -154,48 +156,48 @@ export const useMouseUp = () => {
         newNode.dynamicParentId = dragState.dynamicModeNodeId;
       }
 
-      console.log("IN HERE I DROP FROM CANVAS");
-
       nodeDisp.addNode(newNode, null, null, false);
     } else if (containerRef.current) {
-      const rect = document
-        .querySelector(`[data-node-id="${realNodeId}"]`)
-        ?.getBoundingClientRect();
+      const draggedElement = document.querySelector("[data-node-dragged]");
 
-      const containerRect = containerRef.current.getBoundingClientRect();
-      let finalX =
-        (rect!.left - containerRect.left - transform.x) / transform.scale;
-      let finalY =
-        (rect!.top - containerRect.top - transform.y) / transform.scale;
+      if (draggedElement && containerRef.current) {
+        const draggedRect = draggedElement.getBoundingClientRect();
+        const containerRect = containerRef.current.getBoundingClientRect();
 
-      const adjustedPosition = getCalibrationAdjustedPosition(
-        { x: finalX, y: finalY },
-        draggedNode.style.rotate,
-        transform
-      );
-      finalX = adjustedPosition.x;
-      finalY = adjustedPosition.y;
+        const canvasX =
+          (draggedRect.left - containerRect.left - transform.x) /
+          transform.scale;
+        const canvasY =
+          (draggedRect.top - containerRect.top - transform.y) / transform.scale;
 
-      if (dragState.dynamicModeNodeId) {
-        nodeDisp.updateDynamicPosition(draggedNode.id, {
-          x: finalX,
-          y: finalY,
-        });
-        if (draggedNode.id !== dragState.dynamicModeNodeId) {
-          nodeDisp.updateNode(draggedNode.id, {
-            dynamicParentId: dragState.dynamicModeNodeId,
+        if (dragState.dynamicModeNodeId) {
+          nodeDisp.updateDynamicPosition(draggedNode.id, {
+            x: canvasX,
+            y: canvasY,
           });
+          if (draggedNode.id !== dragState.dynamicModeNodeId) {
+            nodeDisp.updateNode(draggedNode.id, {
+              dynamicParentId: dragState.dynamicModeNodeId,
+            });
+          }
         }
+
+        setNodeStyle(
+          {
+            position: "absolute",
+            left: `${canvasX}px`,
+            top: `${canvasY}px`,
+          },
+          [draggedNode.id]
+        );
+
+        nodeDisp.moveNode(draggedNode.id, false, {
+          newPosition: {
+            x: canvasX,
+            y: canvasY,
+          },
+        });
       }
-
-      setNodeStyle(
-        { position: "absolute", left: `${finalX}px`, top: `${finalY}px` },
-        [realNodeId]
-      );
-
-      nodeDisp.moveNode(realNodeId, false, {
-        newPosition: { x: finalX, y: finalY },
-      });
     }
 
     dragDisp.hideLineIndicator();

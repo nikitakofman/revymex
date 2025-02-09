@@ -45,6 +45,8 @@ export const VisualHelpers = ({
   handleResizeStart: (e: React.PointerEvent, direction: Direction) => void;
 }) => {
   const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [localComputedStyle, setLocalComputedStyle] =
+    useState<CSSStyleDeclaration | null>(null);
   const {
     contentRef,
     transform,
@@ -62,7 +64,6 @@ export const VisualHelpers = ({
 
   const showHelpers = !isMovingCanvas && isInteractive;
 
-  // Calculate cumulative rotation from all parent nodes
   const cumulativeRotation = getCumulativeRotation(node, nodeState);
 
   useLayoutEffect(() => {
@@ -77,6 +78,9 @@ export const VisualHelpers = ({
       const contentRect = content.getBoundingClientRect();
 
       const computedStyle = window.getComputedStyle(element);
+
+      setLocalComputedStyle(computedStyle);
+
       const width = parseFloat(computedStyle.width);
       const height = parseFloat(computedStyle.height);
 
@@ -150,23 +154,27 @@ export const VisualHelpers = ({
 
   return createPortal(
     <div className="pointer-events-none" style={helperStyles}>
-      {showHelpers && isSelected && (
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            position: "absolute",
-            inset: 0,
-            border:
-              node.isDynamic || dragState.dynamicModeNodeId
-                ? `${2 / transform.scale}px solid var(--accent-secondary)`
-                : `${2 / transform.scale}px solid #3b82f6`,
-            zIndex: 999,
-            borderRadius: 0,
-            boxSizing: "border-box",
-            pointerEvents: "none",
-          }}
-        />
-      )}
+      {!isAdjustingGap &&
+        !isMovingCanvas &&
+        !isRotating &&
+        !dragState.dragSource &&
+        isSelected && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              position: "absolute",
+              inset: 0,
+              border:
+                node.isDynamic || dragState.dynamicModeNodeId
+                  ? `${2 / transform.scale}px solid var(--accent-secondary)`
+                  : `${2 / transform.scale}px solid #3b82f6`,
+              zIndex: 999,
+              borderRadius: 0,
+              boxSizing: "border-box",
+              pointerEvents: "none",
+            }}
+          />
+        )}
 
       {showHelpers && !isSelected && isHovered && (
         <div
@@ -192,13 +200,14 @@ export const VisualHelpers = ({
           <ResizeHandles node={node} handleResizeStart={handleResizeStart} />
           <GripHandles node={node} elementRef={elementRef} />
           <RotateHandle node={node} elementRef={elementRef} />
-          {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) && (
-            <GapHandles
-              node={node}
-              isSelected={isSelected}
-              elementRef={elementRef}
-            />
-          )}
+          {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) &&
+            localComputedStyle?.display !== "grid" && (
+              <GapHandles
+                node={node}
+                isSelected={isSelected}
+                elementRef={elementRef}
+              />
+            )}
           {node.isDynamic && !dragState.dynamicModeNodeId && (
             <div
               className="absolute inset-0 flex items-center justify-center"

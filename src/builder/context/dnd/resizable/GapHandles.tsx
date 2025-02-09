@@ -19,12 +19,16 @@ export const GapHandles = ({
     setIsAdjustingGap,
     isResizing,
     isMovingCanvas,
+    startRecording,
+    stopRecording,
   } = useBuilder();
   const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
 
   const startAdjustingGap = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    const sessionId = startRecording();
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -70,6 +74,8 @@ export const GapHandles = ({
       window.removeEventListener("mouseup", handleMouseUp);
 
       setIsAdjustingGap(false);
+
+      stopRecording(sessionId);
 
       window.dispatchEvent(new Event("resize"));
 

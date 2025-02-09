@@ -229,12 +229,14 @@ export const ColorPicker = ({
   usePseudoElement = false,
   pseudoElement = "::after",
 }: ColorPickerProps) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
   const [hsv, setHsv] = useState({ h: 0, s: 100, v: 100 });
   const [isDraggingHue, setIsDraggingHue] = useState(false);
   const [isDraggingColor, setIsDraggingColor] = useState(false);
+
+  const sessionIdRef = useRef<string | null>(null);
 
   const pickerRef = useRef<HTMLDivElement>(null);
   const saturationRef = useRef<HTMLDivElement>(null);
@@ -267,11 +269,13 @@ export const ColorPicker = ({
 
   const handleSaturationMouseDown = (e: React.MouseEvent) => {
     setIsDraggingColor(true);
+    sessionIdRef.current = startRecording();
     handleSaturationMove(e);
   };
 
   const handleHueMouseDown = (e: React.MouseEvent) => {
     setIsDraggingHue(true);
+    sessionIdRef.current = startRecording();
     handleHueMove(e);
   };
 
@@ -311,11 +315,14 @@ export const ColorPicker = ({
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
       if (isDraggingColor) handleSaturationMove(e);
       if (isDraggingHue) handleHueMove(e);
     };
 
     const handleMouseUp = () => {
+      stopRecording(sessionIdRef.current!);
       setIsDraggingColor(false);
       setIsDraggingHue(false);
     };
@@ -335,7 +342,11 @@ export const ColorPicker = ({
   const currentHsl = rgbToHsl(currentRgb);
 
   return (
-    <div className="relative" ref={pickerRef}>
+    <div
+      className="relative"
+      ref={pickerRef}
+      onMouseDown={(e) => e.preventDefault()}
+    >
       <div className="flex tabular-nums items-center gap-2 justify-between">
         {label && (
           <span className="text-xs text-[var(--text-secondary)] w-12">
@@ -348,7 +359,6 @@ export const ColorPicker = ({
         >
           <ColorPreview color={currentValue} />
           <span>{currentValue.toUpperCase()}</span>
-          {/* need fix here */}
           <ChevronDown className="w-3 h-3 text-[var(--text-secondary)]" />
         </button>
       </div>
@@ -397,7 +407,10 @@ export const ColorPicker = ({
             style={{
               backgroundColor: `hsl(${hsv.h}, 100%, 50%)`,
             }}
-            onMouseDown={handleSaturationMouseDown}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              handleSaturationMouseDown(e);
+            }}
           >
             <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black" />
@@ -417,7 +430,10 @@ export const ColorPicker = ({
               background:
                 "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)",
             }}
-            onMouseDown={handleHueMouseDown}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              handleHueMouseDown(e);
+            }}
           >
             <div
               className="absolute w-2 h-full -translate-x-1/2 border-2 border-white rounded-sm shadow-sm"

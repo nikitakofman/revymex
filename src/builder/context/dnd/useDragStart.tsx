@@ -1,15 +1,18 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useBuilder } from "@/builder/context/builderState";
-import {
-  calculateDragPositions,
-  calculateDragTransform,
-  findIndexWithinParent,
-} from "./utils";
+import { findIndexWithinParent } from "./utils";
 import { nanoid } from "nanoid";
 
 export const useDragStart = () => {
-  const { dragDisp, nodeDisp, transform, contentRef, nodeState, dragState } =
-    useBuilder();
+  const {
+    dragDisp,
+    nodeDisp,
+    transform,
+    contentRef,
+    nodeState,
+    dragState,
+    setNodeStyle,
+  } = useBuilder();
 
   const getDynamicParentNode = (node: Node): Node | null => {
     let currentNode = node;
@@ -24,6 +27,7 @@ export const useDragStart = () => {
 
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
     e.preventDefault();
+    dragDisp.setIsDragging(true);
 
     if (fromToolbarType) {
       const newNode: Node = {
@@ -64,23 +68,8 @@ export const useDragStart = () => {
     const element = document.querySelector(`[data-node-id="${node.id}"]`);
     if (!element) return;
 
+    const elementRect = element.getBoundingClientRect();
     const contentRect = contentRef.current.getBoundingClientRect();
-    const positions = calculateDragPositions(
-      e,
-      element,
-      contentRect,
-      transform,
-      node.inViewport
-    );
-
-    const { x, y } = calculateDragTransform(
-      positions.cursorX,
-      positions.cursorY,
-      positions.elementX,
-      positions.elementY,
-      positions.mouseOffsetX,
-      positions.mouseOffsetY
-    );
 
     if (node.inViewport) {
       dragDisp.setDragSource("viewport");
@@ -100,6 +89,7 @@ export const useDragStart = () => {
           position: "relative",
           flex: "0 0 auto",
           rotate: node.style.rotate,
+          borderRadius: node.style.borderRadius,
         },
         inViewport: true,
         parentId: node.parentId,
@@ -107,24 +97,48 @@ export const useDragStart = () => {
 
       nodeDisp.insertAtIndex(placeholderNode, oldIndex, node.parentId);
 
+      const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
+      const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
+
       dragDisp.setDraggedNode(node, {
-        x: positions.elementX,
-        y: positions.elementY,
-        mouseX: positions.mouseOffsetX,
-        mouseY: positions.mouseOffsetY,
+        x:
+          (elementRect.left - contentRect.left - transform.x) / transform.scale,
+        y: (elementRect.top - contentRect.top - transform.y) / transform.scale,
+        mouseX: mouseOffsetX,
+        mouseY: mouseOffsetY,
       });
     } else {
       dragDisp.setDragSource("canvas");
 
+      // Keep track of the absolute canvas position
+      const currentLeft = parseFloat(node.style.left as string) || 0;
+      const currentTop = parseFloat(node.style.top as string) || 0;
+
+      // Calculate mouse offset in screen coordinates
+      const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
+      const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
+
+      setNodeStyle(
+        {
+          position: "absolute",
+          left: undefined,
+          top: undefined,
+        },
+        [node.id]
+      );
+
+      dragDisp.setIsDragging(true);
+
+      console.log("dragging", dragState.isDragging);
+
       dragDisp.setDraggedNode(node, {
-        x: positions.elementX,
-        y: positions.elementY,
-        mouseX: x,
-        mouseY: y,
+        x: currentLeft, // Store the actual canvas position
+        y: currentTop,
+        mouseX: mouseOffsetX,
+        mouseY: mouseOffsetY,
       });
     }
 
-    dragDisp.setIsDragging(true);
     dragDisp.setDraggedItem(null);
   };
 };

@@ -3,6 +3,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { ToolSelect } from "./test-ui";
 import { Label } from "./Label";
+import { debounce } from "lodash";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -12,6 +13,8 @@ interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   max?: number;
   showUnit?: boolean;
   onUnitChange?: (unit: string) => void;
+  customValue?: string | number;
+  onCustomChange?: (value: string | number, unit?: string) => void;
 }
 
 export function ToolInput({
@@ -24,12 +27,18 @@ export function ToolInput({
   showUnit = false,
   onUnitChange,
   type,
+  customValue,
+  onCustomChange,
   ...props
 }: ToolInputProps) {
-  const { setNodeStyle, dragState, nodeState } = useBuilder();
-  const [localValue, setLocalValue] = useState<string | number>(value || "0");
+  const { setNodeStyle, dragState, nodeState, startRecording, stopRecording } =
+    useBuilder();
+  const [localValue, setLocalValue] = useState<string | number>(
+    value || customValue || "0"
+  );
   const [localUnit, setLocalUnit] = useState(unit);
   const [isMixed, setIsMixed] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -39,6 +48,10 @@ export function ToolInput({
   const speedMultiplierRef = useRef(1);
   const isDraggingRef = useRef(false);
   const isInternalUpdate = useRef(false);
+  const previousValueRef = useRef<string | number>(value || customValue || "0");
+
+  const isGridInput = label === "Columns" || label === "Rows";
+  const isCustomMode = typeof onCustomChange !== "undefined";
 
   const unitOptions = [
     { label: "px", value: "px" },
@@ -49,8 +62,8 @@ export function ToolInput({
     { label: "vh", value: "vh" },
   ];
 
-  // Function to get computed style value based on property name
   const getComputedStyleValue = useCallback(() => {
+    if (isCustomMode) return null;
     if (!dragState.selectedIds.length) return null;
 
     const computedValues = dragState.selectedIds
@@ -60,16 +73,43 @@ export function ToolInput({
         ) as HTMLElement;
         if (!element) return null;
 
-        // For border properties, get the computed style from ::after
-        const isBorderProperty = props.name?.startsWith("border");
-        const computedStyle = isBorderProperty
-          ? window.getComputedStyle(element, "::after")
-          : window.getComputedStyle(element);
+        const computedStyle = window.getComputedStyle(element);
+
+        if (isGridInput) {
+          const property =
+            label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
+          const gridTemplate = computedStyle[property];
+
+          if (gridTemplate && gridTemplate !== "none") {
+            const count = gridTemplate.trim().split(/\s+/).length;
+            return {
+              value: count,
+              unit: "fr",
+            };
+          }
+          return {
+            value: 3,
+            unit: "fr",
+          };
+        }
 
         const propertyName = props.name;
         if (!propertyName) return null;
 
-        // Handle shorthand properties
+        if (propertyName.startsWith("border")) {
+          const afterStyle = window.getComputedStyle(element, "::after");
+          const value = afterStyle[propertyName as any];
+          if (!value || value === "none") return null;
+
+          const match = value.match(/^([-\d.]+)(\D+)?$/);
+          if (!match) return null;
+
+          return {
+            value: parseFloat(match[1]),
+            unit: match[2] || "px",
+          };
+        }
+
         if (propertyName === "padding" || propertyName === "margin") {
           const top = parseFloat(computedStyle[`${propertyName}Top`]);
           const right = parseFloat(computedStyle[`${propertyName}Right`]);
@@ -114,16 +154,16 @@ export function ToolInput({
     }
 
     return firstValue;
-  }, [dragState.selectedIds, props.name]);
+  }, [dragState.selectedIds, props.name, label, isGridInput, isCustomMode]);
 
-  // Effect to update value and unit based on computed style
-  useEffect(() => {
-    if (!isDraggingRef.current && !isInternalUpdate.current) {
-      const computed = getComputedStyleValue();
-
+  const debouncedUpdate = useCallback(
+    debounce((computed: ReturnType<typeof getComputedStyleValue>) => {
       if (!computed) {
-        setLocalValue("0");
-        setIsMixed(false);
+        const defaultValue = isGridInput ? "3" : "0";
+        if (localValue !== defaultValue) {
+          setLocalValue(defaultValue);
+          setIsMixed(false);
+        }
         return;
       }
 
@@ -133,28 +173,45 @@ export function ToolInput({
           setLocalUnit(computed.unit);
         }
       } else {
-        setIsMixed(false);
-        setLocalValue(Math.round(computed.value).toString());
-        setLocalUnit(computed.unit);
-        currentValueRef.current = computed.value;
+        const newValue = Math.round(computed.value).toString();
+        if (previousValueRef.current !== newValue) {
+          setIsMixed(false);
+          setLocalValue(newValue);
+          setLocalUnit(computed.unit);
+          currentValueRef.current = computed.value;
+          previousValueRef.current = newValue;
+        }
       }
+    }, 100),
+    []
+  );
+
+  useEffect(() => {
+    if (!isCustomMode && !isDraggingRef.current && !isInternalUpdate.current) {
+      const computed = getComputedStyleValue();
+      debouncedUpdate(computed);
     }
-  }, [
-    dragState.selectedIds,
-    nodeState.nodes,
-    props.name,
-    getComputedStyleValue,
-  ]);
+
+    return () => {
+      debouncedUpdate.cancel();
+    };
+  }, [dragState.selectedIds, nodeState.nodes, debouncedUpdate, isCustomMode]);
+
+  useEffect(() => {
+    if (isCustomMode && customValue !== undefined) {
+      setLocalValue(customValue.toString());
+      currentValueRef.current = Number(customValue);
+    }
+  }, [customValue, isCustomMode]);
 
   const updateValue = (
     increment: boolean,
     multiplier: number = 1,
     isDragging: boolean = false
   ) => {
-    const stepValue = step * multiplier;
-    const baseSpeed = isDragging ? 1 : 1;
+    const stepValue = isDragging ? step * multiplier : 1;
     let newValue = Math.round(
-      currentValueRef.current + (increment ? stepValue : -stepValue) * baseSpeed
+      currentValueRef.current + (increment ? stepValue : -stepValue)
     );
 
     newValue = Math.max(min, Math.min(max, newValue));
@@ -164,18 +221,41 @@ export function ToolInput({
     setLocalValue(newValue.toString());
     isInternalUpdate.current = false;
 
-    setNodeStyle(
-      {
-        [props.name || ""]: `${newValue}${localUnit}`,
-      },
-      undefined,
-      true
-    );
+    if (isCustomMode) {
+      onCustomChange?.(newValue, localUnit);
+      return;
+    }
+
+    if (isGridInput) {
+      const property =
+        label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
+      setNodeStyle(
+        {
+          display: "grid",
+          [property]: `repeat(${newValue}, 1fr)`,
+        },
+        undefined,
+        true
+      );
+    } else {
+      setNodeStyle(
+        {
+          [props.name || ""]: `${newValue}${localUnit}`,
+        },
+        undefined,
+        true
+      );
+    }
   };
 
   const startIncrement = (direction: "up" | "down", e: React.MouseEvent) => {
     e.preventDefault();
-    currentValueRef.current = parseFloat(localValue.toString()) || 0;
+    e.stopPropagation();
+
+    const sessionId = startRecording();
+
+    currentValueRef.current =
+      parseFloat(localValue.toString()) || (isGridInput ? 3 : 0);
     startYRef.current = e.clientY;
     lastYRef.current = e.clientY;
 
@@ -190,6 +270,9 @@ export function ToolInput({
     }, 200);
 
     const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
       const currentY = e.clientY;
       const deltaY = currentY - lastYRef.current;
       const totalDelta = Math.abs(currentY - startYRef.current);
@@ -203,10 +286,14 @@ export function ToolInput({
       lastYRef.current = currentY;
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
       isDraggingRef.current = false;
+      stopRecording(sessionId);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
@@ -216,6 +303,7 @@ export function ToolInput({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
     const inputValue = e.target.value;
     const parsedValue = Math.round(parseFloat(inputValue) || 0);
     const clampedValue = Math.max(min, Math.min(max, parsedValue));
@@ -224,6 +312,11 @@ export function ToolInput({
     setLocalValue(clampedValue.toString());
     isInternalUpdate.current = false;
     currentValueRef.current = clampedValue;
+
+    if (isCustomMode) {
+      onCustomChange?.(clampedValue, localUnit);
+      return;
+    }
 
     setNodeStyle(
       {
@@ -234,12 +327,25 @@ export function ToolInput({
     );
   };
 
+  const handleFocus = (e: React.FocusEvent) => {
+    e.stopPropagation();
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+  };
+
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div
+      className="flex items-center justify-between gap-2"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       {label && <Label>{label}</Label>}
       <div className="flex gap-2">
         <div className="relative group">
-          {isMixed ? (
+          {isMixed && !isCustomMode ? (
             <input
               {...props}
               type="text"
@@ -256,9 +362,12 @@ export function ToolInput({
               type="number"
               value={localValue}
               onChange={handleInputChange}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              onMouseDown={(e) => e.stopPropagation()}
               min={min}
               max={max}
-              className="w-[60px] h-7 px-1.5 text-xs 
+              className={`w-[60px] h-7 px-1.5 text-xs 
                 bg-[var(--grid-line)] border border-[var(--control-border)] 
                 hover:border-[var(--control-border-hover)] 
                 focus:border-[var(--border-focus)] 
@@ -266,20 +375,27 @@ export function ToolInput({
                 focus:outline-none transition-colors 
                 [appearance:textfield] 
                 [&::-webkit-outer-spin-button]:appearance-none 
-                [&::-webkit-inner-spin-button]:appearance-none"
+                [&::-webkit-inner-spin-button]:appearance-none
+                ${isFocused ? "border-[var(--border-focus)]" : ""}`}
             />
           )}
-          {!isMixed && type === "number" && (
-            <div className="absolute right-1 inset-y-0 w-3 hidden group-focus-within:flex flex-col">
+          {(!isMixed || isCustomMode) && type === "number" && (
+            <div
+              className={`absolute right-1 inset-y-0 w-3 ${
+                isFocused ? "flex" : "hidden group-hover:flex"
+              } flex-col`}
+            >
               <button
                 onMouseDown={(e) => startIncrement("up", e)}
                 className="flex-1 flex items-center justify-center"
+                type="button"
               >
                 <ChevronUp className="w-2.5 h-2.5 text-[var(--text-secondary)]" />
               </button>
               <button
                 onMouseDown={(e) => startIncrement("down", e)}
                 className="flex-1 flex items-center justify-center"
+                type="button"
               >
                 <ChevronDown className="w-2.5 h-2.5 text-[var(--text-secondary)]" />
               </button>
@@ -290,19 +406,24 @@ export function ToolInput({
           <ToolSelect
             value={localUnit}
             onChange={(value) => {
-              if (isMixed) return;
+              if (isMixed && !isCustomMode) return;
               setLocalUnit(value);
               onUnitChange?.(value);
-              setNodeStyle(
-                {
-                  [props.name || ""]: `${localValue}${value}`,
-                },
-                undefined,
-                true
-              );
+
+              if (isCustomMode) {
+                onCustomChange?.(localValue, value);
+              } else {
+                setNodeStyle(
+                  {
+                    [props.name || ""]: `${localValue}${value}`,
+                  },
+                  undefined,
+                  true
+                );
+              }
             }}
             options={unitOptions}
-            disabled={isMixed}
+            disabled={isMixed && !isCustomMode}
           />
         )}
       </div>

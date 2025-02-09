@@ -8,8 +8,15 @@ export const RotateHandle: React.FC<{
   node: Node;
   elementRef: React.RefObject<HTMLDivElement>;
 }> = ({ node, elementRef }) => {
-  const { setNodeStyle, transform, setIsRotating, isRotating, dragDisp } =
-    useBuilder();
+  const {
+    setNodeStyle,
+    transform,
+    setIsRotating,
+    isRotating,
+    dragDisp,
+    startRecording,
+    stopRecording,
+  } = useBuilder();
   const initialMouseAngleRef = useRef<number>(0);
   const initialRotationRef = useRef<number>(0);
 
@@ -33,6 +40,8 @@ export const RotateHandle: React.FC<{
     e.preventDefault();
     e.stopPropagation();
     if (!elementRef.current) return;
+
+    const sessionId = startRecording();
 
     setIsRotating(true);
     const center = getElementCenter();
@@ -93,6 +102,7 @@ export const RotateHandle: React.FC<{
     const handleMouseUp = () => {
       setIsRotating(false);
       dragDisp.hideStyleHelper();
+      stopRecording(sessionId);
 
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
@@ -103,7 +113,7 @@ export const RotateHandle: React.FC<{
   };
 
   // Calculate scaled dimensions
-  const handleSize = 10 / transform.scale;
+  const handleSize = 8 / transform.scale;
   const handleOffset = 20 / transform.scale;
   const borderWidth = 1 / transform.scale;
 
@@ -118,9 +128,10 @@ export const RotateHandle: React.FC<{
         width: `${handleSize}px`,
         height: `${handleSize}px`,
         borderRadius: "50%",
-        backgroundColor: node.isDynamic
-          ? "var(--accent-secondary)"
-          : "var(--accent)",
+        backgroundColor:
+          node.isDynamic || node.dynamicParentId
+            ? "var(--accent-secondary)"
+            : "var(--accent)",
         border: `${borderWidth}px solid white`,
         cursor: isRotating ? "grabbing" : "grab",
         zIndex: 1001,

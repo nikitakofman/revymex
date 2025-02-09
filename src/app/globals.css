@@ -133,3 +133,24 @@
     #d7d7d845 25px
   );
 }
+
+.tiptap-editor .ProseMirror {
+  outline: none;
+  height: 100%;
+}
+
+.tiptap-editor .ProseMirror p {
+  margin: 0;
+}
+
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: "Type something...";
+  color: #adb5bd;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.tiptap-editor .ProseMirror {
+  pointer-events: inherit;
+}

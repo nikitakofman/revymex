@@ -17,6 +17,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     setNodeStyle,
     dragDisp,
     setIsResizing,
+    startRecording,
+    stopRecording,
   } = useBuilder();
   const elementRef = useRef<HTMLDivElement | null>(
     null
@@ -29,6 +31,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       e.preventDefault();
       e.stopPropagation();
+
+      const sessionId = startRecording();
+
+      console.log("sessionID", sessionId);
 
       const selectedNodes =
         dragState.selectedIds.length > 0 ? dragState.selectedIds : [node.id];
@@ -141,6 +147,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       const handlePointerUp = () => {
         dragDisp.hideStyleHelper();
+        stopRecording(sessionId);
+        console.log("Recording session stopped:", sessionId);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         setIsResizing(false);
@@ -157,6 +165,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       minHeight,
       dragDisp,
       setNodeStyle,
+      startRecording,
+      stopRecording,
+      transform.scale,
+      setIsResizing,
     ]
   );
 

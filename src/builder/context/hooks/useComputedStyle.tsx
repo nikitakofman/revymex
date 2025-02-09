@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
+import { debounce } from "lodash";
 
 interface StyleValue {
   value: string | number;
@@ -8,7 +9,6 @@ interface StyleValue {
 }
 
 const rgbToHex = (rgb: string): string => {
-  // Handle rgb/rgba format
   const matches = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (!matches) return rgb;
 
@@ -28,16 +28,13 @@ const rgbToHex = (rgb: string): string => {
 };
 
 const extractColor = (value: string): string => {
-  // If it's already a hex color, return it
   if (value.startsWith("#")) return value;
 
-  // If it's an rgb value at the start, convert it to hex
   if (value.startsWith("rgb")) {
     const rgbPart = value.match(/^rgba?\([^)]+\)/)?.[0];
     if (rgbPart) return rgbToHex(rgbPart);
   }
 
-  // For background shorthand, get the first color value
   const parts = value.split(" ");
   for (const part of parts) {
     if (part.startsWith("rgb")) {
@@ -48,8 +45,18 @@ const extractColor = (value: string): string => {
     }
   }
 
-  return "#000000"; // fallback
+  return "#000000";
 };
+
+interface UseComputedStyleProps {
+  property: string;
+  usePseudoElement?: boolean;
+  pseudoElement?: string;
+  parseValue?: boolean;
+  defaultValue?: string | number;
+  defaultUnit?: string;
+  isColor?: boolean;
+}
 
 export function useComputedStyle({
   property,
@@ -59,12 +66,15 @@ export function useComputedStyle({
   defaultValue = "",
   defaultUnit = "px",
   isColor = false,
-}) {
+}: UseComputedStyleProps) {
   const { dragState, nodeState } = useBuilder();
   const [styleValue, setStyleValue] = useState<StyleValue>({
     value: defaultValue,
     unit: defaultUnit,
   });
+
+  const previousValueRef = useRef<string>();
+  const isUpdatingRef = useRef(false);
 
   const getComputedStyleValue = useCallback(() => {
     if (!dragState.selectedIds.length) return null;
@@ -89,7 +99,6 @@ export function useComputedStyle({
         )
           return null;
 
-        // Handle colors and background colors
         if (
           isColor ||
           property === "background" ||
@@ -102,7 +111,6 @@ export function useComputedStyle({
           return { value };
         }
 
-        // Parse numeric values with units
         const match = value.match(/^([-\d.]+)(\D+)?$/);
         if (!match) return { value };
 
@@ -141,26 +149,66 @@ export function useComputedStyle({
     isColor,
   ]);
 
+  const debouncedUpdate = useCallback(
+    debounce((computed: ReturnType<typeof getComputedStyleValue>) => {
+      if (isUpdatingRef.current) return;
+      isUpdatingRef.current = true;
+
+      try {
+        if (!computed) {
+          const newValue = JSON.stringify({
+            value: defaultValue,
+            unit: defaultUnit,
+          });
+          if (previousValueRef.current !== newValue) {
+            previousValueRef.current = newValue;
+            setStyleValue({ value: defaultValue, unit: defaultUnit });
+          }
+          return;
+        }
+
+        if ("mixed" in computed && computed.mixed) {
+          const newValue = JSON.stringify({
+            value: defaultValue,
+            unit: computed.unit,
+            mixed: true,
+          });
+          if (previousValueRef.current !== newValue) {
+            previousValueRef.current = newValue;
+            setStyleValue({
+              value: defaultValue,
+              unit: computed.unit,
+              mixed: true,
+            });
+          }
+        } else {
+          const newValue = JSON.stringify({
+            value: computed.value,
+            unit: computed.unit || defaultUnit,
+          });
+          if (previousValueRef.current !== newValue) {
+            previousValueRef.current = newValue;
+            setStyleValue({
+              value: computed.value,
+              unit: computed.unit || defaultUnit,
+              mixed: false,
+            });
+          }
+        }
+      } finally {
+        isUpdatingRef.current = false;
+      }
+    }, 100),
+    [defaultValue, defaultUnit]
+  );
+
   useEffect(() => {
     const computed = getComputedStyleValue();
-    if (!computed) {
-      setStyleValue({ value: defaultValue, unit: defaultUnit });
-      return;
-    }
+    debouncedUpdate(computed);
 
-    if ("mixed" in computed && computed.mixed) {
-      setStyleValue({
-        value: defaultValue,
-        unit: computed.unit,
-        mixed: true,
-      });
-    } else {
-      setStyleValue({
-        value: computed.value,
-        unit: computed.unit || defaultUnit,
-        mixed: false,
-      });
-    }
+    return () => {
+      debouncedUpdate.cancel();
+    };
   }, [
     dragState.selectedIds,
     nodeState.nodes,
@@ -168,6 +216,7 @@ export function useComputedStyle({
     defaultValue,
     defaultUnit,
     getComputedStyleValue,
+    debouncedUpdate,
   ]);
 
   return styleValue;

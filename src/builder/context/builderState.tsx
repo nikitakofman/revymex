@@ -14,6 +14,8 @@ import { dragInitialState, nodeInitialState } from "../reducer/state";
 import { NodeDispatcher } from "../reducer/nodeDispatcher";
 import { DragDispatcher } from "../reducer/dragDispatcher";
 import { debounce } from "lodash";
+import { useNodeHistory } from "./hooks/useHistory";
+import { createTrackedNodeDispatcher } from "./hooks/useNodeDispTracker";
 
 export interface LineIndicatorState {
   show: boolean;
@@ -21,6 +23,13 @@ export interface LineIndicatorState {
   y: number;
   width: string | number;
   height: string | number;
+}
+
+export interface Operation {
+  method: string;
+  timestamp: number;
+  args: any[];
+  options?: any;
 }
 
 interface BuilderContextType {
@@ -33,7 +42,7 @@ interface BuilderContextType {
     React.SetStateAction<{ x: number; y: number; scale: number }>
   >;
   setNodeStyle: (
-    styles: React.CSSProperties & { src?: string },
+    styles: React.CSSProperties & { src?: string } & { text?: string },
     nodeIds?: (string | number)[],
     sync?: boolean
   ) => void;
@@ -47,12 +56,31 @@ interface BuilderContextType {
   setIsAdjustingGap: React.Dispatch<React.SetStateAction<boolean>>;
   isRotating: boolean;
   setIsRotating: React.Dispatch<React.SetStateAction<boolean>>;
+  operations: Operation[];
+  clearOperations: () => void;
+  startRecording: () => string;
+  stopRecording: (sessionId: string) => boolean;
+}
+
+export interface RecordingSession {
+  id: string;
+  startState: NodeState;
 }
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
 export function BuilderProvider({ children }: { children: ReactNode }) {
-  const [nodeState, setNodeState] = useState(nodeInitialState);
+  const {
+    nodeState,
+    setNodeState,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    startRecording,
+    stopRecording,
+  } = useNodeHistory(nodeInitialState);
+
   const [dragState, setDragState] = useState(dragInitialState);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,8 +94,54 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
+  const [operations, setOperations] = useState<Operation[]>([]);
+
+  const operationsRef = useRef<Operation[]>([]);
+
+  const recordingRef = useRef<RecordingSession | null>(null);
+
+  const onOperation = useCallback((operation: Operation) => {
+    operationsRef.current = [...operationsRef.current.slice(-99), operation];
+    requestAnimationFrame(() => {
+      setOperations(operationsRef.current);
+    });
+  }, []);
+
+  const nodeDisp = useMemo(() => {
+    const dispatcher = new NodeDispatcher(setNodeState);
+    return createTrackedNodeDispatcher(
+      dispatcher,
+      onOperation,
+      process.env.NODE_ENV !== "production"
+    );
+  }, [setNodeState, onOperation]);
+
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd/Ctrl + Z first
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        // Prevent default browser behavior
+        e.preventDefault();
+
+        if (e.shiftKey) {
+          // Cmd/Ctrl + Shift + Z = Redo
+          console.log("Triggering redo");
+          redo();
+          window.dispatchEvent(new Event("resize"));
+        } else {
+          // Cmd/Ctrl + Z = Undo
+          console.log("Triggering undo");
+          undo();
+          window.dispatchEvent(new Event("resize"));
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
 
   const stopMoving = useCallback(() => {
     setIsMovingCanvas(false);
@@ -83,12 +157,11 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     moveTimerRef.current = setTimeout(stopMoving, 100);
   }, [stopMoving]);
 
-  // Add this before the handleWheel definition:
   const debouncedSetTransform = useMemo(
     () =>
       debounce((newTransform: { x: number; y: number; scale: number }) => {
         setTransform(newTransform);
-      }, 5), // 5ms debounce
+      }, 5),
     []
   );
 
@@ -101,7 +174,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       startMoving();
 
       if (e.ctrlKey || e.metaKey) {
-        // ZOOM operation - use debouncing
         const rect = containerRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
@@ -121,7 +193,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
           scale: newScale,
         });
       } else {
-        // PAN operation - update immediately
         setTransform((prev) => ({
           ...prev,
           x: prev.x - e.deltaX,
@@ -191,6 +262,15 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     setIsAdjustingGap,
     isRotating,
     setIsRotating,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    operations,
+    clearOperations: useCallback(() => setOperations([]), []),
+    startRecording,
+    stopRecording,
+    recordingRef,
   };
 
   return (

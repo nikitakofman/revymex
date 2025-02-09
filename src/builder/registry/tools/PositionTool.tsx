@@ -28,6 +28,10 @@ export const PositionTool = () => {
 
   const isDragging = dragState.dragPositions && dragState.isDragging;
 
+  // TODO: check this console log renderes a lot, maybe it causes maximum update depth exceeded
+
+  // console.log("isDragging", isDragging);
+
   return (
     <ToolbarSection title="Position">
       <div className="flex flex-col gap-3">

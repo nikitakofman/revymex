@@ -18,7 +18,7 @@ export const ImageElement = ({ node }: ElementProps) => {
             height: "100%",
             objectFit: "cover",
             borderRadius: node.style.borderRadius,
-            pointerEvents: "none", // Prevent image from capturing mouse events
+            pointerEvents: "none",
           }}
           src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
           alt="Image"

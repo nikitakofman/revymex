@@ -138,21 +138,23 @@ export const calculateDragPositions = (
   element: Element,
   contentRect: DOMRect,
   transform: Transform,
-  //eslint-disable-next-line
-  shouldNegateHieght?: boolean
+  inViewport?: boolean
 ): DragPos => {
   const elementRect = element.getBoundingClientRect();
 
   const mouseOffsetX = e.clientX - elementRect.left;
   const mouseOffsetY = e.clientY - elementRect.top;
 
-  const elementX = (elementRect.left - contentRect.left) / transform.scale;
-  const heightOffset = elementRect.height;
+  const elementX =
+    (elementRect.left - contentRect.left - transform.x) / transform.scale;
+  const heightOffset = inViewport ? elementRect.height : 0;
   const elementY =
-    (elementRect.top - contentRect.top + heightOffset) / transform.scale;
+    (elementRect.top - contentRect.top - transform.y + heightOffset) /
+    transform.scale;
 
-  const cursorX = (e.clientX - contentRect.left) / transform.scale;
-  const cursorY = (e.clientY - contentRect.top) / transform.scale;
+  const cursorX =
+    (e.clientX - contentRect.left - transform.x) / transform.scale;
+  const cursorY = (e.clientY - contentRect.top - transform.y) / transform.scale;
 
   return {
     cursorX,
@@ -522,7 +524,8 @@ export const computeSiblingReorderZones = (
   mouseX: number,
   mouseY: number,
   prevMouseX: number,
-  prevMouseY: number
+  prevMouseY: number,
+  display: string = "flex"
 ): ReorderZoneResult | null => {
   const siblingZones: ReorderZone[] = siblings
     .map((node, index) => {
@@ -535,6 +538,88 @@ export const computeSiblingReorderZones = (
 
   if (siblingZones.length === 0) return null;
 
+  // Grid-specific handling
+  if (display === "grid") {
+    // Find elements under the mouse
+    const zonesUnder = siblingZones.filter(
+      (zone) =>
+        mouseX >= zone.rect.left &&
+        mouseX <= zone.rect.right &&
+        mouseY >= zone.rect.top &&
+        mouseY <= zone.rect.bottom
+    );
+
+    if (zonesUnder.length === 0) return null;
+
+    const dx = mouseX - prevMouseX;
+    const dy = mouseY - prevMouseY;
+    const isMovingHorizontally = Math.abs(dx) > Math.abs(dy);
+
+    if (isMovingHorizontally) {
+      if (dx > 0) {
+        // Moving right
+        const chosenZone = zonesUnder.reduce((prev, curr) =>
+          curr.rect.left < prev.rect.left ? curr : prev
+        );
+        return { targetId: chosenZone.id, position: "after" };
+      } else if (dx < 0) {
+        // Moving left
+        const chosenZone = zonesUnder.reduce((prev, curr) =>
+          curr.rect.right > prev.rect.right ? curr : prev
+        );
+        return { targetId: chosenZone.id, position: "before" };
+      }
+    } else {
+      if (dy > 0) {
+        // Moving down
+        const chosenZone = zonesUnder.reduce((prev, curr) =>
+          curr.rect.top < prev.rect.top ? curr : prev
+        );
+        return { targetId: chosenZone.id, position: "after" };
+      } else if (dy < 0) {
+        // Moving up
+        const chosenZone = zonesUnder.reduce((prev, curr) =>
+          curr.rect.bottom > prev.rect.bottom ? curr : prev
+        );
+        return { targetId: chosenZone.id, position: "before" };
+      }
+    }
+
+    // If no movement, use distance to center
+    const chosenZone = zonesUnder.reduce((prev, curr) => {
+      const prevCenterX = (prev.rect.left + prev.rect.right) / 2;
+      const prevCenterY = (prev.rect.top + prev.rect.bottom) / 2;
+      const currCenterX = (curr.rect.left + curr.rect.right) / 2;
+      const currCenterY = (curr.rect.top + curr.rect.bottom) / 2;
+
+      const prevDist = Math.sqrt(
+        Math.pow(mouseX - prevCenterX, 2) + Math.pow(mouseY - prevCenterY, 2)
+      );
+      const currDist = Math.sqrt(
+        Math.pow(mouseX - currCenterX, 2) + Math.pow(mouseY - currCenterY, 2)
+      );
+
+      return currDist < prevDist ? curr : prev;
+    });
+
+    // Determine position based on which half of the element we're in
+    const centerX = (chosenZone.rect.left + chosenZone.rect.right) / 2;
+    const centerY = (chosenZone.rect.top + chosenZone.rect.bottom) / 2;
+
+    if (isMovingHorizontally) {
+      return {
+        targetId: chosenZone.id,
+        position: mouseX < centerX ? "before" : "after",
+      };
+    } else {
+      return {
+        targetId: chosenZone.id,
+        position: mouseY < centerY ? "before" : "after",
+      };
+    }
+  }
+
+  // Original flex layout handling
   let zonesUnder: ReorderZone[];
   if (isColumn) {
     zonesUnder = siblingZones.filter(
@@ -600,6 +685,100 @@ export const computeSiblingReorderZones = (
   }
 };
 
+export const computeGridReorderResult = (
+  draggedNode: Node,
+  allNodes: Node[],
+  parentElement: Element,
+  mouseX: number,
+  mouseY: number
+): ReorderZoneResult | null => {
+  const siblings = allNodes.filter(
+    (node) =>
+      node.parentId === draggedNode.parentId &&
+      node.type !== "placeholder" &&
+      node.id !== draggedNode.id
+  );
+
+  const parentRect = parentElement.getBoundingClientRect();
+  const gridComputedStyle = window.getComputedStyle(parentElement);
+  const columns = gridComputedStyle.gridTemplateColumns.split(" ").length;
+  const cellWidth = parentRect.width / columns;
+  const cellHeight = parentRect.height / Math.ceil(siblings.length / columns);
+
+  // Get all grid item positions
+  const gridItems = siblings
+    .map((node, index) => {
+      const element = document.querySelector(`[data-node-id="${node.id}"]`);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      const row = Math.floor(index / columns);
+      const col = index % columns;
+      return {
+        id: node.id,
+        index,
+        rect,
+        gridPosition: { row, col },
+        center: {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        },
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  if (gridItems.length === 0) return null;
+
+  // Find the closest grid cell based on mouse position
+  const mouseRelativeX = mouseX - parentRect.left;
+  const mouseRelativeY = mouseY - parentRect.top;
+  const targetCol = Math.floor(mouseRelativeX / cellWidth);
+  const targetRow = Math.floor(mouseRelativeY / cellHeight);
+
+  // Find the closest item to insert before/after
+  let closestItem = gridItems[0];
+  let minDistance = Number.MAX_VALUE;
+  let position: "before" | "after" = "before";
+
+  gridItems.forEach((item) => {
+    const dx = mouseX - item.center.x;
+    const dy = mouseY - item.center.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestItem = item;
+
+      // Determine if we should insert before or after based on the mouse position
+      // relative to the item's center
+      if (columns === 1) {
+        // For single column, use vertical position
+        position = mouseY < item.center.y ? "before" : "after";
+      } else {
+        // For multiple columns, use both x and y to determine position
+        const itemRow = Math.floor(item.index / columns);
+        const itemCol = item.index % columns;
+
+        if (targetRow === itemRow) {
+          // Same row - use horizontal position
+          position =
+            mouseRelativeX < item.center.x - parentRect.left
+              ? "before"
+              : "after";
+        } else {
+          // Different row - use vertical position
+          position = targetRow < itemRow ? "before" : "after";
+        }
+      }
+    }
+  });
+
+  return {
+    targetId: closestItem.id,
+    position,
+  };
+};
+
+// Now modify the existing computeSiblingReorderResult to handle grid layouts
 export const computeSiblingReorderResult = (
   draggedNode: Node,
   allNodes: Node[],
@@ -609,15 +788,16 @@ export const computeSiblingReorderResult = (
   prevMouseX: number,
   prevMouseY: number
 ): ReorderZoneResult | null => {
+  const computedStyle = window.getComputedStyle(parentElement);
+  const display = computedStyle.display;
+  const isColumn = computedStyle.flexDirection?.includes("column") || false;
+
   const siblings = allNodes.filter(
     (node) =>
       node.parentId === draggedNode.parentId &&
       node.type !== "placeholder" &&
       node.id !== draggedNode.id
   );
-
-  const computedStyle = window.getComputedStyle(parentElement);
-  const isColumn = computedStyle.flexDirection?.includes("column") || false;
 
   return computeSiblingReorderZones(
     draggedNode,
@@ -626,7 +806,8 @@ export const computeSiblingReorderResult = (
     mouseX,
     mouseY,
     prevMouseX,
-    prevMouseY
+    prevMouseY,
+    display
   );
 };
 
@@ -802,3 +983,49 @@ export const parseRotation = (rotate: string) => {
   }
   return 0;
 };
+
+export const calculateRotationOffset = (node: Node) => {
+  const width = parseFloat(node.style.width as string) || 0;
+  const height = parseFloat(node.style.height as string) || 0;
+  const rotationDeg = parseRotation(node.style.rotate as string);
+  const rotationRad = (rotationDeg * Math.PI) / 180;
+
+  const effectiveHeight =
+    Math.abs(height * Math.cos(rotationRad)) +
+    Math.abs(width * Math.sin(rotationRad));
+  const effectiveWidth =
+    Math.abs(width * Math.cos(rotationRad)) +
+    Math.abs(height * Math.sin(rotationRad));
+
+  return {
+    offsetX: (effectiveWidth - width) * 0.5,
+    offsetY: (effectiveHeight - height) * 0.5,
+  };
+};
+
+export function getFilteredNodes(
+  nodes: Node[],
+  mode: "dynamicMode" | "inViewport" | "outOfViewport",
+  dynamicModeNodeId: string | number | null | undefined
+): Node[] {
+  return nodes.filter((node: Node) => {
+    if (mode === "dynamicMode") {
+      return (
+        node.id === dynamicModeNodeId ||
+        node.dynamicParentId === dynamicModeNodeId
+      );
+    }
+
+    if (node.dynamicParentId) {
+      return false;
+    }
+
+    if (mode === "inViewport") {
+      return node.inViewport === true;
+    } else if (mode === "outOfViewport") {
+      return node.inViewport === false;
+    }
+
+    return true;
+  });
+}

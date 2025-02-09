@@ -1,3 +1,5 @@
+// Canvas.tsx
+
 import React, { useEffect } from "react";
 import Toolbar from "../toolbar";
 import { RenderNodes } from "../../registry/renderNodes";
@@ -13,9 +15,20 @@ import { StyleUpdateHelper } from "@/builder/context/dnd/StyleUpdateHelper";
 import { ArrowConnectors } from "./ArrowConnectors";
 import { ContextMenu } from "@/builder/context/dnd/ContextMenu";
 
+// NEW: We import the shared filter
+import { getFilteredNodes } from "@/builder/context/dnd/utils";
+import ViewportBar from "./bar";
+
 const Canvas = () => {
-  const { containerRef, contentRef, dragState, isMovingCanvas, dragDisp } =
-    useBuilder();
+  const {
+    containerRef,
+    contentRef,
+    dragState,
+    isMovingCanvas,
+    dragDisp,
+    nodeState,
+  } = useBuilder();
+
   const handleMouseMove = useMouseMove();
   const handleMouseUp = useMouseUp();
 
@@ -43,12 +56,23 @@ const Canvas = () => {
     }
   };
 
+  // Decide which filter to use
+  const activeFilter = dragState.dynamicModeNodeId
+    ? "dynamicMode"
+    : "outOfViewport";
+
+  // Now get the nodes that should actually be visible in this mode
+  const filteredNodes = getFilteredNodes(
+    nodeState.nodes,
+    activeFilter,
+    dragState.dynamicModeNodeId
+  );
+
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-[var(--bg-canvas)]">
       <ViewportDevTools />
       <Toolbar />
       <ToolbarDragPreview />
-
       <div
         ref={containerRef}
         style={{
@@ -62,7 +86,6 @@ const Canvas = () => {
       >
         <SnapGuides />
         <StyleUpdateHelper />
-        {/* <DragLayer /> */}
         {!isMovingCanvas && <ArrowConnectors />}
 
         <div
@@ -82,6 +105,7 @@ const Canvas = () => {
           <ContextMenu />
         </div>
       </div>
+      <ViewportBar />
       <RightToolbar />
     </div>
   );

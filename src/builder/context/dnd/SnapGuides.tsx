@@ -4,9 +4,9 @@ import { useBuilder } from "@/builder/context/builderState";
 const SnapGuides = () => {
   const { transform, dragState } = useBuilder();
 
-  // Only show guides when we have snap guides during dragging
   if (!dragState.isDragging || !dragState.snapGuides?.length) return null;
 
+  console.log("DRAGSTATE", dragState);
   return (
     <div className="absolute inset-0 pointer-events-none">
       {dragState.snapGuides.map((guide, i) => {

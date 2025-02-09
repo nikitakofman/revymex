@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Node } from "../reducer/nodeDispatcher";
 import { useBuilder } from "../context/builderState";
 import { useSnapGrid } from "../context/dnd/SnapGrid";
-import { parseRotation } from "../context/dnd/utils";
+import { getFilteredNodes, parseRotation } from "../context/dnd/utils";
 
 interface Transform {
   x: number;
@@ -33,6 +33,7 @@ interface ContentProps {
   id?: string;
   children?: React.ReactNode;
 }
+
 interface DraggedNodeProps {
   node: Node;
   content: ReactElement<ContentProps>;
@@ -49,7 +50,18 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   offset,
 }) => {
   const { dragState, nodeState, dragDisp } = useBuilder();
-  const snapGrid = useSnapGrid(nodeState.nodes);
+
+  const activeFilter = dragState.dynamicModeNodeId
+    ? "dynamicMode"
+    : "outOfViewport";
+
+  const filteredNodes = getFilteredNodes(
+    nodeState.nodes,
+    activeFilter,
+    dragState.dynamicModeNodeId
+  );
+
+  const snapGrid = useSnapGrid(filteredNodes);
   const lastSnapGuideRef = useRef<any>(null);
 
   const baseRect = virtualReference?.getBoundingClientRect() || {
@@ -75,11 +87,42 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   const rawLeft = baseRect.left - offset.mouseX * transform.scale;
   const rawTop = baseRect.top - offset.mouseY * transform.scale;
 
-  // Convert screen coordinates to canvas coordinates for snapping
   const canvasX = (rawLeft - transform.x) / transform.scale;
   const canvasY = (rawTop - transform.y) / transform.scale;
 
-  // Calculate snap points
+  let finalLeft = rawLeft + offsetX * transform.scale;
+  let finalTop = rawTop + offsetY * transform.scale;
+
+  if (dragState.dragSource === "gripHandle") {
+    const parentNode = nodeState.nodes.find((n) => n.id === node.parentId);
+    if (parentNode) {
+      const parentElement = document.querySelector(
+        `[data-node-id="${parentNode.id}"]`
+      ) as HTMLElement;
+
+      if (parentElement) {
+        const parentStyle = window.getComputedStyle(parentElement);
+        const flexDirection = parentStyle.flexDirection;
+        const display = parentStyle.display;
+
+        if (display === "flex") {
+          const draggedElement = document.querySelector(
+            `[data-node-id="${node.id}"]`
+          );
+          if (draggedElement) {
+            if (flexDirection.includes("row")) {
+              // Lock Y position to the current dragged position
+              finalTop = draggedElement.getBoundingClientRect().top;
+            } else if (flexDirection.includes("column")) {
+              // Lock X position to the current dragged position
+              finalLeft = draggedElement.getBoundingClientRect().left;
+            }
+          }
+        }
+      }
+    }
+  }
+
   const snapPoints = [
     { value: canvasX, type: "left" },
     { value: canvasX + width, type: "right" },
@@ -89,19 +132,16 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     { value: canvasY + height / 2, type: "centerY" },
   ];
 
-  let finalLeft = rawLeft + offsetX * transform.scale;
-  let finalTop = rawTop + offsetY * transform.scale;
   let snapResult = null;
 
-  if (snapGrid && dragState.isOverCanvas) {
-    snapResult = snapGrid.findNearestSnaps(snapPoints, 5, node.id);
+  if (snapGrid && (dragState.isOverCanvas || dragState.dynamicModeNodeId)) {
+    snapResult = snapGrid.findNearestSnaps(snapPoints, 10, node.id);
 
     if (snapResult.horizontalSnap || snapResult.verticalSnap) {
       if (snapResult.verticalSnap) {
         const snappedScreenX =
           transform.x + snapResult.verticalSnap.position * transform.scale;
 
-        // Adjust based on which edge triggered the snap
         switch (snapResult.verticalSnap.type) {
           case "left":
             finalLeft = snappedScreenX + offsetX * transform.scale;
@@ -125,7 +165,6 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
         const snappedScreenY =
           transform.y + snapResult.horizontalSnap.position * transform.scale;
 
-        // Adjust based on which edge triggered the snap
         switch (snapResult.horizontalSnap.type) {
           case "top":
             finalTop = snappedScreenY + offsetY * transform.scale;

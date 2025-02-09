@@ -63,7 +63,6 @@ export const useMouseMove = () => {
         (rect!.left - containerRect.left - transform.x) / transform.scale;
       finalY = (rect!.top - containerRect.top - transform.y) / transform.scale;
 
-      // Apply calibration adjustment
       const adjustedPosition = getCalibrationAdjustedPosition(
         { x: finalX, y: finalY },
         draggedNode.style.rotate,
@@ -200,10 +199,8 @@ export const useMouseMove = () => {
         prevMousePosRef.current = { x: e.clientX, y: e.clientY };
         return;
       } else {
-        console.log("CANVAS X: IN MOUSE MOVE ", canvasX);
-
-        console.log("CANVAS Y: IN MOUSE MOVE ", canvasY);
-
+        console.log("hovercanvas");
+        dragDisp.hideLineIndicator();
         dragDisp.setDropInfo(null, null, canvasX, canvasY);
       }
     }
@@ -282,39 +279,59 @@ export const useMouseMove = () => {
           return;
         }
 
-        const childRects = frameChildren
-          .map((childNode) => {
-            const el = document.querySelector(
-              `[data-node-id="${childNode.id}"]`
-            ) as HTMLElement | null;
-            return el
-              ? { id: childNode.id, rect: el.getBoundingClientRect() }
-              : null;
-          })
-          .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
+        const hasChildren = frameChildren.length > 0;
+        if (hasChildren) {
+          const childRects = frameChildren
+            .map((childNode) => {
+              const el = document.querySelector(
+                `[data-node-id="${childNode.id}"]`
+              ) as HTMLElement | null;
+              return el
+                ? { id: childNode.id, rect: el.getBoundingClientRect() }
+                : null;
+            })
+            .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
 
-        const result = computeFrameDropIndicator(
-          frameElement,
-          childRects,
-          e.clientX,
-          e.clientY
-        );
-
-        if (result) {
-          dragDisp.setDropInfo(
-            result.dropInfo.targetId,
-            result.dropInfo.position,
-            canvasX,
-            canvasY
+          const result = computeFrameDropIndicator(
+            frameElement,
+            childRects,
+            e.clientX,
+            e.clientY
           );
-          if (result.lineIndicator.show) {
+
+          if (result && result.lineIndicator.show) {
+            dragDisp.setDropInfo(
+              result.dropInfo.targetId,
+              result.dropInfo.position,
+              canvasX,
+              canvasY
+            );
             dragDisp.setLineIndicator(result.lineIndicator);
           } else {
+            dragDisp.setDropInfo(null, null, canvasX, canvasY);
             dragDisp.hideLineIndicator();
           }
-          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-          return;
+        } else {
+          const result = computeFrameDropIndicator(
+            frameElement,
+            [],
+            e.clientX,
+            e.clientY
+          );
+
+          if (result) {
+            dragDisp.setDropInfo(
+              result.dropInfo.targetId,
+              result.dropInfo.position,
+              canvasX,
+              canvasY
+            );
+            dragDisp.hideLineIndicator();
+          }
         }
+
+        prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+        return;
       }
 
       const siblingElement = filteredElements.find((el) => {
@@ -344,6 +361,7 @@ export const useMouseMove = () => {
 
     if (overCanvas) {
       dragDisp.setIsOverCanvas(true);
+
       const placeholder = nodeState.nodes.find((n) => n.type === "placeholder");
       if (placeholder && isReorderingNode) {
         if (originalIndexRef.current === null) {
