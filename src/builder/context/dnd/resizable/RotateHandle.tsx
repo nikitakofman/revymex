@@ -123,6 +123,7 @@ export const RotateHandle: React.FC<{
       style={{
         position: "absolute",
         left: "50%",
+
         top: `-${handleOffset}px`,
         transform: "translateX(-50%)",
         width: `${handleSize}px`,

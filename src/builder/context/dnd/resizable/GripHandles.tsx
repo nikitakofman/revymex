@@ -2,7 +2,7 @@ import { useCallback, useState, useLayoutEffect, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "../../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { MoveHorizontal, MoveVertical } from "lucide-react";
+import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
 import { useDragStart } from "../useDragStart";
 
 export const GripHandles = ({
@@ -49,7 +49,6 @@ export const GripHandles = ({
     [elementRef, dragDisp, handleDragStart]
   );
 
-  // Get parent frame info
   const parentNode = nodeState.nodes.find(
     (n) => n.id === node.parentId && n.type === "frame"
   );
@@ -63,13 +62,11 @@ export const GripHandles = ({
     ? getComputedStyle(parentParentElement).flexDirection === "column"
     : false;
 
-  // Get current element flex direction
   const currentElement = elementRef.current?.parentElement;
   const isColumn = currentElement
     ? getComputedStyle(currentElement).flexDirection === "column"
     : false;
 
-  // Update parent rect when needed
   useLayoutEffect(() => {
     if (!parentElement || !contentRef.current) return;
 
@@ -127,19 +124,26 @@ export const GripHandles = ({
         transition: "opacity 0.15s",
         ...(flexDir
           ? {
-              // Horizontal offset should scale with zoom like the cable icon
               left: `${-36 / transform.scale}px`,
               top: "50%",
               transform: "translateY(-50%)",
             }
           : {
-              // Vertical offset should scale with zoom like the cable icon
               bottom: `${-36 / transform.scale}px`,
               left: "50%",
               transform: "translateX(-50%)",
             }),
       }}
-      onMouseDown={(e) => startGripDrag(e, targetNode)}
+      onMouseDown={(e) => {
+        dragDisp.clearSelection();
+        dragDisp.addToSelection(targetNode.id);
+        startGripDrag(e, targetNode);
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        console.log("CLICK", targetNode);
+        dragDisp.addToSelection(targetNode.id);
+      }}
       onMouseEnter={
         isParentHandle
           ? (e) => (e.currentTarget.style.opacity = "1")
@@ -164,9 +168,15 @@ export const GripHandles = ({
         }}
       >
         {flexDir ? (
-          <MoveVertical size={18 / transform.scale} />
-        ) : (
+          node.parentId ? (
+            <MoveVertical size={18 / transform.scale} />
+          ) : (
+            <Move size={18 / transform.scale} />
+          )
+        ) : node.parentId ? (
           <MoveHorizontal size={18 / transform.scale} />
+        ) : (
+          <Move size={18 / transform.scale} />
         )}
       </div>
     </div>
@@ -174,11 +184,12 @@ export const GripHandles = ({
 
   return (
     <>
-      {/* Current element grip handle */}
-      {renderGripHandle(node, false, isColumn)}
+      {(node.style.rotate === "0deg" || node.style.rotate === undefined) &&
+        renderGripHandle(node, false, isColumn)}
 
-      {/* Parent frame grip handle */}
       {parentNode &&
+        (parentNode.style.rotate === "0deg" ||
+          parentNode?.style.rotate === undefined) &&
         contentRef.current &&
         createPortal(
           <div

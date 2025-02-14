@@ -9,9 +9,15 @@ export interface Position {
 }
 
 export interface Node {
-  id: string | number;
+  id: string;
   type: "frame" | "image" | "text" | "placeholder" | string;
-  style: CSSProperties & { src?: string } & { text?: string };
+  style: CSSProperties & {
+    src?: string;
+    text?: string;
+    backgroundImage?: string;
+    isVideoBackground?: boolean;
+    backgroundVideo?: string;
+  };
   sharedId?: string;
   independentStyles?: {
     [styleProperty: string]: boolean;
@@ -110,20 +116,25 @@ export class NodeDispatcher {
   updateNodeStyle(nodeIds: (string | number)[], style: Partial<CSSProperties>) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        const sourceNode = draft.nodes.find((n) => nodeIds.includes(n.id));
-        if (!sourceNode) return;
+        // Find all nodes that match the nodeIds
+        const nodesToUpdate = draft.nodes.filter((n) => nodeIds.includes(n.id));
 
-        const viewportId = findParentViewport(sourceNode.parentId, draft.nodes);
+        if (nodesToUpdate.length === 0) return;
 
-        if (viewportId && viewportId !== "viewport-1440") {
-          if (!sourceNode.independentStyles) sourceNode.independentStyles = {};
+        // Update each node
+        nodesToUpdate.forEach((node) => {
+          const viewportId = findParentViewport(node.parentId, draft.nodes);
 
-          Object.keys(style).forEach((prop) => {
-            sourceNode.independentStyles![prop] = true;
-          });
-        }
+          if (viewportId && viewportId !== "viewport-1440") {
+            if (!node.independentStyles) node.independentStyles = {};
 
-        Object.assign(sourceNode.style, style);
+            Object.keys(style).forEach((prop) => {
+              node.independentStyles![prop] = true;
+            });
+          }
+
+          Object.assign(node.style, style);
+        });
       })
     );
   }
@@ -488,6 +499,20 @@ export class NodeDispatcher {
         const node = draft.nodes.find((n) => n.id === nodeId);
         if (node) {
           Object.assign(node, props);
+        }
+      })
+    );
+  }
+
+  replaceNode(nodeId: string | number, newNode: Node) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const index = draft.nodes.findIndex((n) => n.id === nodeId);
+        if (index !== -1) {
+          draft.nodes[index] = {
+            ...newNode,
+            id: nodeId,
+          };
         }
       })
     );

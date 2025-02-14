@@ -18,10 +18,66 @@ export const useMouseUp = () => {
     transform,
     nodeState,
     setNodeStyle,
+    stopRecording,
   } = useBuilder();
 
   const originalIndexRef = useRef<number | null>(null);
   const { stopAutoScroll } = useAutoScroll();
+
+  const handleMediaToFrameTransformation = (
+    mediaNode: Node,
+    droppedNode: Node,
+    position: string
+  ) => {
+    if (position !== "inside") return false;
+
+    const frameNode: Node = {
+      ...mediaNode,
+      type: "frame",
+      style: {
+        ...mediaNode.style,
+        // Set the appropriate background property based on type
+        ...(mediaNode.type === "video"
+          ? {
+              backgroundVideo: mediaNode.style.src,
+            }
+          : { backgroundImage: mediaNode.style.src }),
+        src: undefined,
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+    };
+
+    // First replace the media with a frame
+    nodeDisp.replaceNode(mediaNode.id, frameNode);
+
+    // Then add the dropped node as a child
+    const childNode = {
+      ...droppedNode,
+      sharedId: nanoid(),
+      style: {
+        ...droppedNode.style,
+        position: "relative",
+        zIndex: "",
+        transform: "",
+        left: "",
+        top: "",
+      },
+      parentId: frameNode.id,
+      inViewport: frameNode.inViewport || false,
+    };
+
+    nodeDisp.addNode(
+      childNode,
+      frameNode.id,
+      "inside",
+      frameNode.inViewport || false
+    );
+
+    return true;
+  };
 
   return () => {
     if (!dragState.isDragging || !dragState.draggedNode) {
@@ -34,6 +90,16 @@ export const useMouseUp = () => {
     const realNodeId = draggedNode.id;
     const sharedId = nanoid();
 
+    const dropWidth =
+      dragState.originalWidthHeight.width !== 0
+        ? dragState.originalWidthHeight.width
+        : draggedNode.style.width;
+
+    const dropHeight =
+      dragState.originalWidthHeight.height !== 0
+        ? dragState.originalWidthHeight.height
+        : draggedNode.style.height;
+
     const sourceViewportId: string | number | null = findParentViewport(
       draggedNode.parentId,
       nodeState.nodes
@@ -41,8 +107,43 @@ export const useMouseUp = () => {
 
     if (dragState.dropInfo.targetId) {
       const { targetId, position } = dragState.dropInfo;
-      const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
+      const targetNode = nodeState.nodes.find((n) => n.id === targetId);
 
+      // Handle image transformation first
+      if (
+        (targetNode?.type === "image" || targetNode?.type === "video") &&
+        dragState.draggedItem
+      ) {
+        console.log("Attempting image transformation");
+        const newNode = {
+          ...draggedNode,
+          sharedId,
+          style: {
+            ...draggedNode.style,
+            width: dropWidth,
+            height: dropHeight,
+          } as Node["style"],
+        };
+
+        const transformed = handleMediaToFrameTransformation(
+          targetNode,
+          newNode,
+          position
+        );
+
+        if (transformed) {
+          if (!dragState.dynamicModeNodeId) {
+            nodeDisp.syncViewports();
+          }
+          dragDisp.hideLineIndicator();
+          dragDisp.resetDragState();
+          stopRecording(dragState.recordingSessionId);
+          return;
+        }
+      }
+
+      // Regular drop handling
+      const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
       const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
 
       if (dragState.draggedItem) {
@@ -56,6 +157,8 @@ export const useMouseUp = () => {
             transform: "",
             left: "",
             top: "",
+            width: dropWidth,
+            height: dropHeight,
           } as Node["style"],
         };
 
@@ -80,6 +183,11 @@ export const useMouseUp = () => {
             transform: "",
             left: "",
             top: "",
+            ...(dragState.originalWidthHeight.isFillMode
+              ? {
+                  flex: "1 0 0px",
+                }
+              : {}),
           },
           [realNodeId],
           undefined
@@ -92,6 +200,7 @@ export const useMouseUp = () => {
       dragDisp.hideLineIndicator();
       dragDisp.resetDragState();
       originalIndexRef.current = null;
+      stopRecording(dragState.recordingSessionId as string);
       return;
     }
 
@@ -124,10 +233,14 @@ export const useMouseUp = () => {
           transform: "",
           left: "",
           top: "",
+          ...(dragState.originalWidthHeight.isFillMode && {
+            flex: "1 0 0px",
+          }),
+          width: dropWidth,
+          height: dropHeight,
         },
         [realNodeId],
-        undefined,
-        true
+        undefined
       );
 
       if (sourceViewportId) {
@@ -200,6 +313,7 @@ export const useMouseUp = () => {
       }
     }
 
+    stopRecording(dragState.recordingSessionId);
     dragDisp.hideLineIndicator();
     dragDisp.resetDragState();
     originalIndexRef.current = null;

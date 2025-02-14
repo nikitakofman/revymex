@@ -29,4 +29,14 @@ export const elementRegistry = [
       },
     },
   },
+  {
+    type: "spline",
+    defaultProps: {},
+  },
+  {
+    type: "video",
+    defaultProps: {
+      src: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    },
+  },
 ];

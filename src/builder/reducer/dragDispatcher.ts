@@ -26,13 +26,15 @@ export interface SnapGuideLine {
 
 interface StyleHelper {
   show: boolean;
-  type: "dimensions" | "gap" | "rotate" | null;
+  type: "dimensions" | "gap" | "rotate" | "radius" | null;
   position: { x: number; y: number };
   value?: number;
   dimensions?: {
     width: number;
     height: number;
     unit: "px" | "%";
+    widthUnit?: string;
+    heightUnit?: string;
   };
 }
 
@@ -67,6 +69,10 @@ export interface DragState {
   hoverNodeId: string | number | null;
   dragPositions: { x: number; y: number };
   isOverCanvas: boolean;
+  recordingSessionId: string | null;
+  originalWidthHeight: { width: number; height: number; isFillMode: boolean };
+  isSelectionBoxActive: boolean;
+  tempSelectedIds: string[];
 }
 
 export class DragDispatcher {
@@ -86,6 +92,22 @@ export class DragDispatcher {
     this.setState((prev) =>
       produce(prev, (draft) => {
         Object.assign(draft, state);
+      })
+    );
+  }
+
+  setIsSelectionBoxActive(isActive: boolean) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.isSelectionBoxActive = isActive;
+      })
+    );
+  }
+
+  setTempSelectedIds(ids: string[]) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.tempSelectedIds = ids;
       })
     );
   }
@@ -147,6 +169,14 @@ export class DragDispatcher {
     );
   }
 
+  setSelectedIds(ids: (string | number)[]) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.selectedIds = ids;
+      })
+    );
+  }
+
   removeFromSelection(nodeId: string | number) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -199,6 +229,13 @@ export class DragDispatcher {
     );
   }
 
+  setRecordingSessionId(sessionId: string | null) {
+    this.setState((prev) => ({
+      ...prev,
+      recordingSessionId: sessionId,
+    }));
+  }
+
   hideLineIndicator() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -240,10 +277,16 @@ export class DragDispatcher {
   }
 
   updateStyleHelper(params: {
-    type: "dimensions" | "gap" | "rotate";
+    type: "dimensions" | "gap" | "rotate" | "radius";
     position: { x: number; y: number };
     value?: number;
-    dimensions?: { width: number; height: number; unit: "px" | "%" };
+    dimensions?: {
+      width: number;
+      height: number;
+      unit: "px" | "%";
+      widthUnit?: string;
+      heightUnit?: string;
+    };
   }) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -312,6 +355,14 @@ export class DragDispatcher {
     );
   }
 
+  setOriginalWidthHeight(width: number, height: number, isFillMode: boolean) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.originalWidthHeight = { width, height, isFillMode };
+      })
+    );
+  }
+
   resetDragState() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -332,6 +383,7 @@ export class DragDispatcher {
         };
         draft.isOverCanvas = false;
         draft.dragPositions = { x: 0, y: 0 };
+        draft.originalWidthHeight = { width: 0, height: 0 };
       })
     );
   }

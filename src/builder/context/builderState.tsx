@@ -10,12 +10,20 @@ import React, {
 } from "react";
 import { NodeState } from "../reducer/nodeDispatcher";
 import { DragState } from "../reducer/dragDispatcher";
-import { dragInitialState, nodeInitialState } from "../reducer/state";
+import {
+  dragInitialState,
+  interfaceInitialState,
+  nodeInitialState,
+} from "../reducer/state";
 import { NodeDispatcher } from "../reducer/nodeDispatcher";
 import { DragDispatcher } from "../reducer/dragDispatcher";
 import { debounce } from "lodash";
 import { useNodeHistory } from "./hooks/useHistory";
 import { createTrackedNodeDispatcher } from "./hooks/useNodeDispTracker";
+import {
+  InterfaceDispatcher,
+  InterfaceState,
+} from "../reducer/interfaceDispatcher";
 
 export interface LineIndicatorState {
   show: boolean;
@@ -56,10 +64,16 @@ interface BuilderContextType {
   setIsAdjustingGap: React.Dispatch<React.SetStateAction<boolean>>;
   isRotating: boolean;
   setIsRotating: React.Dispatch<React.SetStateAction<boolean>>;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   operations: Operation[];
   clearOperations: () => void;
   startRecording: () => string;
   stopRecording: (sessionId: string) => boolean;
+  interfaceState: InterfaceState;
+  interfaceDisp: InterfaceDispatcher;
 }
 
 export interface RecordingSession {
@@ -82,6 +96,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   } = useNodeHistory(nodeInitialState);
 
   const [dragState, setDragState] = useState(dragInitialState);
+  const [interfaceState, setInterfaceState] = useState(interfaceInitialState);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -97,8 +112,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [operations, setOperations] = useState<Operation[]>([]);
 
   const operationsRef = useRef<Operation[]>([]);
-
-  const recordingRef = useRef<RecordingSession | null>(null);
 
   const onOperation = useCallback((operation: Operation) => {
     operationsRef.current = [...operationsRef.current.slice(-99), operation];
@@ -117,6 +130,11 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   }, [setNodeState, onOperation]);
 
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
+
+  const interfaceDisp = useMemo(
+    () => new InterfaceDispatcher(setInterfaceState),
+    []
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -234,6 +252,9 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       sync = false
     ) => {
       const targetIds = nodeIds || dragState.selectedIds;
+
+      console.log("targetIds", targetIds);
+
       if (targetIds.length > 0) {
         nodeDisp.updateNodeStyle(targetIds, styles);
         if (sync) {
@@ -270,7 +291,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     clearOperations: useCallback(() => setOperations([]), []),
     startRecording,
     stopRecording,
-    recordingRef,
+    interfaceState,
+    interfaceDisp,
   };
 
   return (

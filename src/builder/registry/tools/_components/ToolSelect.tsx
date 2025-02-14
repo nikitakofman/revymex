@@ -7,8 +7,9 @@ interface ToolSelectProps {
   label: string;
   name: string;
   value?: string;
-  options: { label: string; value: string }[];
+  options: { label: string; value: string; disabled?: boolean }[];
   disabled?: boolean;
+  onChange?: (value: string) => void;
 }
 
 export const ToolSelect = ({
@@ -17,18 +18,40 @@ export const ToolSelect = ({
   value,
   options,
   disabled = false,
+  onChange,
 }: ToolSelectProps) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle, nodeState, dragState } = useBuilder();
 
   const computedStyle = useComputedStyle({
     property: name,
-    usePseudoElement: name.toLowerCase().startsWith("border"),
+    usePseudoElement: name && name.toLowerCase().startsWith("border"),
     parseValue: false,
     defaultValue: value || "",
   });
 
+  // Check if selected node has a parent
+  const hasParent =
+    dragState.selectedIds.length > 0 &&
+    nodeState.nodes.some(
+      (node) => node.id === dragState.selectedIds[0] && node.parentId
+    );
+
+  // Modify options based on parent status if they're dimension-related
+  const processedOptions = options.map((option) => ({
+    ...option,
+    disabled:
+      option.disabled ||
+      (!hasParent &&
+        (option.value === "%" || option.value === "auto") &&
+        (name === "width" || name === "height")),
+  }));
+
   const handleChange = (newValue: string) => {
-    setNodeStyle({ [name]: newValue });
+    if (onChange) {
+      onChange(newValue);
+    } else {
+      setNodeStyle({ [name]: newValue });
+    }
   };
 
   return (
@@ -46,8 +69,13 @@ export const ToolSelect = ({
             Mixed
           </option>
         )}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
+        {processedOptions.map((option) => (
+          <option
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className={option.disabled ? "opacity-50" : ""}
+          >
             {option.label}
           </option>
         ))}

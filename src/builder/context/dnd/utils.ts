@@ -66,62 +66,53 @@ export const getDropPosition = (
   position: "before" | "after" | "inside";
   lineIndicator: LineIndicatorState;
 } => {
-  const INSIDE_ZONE = 0.9;
-  const EDGE_ZONE = (1 - INSIDE_ZONE) / 2;
-  const height = elementRect.height;
-  const relativeY = mouseY - elementRect.top;
-  const percentage = relativeY / height;
+  const elementCenter = elementRect.top + elementRect.height / 2;
+  const isTopHalf = mouseY < elementCenter;
 
   if (nodeType === "frame") {
-    if (percentage < EDGE_ZONE) {
+    // For frames, check if we're in the middle zone
+    const middleZoneSize = elementRect.height * 0.4; // 40% of height is middle zone
+    const middleZoneStart = elementCenter - middleZoneSize / 2;
+    const middleZoneEnd = elementCenter + middleZoneSize / 2;
+
+    if (mouseY >= middleZoneStart && mouseY <= middleZoneEnd) {
       return {
-        position: "before",
+        position: "inside",
         lineIndicator: {
-          show: true,
+          show: false,
           x: elementRect.left,
           y: elementRect.top,
-          width: elementRect.width,
-          height: "2px",
+          width: "2px",
+          height: elementRect.height,
         },
       };
     }
-    if (percentage > 1 - EDGE_ZONE) {
-      return {
-        position: "after",
-        lineIndicator: {
-          show: true,
-          x: elementRect.left,
-          y: elementRect.bottom,
-          width: elementRect.width,
-          height: "2px",
-        },
-      };
-    }
+  }
+
+  // For all elements (including frames when not in middle zone)
+  if (isTopHalf) {
     return {
-      position: "inside",
+      position: "before",
       lineIndicator: {
         show: true,
         x: elementRect.left,
         y: elementRect.top,
-        width: "2px",
-        height: elementRect.height,
+        width: elementRect.width,
+        height: "2px",
+      },
+    };
+  } else {
+    return {
+      position: "after",
+      lineIndicator: {
+        show: true,
+        x: elementRect.left,
+        y: elementRect.bottom,
+        width: elementRect.width,
+        height: "2px",
       },
     };
   }
-
-  const middleY = elementRect.top + elementRect.height / 2;
-  const position = mouseY < middleY ? "before" : "after";
-
-  return {
-    position,
-    lineIndicator: {
-      show: true,
-      x: elementRect.left,
-      y: position === "before" ? elementRect.top : elementRect.bottom,
-      width: elementRect.width,
-      height: "2px",
-    },
-  };
 };
 
 interface DragPos {
@@ -308,158 +299,122 @@ export const computeFrameDropIndicator = (
   mouseX: number,
   mouseY: number
 ) => {
+  const frameRect = frameElement.getBoundingClientRect();
+  const frameId = frameElement.getAttribute("data-node-id")!;
   const computedStyle = window.getComputedStyle(frameElement);
   const isColumn = computedStyle.flexDirection === "column";
-  const frameRect = frameElement.getBoundingClientRect();
 
-  const firstChild = frameChildren[0];
-  if (firstChild) {
-    const virtualGap = 10;
-    if (isColumn) {
-      if (
-        mouseY >= frameRect.top &&
-        mouseY <= firstChild.rect.top + virtualGap
-      ) {
-        return {
-          dropInfo: {
-            targetId: firstChild.id,
-            position: "before" as const,
-          },
-          lineIndicator: {
-            show: true,
-            x: frameRect.left,
-            y: firstChild.rect.top,
-            width: frameRect.width,
-            height: 1,
-          },
-        };
-      }
-    } else {
-      if (
-        mouseX >= frameRect.left &&
-        mouseX <= firstChild.rect.left + virtualGap
-      ) {
-        return {
-          dropInfo: {
-            targetId: firstChild.id,
-            position: "before" as const,
-          },
-          lineIndicator: {
-            show: true,
-            x: firstChild.rect.left,
-            y: frameRect.top,
-            width: 1,
-            height: frameRect.height,
-          },
-        };
-      }
-    }
-  }
-
-  const lastChild = frameChildren[frameChildren.length - 1];
-  if (lastChild) {
-    const virtualGap = 5;
-    if (isColumn) {
-      if (
-        mouseY >= lastChild.rect.bottom - virtualGap &&
-        mouseY <= frameRect.bottom
-      ) {
-        return {
-          dropInfo: {
-            targetId: lastChild.id,
-            position: "after" as const,
-          },
-          lineIndicator: {
-            show: true,
-            x: frameRect.left,
-            y: lastChild.rect.bottom,
-            width: frameRect.width,
-            height: 1,
-          },
-        };
-      }
-    } else {
-      if (
-        mouseX >= lastChild.rect.right - virtualGap &&
-        mouseX <= frameRect.right
-      ) {
-        return {
-          dropInfo: {
-            targetId: lastChild.id,
-            position: "after" as const,
-          },
-          lineIndicator: {
-            show: true,
-            x: lastChild.rect.right,
-            y: frameRect.top,
-            width: 1,
-            height: frameRect.height,
-          },
-        };
-      }
-    }
-  }
-
-  for (let i = 0; i < frameChildren.length - 1; i++) {
-    const currentChild = frameChildren[i];
-    const nextChild = frameChildren[i + 1];
-    if (!currentChild || !nextChild) continue;
-
-    const virtualGap = 5;
-    if (isColumn) {
-      const centerY = (currentChild.rect.bottom + nextChild.rect.top) / 2;
-      if (Math.abs(mouseY - centerY) <= virtualGap) {
-        return {
-          dropInfo: {
-            targetId: currentChild.id,
-            position: "after" as const,
-          },
-          lineIndicator: {
-            show: true,
-            x: frameRect.left,
-            y: centerY,
-            width: frameRect.width,
-            height: 1,
-          },
-        };
-      }
-    } else {
-      const centerX = (currentChild.rect.right + nextChild.rect.left) / 2;
-      if (Math.abs(mouseX - centerX) <= virtualGap) {
-        return {
-          dropInfo: {
-            targetId: currentChild.id,
-            position: "after" as const,
-          },
-          lineIndicator: {
-            show: true,
-            x: centerX,
-            y: frameRect.top,
-            width: 1,
-            height: frameRect.height,
-          },
-        };
-      }
-    }
-  }
-
+  // If no children, show indicator in middle of frame
   if (frameChildren.length === 0) {
     return {
       dropInfo: {
-        targetId: frameElement.getAttribute("data-node-id")!,
+        targetId: frameId,
         position: "inside" as const,
       },
       lineIndicator: {
         show: false,
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0,
       },
     };
   }
 
-  return null;
+  // Find the child we're hovering over
+  const hoveredChild = frameChildren.find(({ rect }) => {
+    if (isColumn) {
+      return mouseY >= rect.top && mouseY <= rect.bottom;
+    } else {
+      return mouseX >= rect.left && mouseX <= rect.right;
+    }
+  });
+
+  if (hoveredChild) {
+    // We're over a child - decide whether to show before or after
+    const relativePosition = isColumn
+      ? mouseY - hoveredChild.rect.top
+      : mouseX - hoveredChild.rect.left;
+
+    const elementSize = isColumn
+      ? hoveredChild.rect.height
+      : hoveredChild.rect.width;
+
+    const isBeforeMiddle = relativePosition < elementSize / 2;
+
+    return {
+      dropInfo: {
+        targetId: hoveredChild.id.toString(),
+        position: isBeforeMiddle ? "before" : "after",
+      },
+      lineIndicator: {
+        show: true,
+        x: isColumn
+          ? frameRect.left
+          : isBeforeMiddle
+          ? hoveredChild.rect.left
+          : hoveredChild.rect.right,
+        y: isColumn
+          ? isBeforeMiddle
+            ? hoveredChild.rect.top
+            : hoveredChild.rect.bottom
+          : frameRect.top,
+        width: isColumn ? frameRect.width : "2px",
+        height: isColumn ? "2px" : frameRect.height,
+      },
+    };
+  }
+
+  // If not over any child, find nearest child
+  const sortedChildren = [...frameChildren].sort((a, b) =>
+    isColumn ? a.rect.top - b.rect.top : a.rect.left - b.rect.left
+  );
+
+  const nearestChild = sortedChildren.reduce((nearest, current) => {
+    const currentDist = isColumn
+      ? Math.abs(mouseY - (current.rect.top + current.rect.height / 2))
+      : Math.abs(mouseX - (current.rect.left + current.rect.width / 2));
+    const nearestDist = nearest
+      ? isColumn
+        ? Math.abs(mouseY - (nearest.rect.top + nearest.rect.height / 2))
+        : Math.abs(mouseX - (nearest.rect.left + nearest.rect.width / 2))
+      : Infinity;
+    return currentDist < nearestDist ? current : nearest;
+  });
+
+  if (nearestChild) {
+    const isBeforeNearest = isColumn
+      ? mouseY < nearestChild.rect.top + nearestChild.rect.height / 2
+      : mouseX < nearestChild.rect.left + nearestChild.rect.width / 2;
+
+    return {
+      dropInfo: {
+        targetId: nearestChild.id.toString(),
+        position: isBeforeNearest ? "before" : "after",
+      },
+      lineIndicator: {
+        show: true,
+        x: isColumn
+          ? frameRect.left
+          : isBeforeNearest
+          ? nearestChild.rect.left
+          : nearestChild.rect.right,
+        y: isColumn
+          ? isBeforeNearest
+            ? nearestChild.rect.top
+            : nearestChild.rect.bottom
+          : frameRect.top,
+        width: isColumn ? frameRect.width : "2px",
+        height: isColumn ? "2px" : frameRect.height,
+      },
+    };
+  }
+
+  return {
+    dropInfo: {
+      targetId: frameId,
+      position: "inside" as const,
+    },
+    lineIndicator: {
+      show: false,
+    },
+  };
 };
 
 export const computeMidPoints = (

@@ -20,6 +20,7 @@ import {
 import ToggleGroup from "@/components/ui/toggle-group";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
+import { ThemeToggle } from "@/providers/ThemeToggle";
 
 interface ViewportBarProps {
   onGrabToggle: (isGrabbing: boolean) => void;
@@ -68,7 +69,7 @@ const ViewportBar = ({
     <div
       className={`fixed bottom-6  z-[9998] bg-[var(--bg-surface)] flex items-center p-1.5 rounded-[var(--radius-md)] border border-[var(--border-default)] shadow-elevation-medium transition-all duration-300 flex-row-reverse`}
       style={{
-        width: shouldReduceWidth ? "55px" : "355px",
+        width: shouldReduceWidth ? "55px" : "445px",
         transition: "width 300ms ease",
         // right: !selectedViewportId ? "20px" : "280px",
         right: "280px",
@@ -88,7 +89,7 @@ const ViewportBar = ({
         )}
       </Button>
       <div
-        className={`flex items-center gap-1 transition-all duration-300 ${
+        className={`flex items-center gap-2 transition-all duration-300 ${
           shouldShowButtons
             ? "opacity-100 scale-100 translate-x-0"
             : "opacity-0 scale-0 -translate-x-4 pointer-events-none"
@@ -161,6 +162,8 @@ const ViewportBar = ({
         <Button size="sm" variant="ghost">
           <Keyboard size={18} />
         </Button>
+        <LineSeparator orientation="vertical" height="26px" />
+        <ThemeToggle />
         <LineSeparator orientation="vertical" height="26px" />
         <Button className="text-[#b0bfed]" size="sm" variant="ghost">
           Pro

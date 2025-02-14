@@ -1,13 +1,36 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { debounce } from "lodash";
 
+// Types and Interfaces
 interface StyleValue {
   value: string | number;
   unit?: string;
   mixed?: boolean;
 }
 
+interface UseComputedStyleProps {
+  property: string;
+  usePseudoElement?: boolean;
+  pseudoElement?: string;
+  parseValue?: boolean;
+  defaultValue?: string | number;
+  defaultUnit?: string;
+  isColor?: boolean;
+}
+
+interface BatchProcessOptions {
+  parseValue: boolean;
+  defaultUnit: string;
+  isColor: boolean;
+  usePseudoElement: boolean;
+  pseudoElement: string;
+}
+
+// Global style cache
+const styleCache = new Map<string, StyleValue>();
+
+// Color conversion utilities
 const rgbToHex = (rgb: string): string => {
   const matches = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (!matches) return rgb;
@@ -48,16 +71,85 @@ const extractColor = (value: string): string => {
   return "#000000";
 };
 
-interface UseComputedStyleProps {
-  property: string;
-  usePseudoElement?: boolean;
-  pseudoElement?: string;
-  parseValue?: boolean;
-  defaultValue?: string | number;
-  defaultUnit?: string;
-  isColor?: boolean;
-}
+// Batch processing function
+const batchProcessElements = (
+  elements: HTMLElement[],
+  property: string,
+  options: BatchProcessOptions
+): StyleValue | null => {
+  const computedValues = elements
+    .map((element) => {
+      const cacheKey = `${element.dataset.nodeId}-${property}${
+        options.usePseudoElement ? options.pseudoElement : ""
+      }`;
 
+      if (styleCache.has(cacheKey)) {
+        return styleCache.get(cacheKey)!;
+      }
+
+      const computedStyle = options.usePseudoElement
+        ? window.getComputedStyle(element, options.pseudoElement)
+        : window.getComputedStyle(element);
+
+      let value = computedStyle[property as any];
+
+      if (
+        !value ||
+        value === "none" ||
+        value === "rgba(0, 0, 0, 0)" ||
+        value === "transparent"
+      ) {
+        return null;
+      }
+
+      if (
+        options.isColor ||
+        property === "background" ||
+        property === "backgroundColor"
+      ) {
+        value = extractColor(value);
+      }
+
+      let result: StyleValue;
+      if (!options.parseValue) {
+        result = { value };
+      } else {
+        const match = value.match(/^([-\d.]+)(\D+)?$/);
+        result = match
+          ? {
+              value: parseFloat(match[1]),
+              unit: match[2] || options.defaultUnit,
+            }
+          : { value };
+      }
+
+      styleCache.set(cacheKey, result);
+      return result;
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null);
+
+  if (computedValues.length === 0) return null;
+
+  const firstValue = computedValues[0];
+  const allSameValue = computedValues.every(
+    (v) =>
+      v.value === firstValue.value && (!v.unit || v.unit === firstValue.unit)
+  );
+
+  if (!allSameValue) {
+    return {
+      value: firstValue.value,
+      mixed: true,
+      unit: computedValues.every((v) => v.unit === firstValue.unit)
+        ? firstValue.unit
+        : undefined,
+    };
+  }
+
+  return firstValue;
+};
+
+// Main hook
 export function useComputedStyle({
   property,
   usePseudoElement = false,
@@ -66,158 +158,142 @@ export function useComputedStyle({
   defaultValue = "",
   defaultUnit = "px",
   isColor = false,
-}: UseComputedStyleProps) {
+}: UseComputedStyleProps): StyleValue {
   const { dragState, nodeState } = useBuilder();
-  const [styleValue, setStyleValue] = useState<StyleValue>({
+  const [styleValue, setStyleValue] = useState<StyleValue>(() => ({
     value: defaultValue,
     unit: defaultUnit,
-  });
+  }));
 
-  const previousValueRef = useRef<string>();
+  const observerRef = useRef<MutationObserver | null>(null);
+  const elementsRef = useRef<HTMLElement[]>([]);
   const isUpdatingRef = useRef(false);
+  const lastComputedRef = useRef<StyleValue | null>(null);
 
-  const getComputedStyleValue = useCallback(() => {
-    if (!dragState.selectedIds.length) return null;
+  // Main update function
+  const updateComputedStyle = useCallback(() => {
+    if (isUpdatingRef.current) return;
+    isUpdatingRef.current = true;
 
-    const computedValues = dragState.selectedIds
-      .map((id) => {
-        const element = document.querySelector(
-          `[data-node-id="${id}"]`
-        ) as HTMLElement;
-        if (!element) return null;
-
-        const computedStyle = usePseudoElement
-          ? window.getComputedStyle(element, pseudoElement)
-          : window.getComputedStyle(element);
-
-        let value = computedStyle[property as any];
-        if (
-          !value ||
-          value === "none" ||
-          value === "rgba(0, 0, 0, 0)" ||
-          value === "transparent"
+    try {
+      const elements = dragState.selectedIds
+        .map(
+          (id) =>
+            document.querySelector(`[data-node-id="${id}"]`) as HTMLElement
         )
-          return null;
+        .filter((el): el is HTMLElement => el !== null);
 
+      elementsRef.current = elements;
+
+      if (elements.length === 0) {
+        const defaultStyleValue = { value: defaultValue, unit: defaultUnit };
         if (
-          isColor ||
-          property === "background" ||
-          property === "backgroundColor"
+          JSON.stringify(lastComputedRef.current) !==
+          JSON.stringify(defaultStyleValue)
         ) {
-          value = extractColor(value);
+          lastComputedRef.current = defaultStyleValue;
+          setStyleValue(defaultStyleValue);
         }
-
-        if (!parseValue) {
-          return { value };
-        }
-
-        const match = value.match(/^([-\d.]+)(\D+)?$/);
-        if (!match) return { value };
-
-        return {
-          value: parseFloat(match[1]),
-          unit: match[2] || defaultUnit,
-        };
-      })
-      .filter((v): v is NonNullable<typeof v> => v !== null);
-
-    if (computedValues.length === 0) return null;
-
-    const firstValue = computedValues[0];
-    const allSameValue = computedValues.every(
-      (v) =>
-        v.value === firstValue.value && (!v.unit || v.unit === firstValue.unit)
-    );
-
-    if (!allSameValue) {
-      return {
-        mixed: true,
-        unit: computedValues.every((v) => v.unit === firstValue.unit)
-          ? firstValue.unit
-          : undefined,
-      };
-    }
-
-    return firstValue;
-  }, [
-    dragState.selectedIds,
-    property,
-    usePseudoElement,
-    pseudoElement,
-    parseValue,
-    defaultUnit,
-    isColor,
-  ]);
-
-  const debouncedUpdate = useCallback(
-    debounce((computed: ReturnType<typeof getComputedStyleValue>) => {
-      if (isUpdatingRef.current) return;
-      isUpdatingRef.current = true;
-
-      try {
-        if (!computed) {
-          const newValue = JSON.stringify({
-            value: defaultValue,
-            unit: defaultUnit,
-          });
-          if (previousValueRef.current !== newValue) {
-            previousValueRef.current = newValue;
-            setStyleValue({ value: defaultValue, unit: defaultUnit });
-          }
-          return;
-        }
-
-        if ("mixed" in computed && computed.mixed) {
-          const newValue = JSON.stringify({
-            value: defaultValue,
-            unit: computed.unit,
-            mixed: true,
-          });
-          if (previousValueRef.current !== newValue) {
-            previousValueRef.current = newValue;
-            setStyleValue({
-              value: defaultValue,
-              unit: computed.unit,
-              mixed: true,
-            });
-          }
-        } else {
-          const newValue = JSON.stringify({
-            value: computed.value,
-            unit: computed.unit || defaultUnit,
-          });
-          if (previousValueRef.current !== newValue) {
-            previousValueRef.current = newValue;
-            setStyleValue({
-              value: computed.value,
-              unit: computed.unit || defaultUnit,
-              mixed: false,
-            });
-          }
-        }
-      } finally {
-        isUpdatingRef.current = false;
+        return;
       }
-    }, 100),
-    [defaultValue, defaultUnit]
-  );
 
-  useEffect(() => {
-    const computed = getComputedStyleValue();
-    debouncedUpdate(computed);
+      const computed = batchProcessElements(elements, property, {
+        parseValue,
+        defaultUnit,
+        isColor,
+        usePseudoElement,
+        pseudoElement,
+      });
 
-    return () => {
-      debouncedUpdate.cancel();
-    };
+      if (!computed) {
+        const defaultStyleValue = { value: defaultValue, unit: defaultUnit };
+        if (
+          JSON.stringify(lastComputedRef.current) !==
+          JSON.stringify(defaultStyleValue)
+        ) {
+          lastComputedRef.current = defaultStyleValue;
+          setStyleValue(defaultStyleValue);
+        }
+        return;
+      }
+
+      if (
+        JSON.stringify(lastComputedRef.current) !== JSON.stringify(computed)
+      ) {
+        lastComputedRef.current = computed;
+        setStyleValue(computed);
+      }
+    } finally {
+      isUpdatingRef.current = false;
+    }
   }, [
     dragState.selectedIds,
-    nodeState.nodes,
     property,
     defaultValue,
     defaultUnit,
-    getComputedStyleValue,
-    debouncedUpdate,
+    parseValue,
+    isColor,
+    usePseudoElement,
+    pseudoElement,
+  ]);
+
+  // Debounced update function
+  const debouncedUpdate = useMemo(
+    () => debounce(updateComputedStyle, 16),
+    [updateComputedStyle]
+  );
+
+  // Clear cache on selection change
+  useEffect(() => {
+    styleCache.clear();
+  }, [dragState.selectedIds]);
+
+  // Setup observers and handle cleanup
+  useEffect(() => {
+    const cleanup = () => {
+      observerRef.current?.disconnect();
+      debouncedUpdate.cancel();
+    };
+
+    // Initial update
+    updateComputedStyle();
+
+    // Setup mutation observer for selected elements
+    if (elementsRef.current.length > 0) {
+      observerRef.current = new MutationObserver((mutations) => {
+        const hasStyleChange = mutations.some(
+          (mutation) =>
+            mutation.type === "attributes" && mutation.attributeName === "style"
+        );
+        if (hasStyleChange) {
+          debouncedUpdate();
+        }
+      });
+
+      elementsRef.current.forEach((element) => {
+        observerRef.current?.observe(element, {
+          attributes: true,
+          attributeFilter: ["style"],
+          subtree: false,
+        });
+      });
+    }
+
+    return cleanup;
+  }, [dragState.selectedIds, nodeState.nodes, debouncedUpdate]);
+
+  // Handle drag state updates
+  useEffect(() => {
+    if (dragState.isDragging) {
+      debouncedUpdate();
+    }
+  }, [
+    dragState.isDragging,
+    dragState.dragPositions.x,
+    dragState.dragPositions.y,
   ]);
 
   return styleValue;
 }
+
+export default useComputedStyle;

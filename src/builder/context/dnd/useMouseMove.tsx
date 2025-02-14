@@ -143,26 +143,63 @@ export const useMouseMove = () => {
 
     if (dragState.draggedItem) {
       const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-      const frameElement = elementsUnder.find(
-        (el) => el.getAttribute("data-node-type") === "frame"
+
+      // Check for both frames and images as potential drop targets
+      const dropTargetElement = elementsUnder.find(
+        (el) =>
+          el.getAttribute("data-node-type") === "frame" ||
+          el.getAttribute("data-node-type") === "image" ||
+          el.getAttribute("data-node-type") === "video"
       );
 
-      if (frameElement) {
-        const frameId = frameElement.getAttribute("data-node-id")!;
-        const frameNode = nodeState.nodes.find((n) => String(n.id) === frameId);
+      if (dropTargetElement) {
+        const targetId = dropTargetElement.getAttribute("data-node-id")!;
+        const targetNode = nodeState.nodes.find(
+          (n) => String(n.id) === targetId
+        );
+        const nodeType = dropTargetElement.getAttribute("data-node-type");
 
-        if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
+        if (targetNode?.isDynamic && !dragState.dynamicModeNodeId) {
           dragDisp.setDropInfo(null, null, canvasX, canvasY);
           return;
         }
 
-        if (!frameNode) {
+        if (!targetNode) {
           prevMousePosRef.current = { x: e.clientX, y: e.clientY };
           return;
         }
 
+        // If it's an image, always set position to "inside" when hovering near center
+        if (nodeType === "image" || nodeType === "video") {
+          const rect = dropTargetElement.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const distanceFromCenter = Math.sqrt(
+            Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2)
+          );
+          const threshold = Math.min(rect.width, rect.height) * 0.4;
+
+          if (distanceFromCenter < threshold) {
+            dragDisp.setDropInfo(targetId, "inside", canvasX, canvasY);
+            dragDisp.hideLineIndicator();
+          } else {
+            const { position, lineIndicator } = getDropPosition(
+              e.clientY,
+              rect,
+              nodeType
+            );
+            if (position !== "inside") {
+              dragDisp.setLineIndicator(lineIndicator);
+            }
+            dragDisp.setDropInfo(targetId, position, canvasX, canvasY);
+          }
+          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+
+        // Existing frame handling logic
         const frameChildren = nodeState.nodes.filter(
-          (child) => child.parentId === frameId
+          (child) => child.parentId === targetId
         );
         const childRects = frameChildren
           .map((childNode) => {
@@ -176,7 +213,7 @@ export const useMouseMove = () => {
           .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
 
         const result = computeFrameDropIndicator(
-          frameElement,
+          dropTargetElement,
           childRects,
           e.clientX,
           e.clientY
@@ -199,7 +236,6 @@ export const useMouseMove = () => {
         prevMousePosRef.current = { x: e.clientX, y: e.clientY };
         return;
       } else {
-        console.log("hovercanvas");
         dragDisp.hideLineIndicator();
         dragDisp.setDropInfo(null, null, canvasX, canvasY);
       }

@@ -1,4 +1,5 @@
 import { DragState } from "./dragDispatcher";
+import { InterfaceState } from "./interfaceDispatcher";
 import { Node } from "./nodeDispatcher";
 
 const VIEWPORT_GAP = 160;
@@ -222,4 +223,15 @@ export const dragInitialState: DragState = {
     y: 0,
   },
   isOverCanvas: false,
+  recordingSessionId: null,
+  originalWidthHeight: { width: 0, height: 0, isFillMode: false },
+  isSelectionBoxActive: false,
+  tempSelectedIds: [],
+};
+
+export const interfaceInitialState: InterfaceState = {
+  isInsertOpen: false,
+  isLayersOpen: false,
+  isCmsOpen: false,
+  isPreviewOpen: false,
 };

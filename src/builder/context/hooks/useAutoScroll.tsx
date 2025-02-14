@@ -1,7 +1,6 @@
 import { useRef, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 
-// Constants for auto-scroll configuration
 export const EDGE_SIZE = 50;
 const MAX_SCROLL_SPEED = 4;
 const MIN_SCROLL_SPEED = 0.5;
@@ -29,13 +28,11 @@ export const useAutoScroll = () => {
       clientY: number,
       containerRect: DOMRect
     ): ScrollDirections => {
-      // Calculate distances from each edge
       const distanceFromTop = Math.max(0, clientY - containerRect.top);
       const distanceFromBottom = Math.max(0, containerRect.bottom - clientY);
       const distanceFromLeft = Math.max(0, clientX - containerRect.left);
       const distanceFromRight = Math.max(0, containerRect.right - clientX);
 
-      // Check if cursor is inside canvas
       const isInsideCanvas =
         clientX >= containerRect.left &&
         clientX <= containerRect.right &&
@@ -46,7 +43,6 @@ export const useAutoScroll = () => {
         return { left: 0, right: 0, up: 0, down: 0 };
       }
 
-      // Calculate scroll speed based on distance from edge
       const getScrollSpeed = (distance: number): number => {
         if (distance > EDGE_SIZE) return 0;
         const distancePercent = distance / EDGE_SIZE;
@@ -83,7 +79,6 @@ export const useAutoScroll = () => {
 
   const startAutoScroll = useCallback(
     (clientX: number, clientY: number, containerElement: HTMLElement) => {
-      // Update current scroll state
       currentScrollState.current = { clientX, clientY };
 
       const scroll = () => {
@@ -112,7 +107,6 @@ export const useAutoScroll = () => {
         }
       };
 
-      // If animation is already running, just update the state
       if (!scrollAnimationRef.current) {
         scrollAnimationRef.current = requestAnimationFrame(scroll);
       }

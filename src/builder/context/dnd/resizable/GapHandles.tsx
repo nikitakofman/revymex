@@ -2,6 +2,26 @@ import React, { useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 
+const parseRotation = (rotate: string | undefined): number => {
+  if (!rotate) return 0;
+  const match = rotate.match(/([-\d.]+)deg/);
+  return match ? parseFloat(match[1]) : 0;
+};
+
+const hasRotation = (node: Node, nodes: Node[]): boolean => {
+  let currentNode = node;
+  while (currentNode) {
+    if (parseRotation(currentNode.style.rotate) !== 0) {
+      return true;
+    }
+    if (!currentNode.parentId) break;
+    currentNode =
+      nodes.find((n) => n.id === currentNode.parentId) || currentNode;
+    if (!currentNode) break;
+  }
+  return false;
+};
+
 export const GapHandles = ({
   node,
   isSelected,
@@ -62,26 +82,15 @@ export const GapHandles = ({
       });
 
       setNodeStyle({ gap: `${Math.round(newGap)}px` }, [node.id], true);
-
-      // if (dragState.selectedIds.length === 0) {
-      //   dragState.selectedIds = currentSelection;
-      // }
     };
 
     const handleMouseUp = () => {
       dragDisp.hideStyleHelper();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
-
       setIsAdjustingGap(false);
-
       stopRecording(sessionId);
-
       window.dispatchEvent(new Event("resize"));
-
-      // dragDisp.setPartialDragState({ selectedIds: currentSelection });
-
-      // console.log("dragState  ", dragState.selectedIds);
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -91,6 +100,9 @@ export const GapHandles = ({
   if (!elementRef.current || !isSelected || isMovingCanvas || isResizing)
     return null;
   if (node.type !== "frame") return null;
+
+  // Check if this node or any of its parents have rotation
+  if (hasRotation(node, nodeState.nodes)) return null;
 
   const frameElement = document.querySelector(`[data-node-id="${node.id}"]`);
   if (!frameElement) return null;
@@ -104,12 +116,7 @@ export const GapHandles = ({
       const el = document.querySelector(
         `[data-node-id="${childNode.id}"]`
       ) as HTMLElement | null;
-      return el
-        ? {
-            id: childNode.id,
-            rect: el.getBoundingClientRect(),
-          }
-        : null;
+      return el ? { id: childNode.id, rect: el.getBoundingClientRect() } : null;
     })
     .filter((x): x is { id: string; rect: DOMRect } => !!x);
 
@@ -134,7 +141,7 @@ export const GapHandles = ({
       gapElements.push(
         <div
           key={`gap-bg-${firstElement.id}-${secondElement.id}`}
-          className="absolute pointer-events-none  transition-opacity duration-150"
+          className="absolute pointer-events-none transition-opacity duration-150"
           style={{
             top: `${relativeTop}px`,
             left: 0,

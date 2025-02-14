@@ -2,10 +2,9 @@ import { useBuilder } from "@/builder/context/builderState";
 import { ResizableWrapper } from "@/builder/context/dnd/resizable";
 import { useConnect } from "@/builder/context/dnd/useConnect";
 import { ElementProps } from "@/builder/types";
-import Image from "next/image";
 import React from "react";
 
-export const ImageElement = ({ node }: ElementProps) => {
+export const VideoElement = ({ node }: ElementProps) => {
   const connect = useConnect();
   const { dragState } = useBuilder();
 
@@ -15,10 +14,8 @@ export const ImageElement = ({ node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)} className="relative">
-        <Image
-          width={200}
-          height={200}
+      <div {...connect(node)}>
+        <video
           style={{
             width: "100%",
             height: "100%",
@@ -26,11 +23,15 @@ export const ImageElement = ({ node }: ElementProps) => {
             borderRadius: node.style.borderRadius,
             pointerEvents: "none",
           }}
-          src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
-          alt="Image"
+          src={
+            node.style.src ||
+            "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
+          }
+          controls={false}
+          autoPlay={true}
+          muted
+          loop
         />
-
-        {/* Drop target overlay */}
         {isDropTarget && (
           <div
             className="absolute inset-0 dropTarget rounded-[inherit] z-10"

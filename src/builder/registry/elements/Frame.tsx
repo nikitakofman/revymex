@@ -4,6 +4,7 @@ import { useConnect } from "@/builder/context/dnd/useConnect";
 import { ElementProps } from "@/builder/types";
 import { Plus } from "lucide-react";
 import { nanoid } from "nanoid";
+import Image from "next/image";
 
 export const Frame = ({ children, node }: ElementProps) => {
   const connect = useConnect();
@@ -32,7 +33,7 @@ export const Frame = ({ children, node }: ElementProps) => {
           }}
         >
           <div
-            className="absolute left-0 right-0 bg-[var(--grid-line)]  rounded-t-lg z-[9999] flex items-center shadow-lg"
+            className="absolute viewport-header left-0 right-0 bg-[var(--grid-line)]  rounded-t-lg z-[9999] flex items-center shadow-lg"
             style={{
               zIndex: 9999,
               top: `-${scaledHeaderHeight + scaledHeaderMargin}px`,
@@ -41,14 +42,12 @@ export const Frame = ({ children, node }: ElementProps) => {
             }}
           >
             <div className="flex items-center justify-between w-full">
-              {/* Left side with viewport width */}
               <div className="flex font-bold items-center">
                 <span style={{ fontSize: `${10 / transform.scale}px` }}>
                   {node.viewportWidth}px
                 </span>
               </div>
 
-              {/* Right side with add button */}
               <div className="flex items-center">
                 {node.viewportWidth === 1440 && (
                   <button
@@ -104,12 +103,55 @@ export const Frame = ({ children, node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div
-        {...connect(node)}
-        className={`${
-          isDropTarget ? "dropTarget border-4 border-blue-900" : ""
-        }`}
-      >
+      <div {...connect(node)}>
+        {/* Background media wrapper */}
+        {(node.style.backgroundImage || node.style.backgroundVideo) && (
+          <div
+            data-background-wrapper="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "inherit",
+              overflow: "hidden",
+            }}
+          >
+            {node.style.backgroundVideo ? (
+              <video
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  borderRadius: "inherit",
+                  pointerEvents: "none",
+                }}
+                src={node.style.backgroundVideo}
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+            ) : node.style.backgroundImage ? (
+              <Image
+                fill
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  borderRadius: "inherit",
+                  pointerEvents: "none",
+                }}
+                src={node.style.backgroundImage}
+                alt=""
+              />
+            ) : null}
+          </div>
+        )}
+        {isDropTarget && (
+          <div
+            className="absolute inset-0 dropTarget rounded-[inherit] z-10"
+            style={{ borderRadius: node.style.borderRadius }}
+          />
+        )}
         {children}
       </div>
     </ResizableWrapper>

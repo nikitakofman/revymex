@@ -193,7 +193,7 @@ export const ViewportDevTools: React.FC = () => {
 
   return createPortal(
     <>
-      <div className="fixed resize top-4 right-72 flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+      <div className="fixed resize top-14 right-[280px] flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
         {dragState.dynamicModeNodeId && (
           <button
             className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"

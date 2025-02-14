@@ -1,9 +1,9 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
-import { ToolSelect } from "./test-ui";
 import { Label } from "./Label";
 import { debounce } from "lodash";
+import { ToolSelect } from "./ToolSelect";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -16,6 +16,145 @@ interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   customValue?: string | number;
   onCustomChange?: (value: string | number, unit?: string) => void;
 }
+
+const getParentLayoutMode = (
+  element: HTMLElement
+): "row" | "column" | "grid" | null => {
+  const parent = element.parentElement;
+  if (!parent) return null;
+
+  // Log the actual inline style and data attributes
+
+  const parentStyle = window.getComputedStyle(parent);
+
+  // Log all flex-related computed styles
+
+  if (parentStyle.display === "grid") return "grid";
+  if (parentStyle.display === "flex") {
+    const mode = parentStyle.flexDirection === "row" ? "row" : "column";
+    return mode;
+  }
+  return null;
+};
+
+const updateFillStyles = (
+  element: HTMLElement,
+  propertyName: string,
+  setNodeStyle: any
+) => {
+  const parentLayout = getParentLayoutMode(element);
+  const isWidthProperty = propertyName === "width";
+  const isHeightProperty = propertyName === "height";
+
+  let styles: Record<string, string> = {};
+
+  if (parentLayout === "grid") {
+    styles[propertyName] = "100%";
+  } else if (parentLayout === "row" || parentLayout === "column") {
+    if (parentLayout === "row") {
+      if (isWidthProperty) {
+        styles = { width: "1px", flex: "1 0 0px" };
+      } else {
+        styles = { height: "100%" };
+      }
+    } else {
+      // column
+      if (isHeightProperty) {
+        styles = { height: "1px", flex: "1 0 0px" };
+      } else {
+        styles = { width: "100%" };
+      }
+    }
+  }
+
+  setNodeStyle(styles, undefined, true);
+};
+
+export const convertToNewUnit = (
+  value: number,
+  oldUnit: string,
+  newUnit: string,
+  propertyName: string,
+  element: HTMLElement
+): number => {
+  if (oldUnit === newUnit) return value;
+
+  const computedStyle = window.getComputedStyle(element);
+  const parentElement = element.parentElement;
+
+  if (newUnit === "fill") {
+    return 1;
+  }
+
+  if (oldUnit === "fill") {
+    const computedValue = parseFloat(computedStyle[propertyName as any]);
+    return convertToNewUnit(
+      computedValue,
+      "px",
+      newUnit,
+      propertyName,
+      element
+    );
+  }
+
+  if (oldUnit === "auto") {
+    const computedValue = parseFloat(computedStyle[propertyName as any]);
+    return convertToNewUnit(
+      computedValue,
+      "px",
+      newUnit,
+      propertyName,
+      element
+    );
+  }
+
+  let valueInPixels = value;
+  if (oldUnit === "%") {
+    if (propertyName.includes("width")) {
+      const parentWidth = parentElement ? parentElement.clientWidth : 0;
+      valueInPixels = (value * parentWidth) / 100;
+    } else if (propertyName.includes("height")) {
+      const parentHeight = parentElement ? parentElement.clientHeight : 0;
+      valueInPixels = (value * parentHeight) / 100;
+    }
+  } else if (oldUnit === "em") {
+    const fontSizeInPx = parseFloat(computedStyle.fontSize);
+    valueInPixels = value * fontSizeInPx;
+  } else if (oldUnit === "rem") {
+    const rootFontSize = parseFloat(
+      getComputedStyle(document.documentElement).fontSize
+    );
+    valueInPixels = value * rootFontSize;
+  } else if (oldUnit === "vw") {
+    valueInPixels = (value * window.innerWidth) / 100;
+  } else if (oldUnit === "vh") {
+    valueInPixels = (value * window.innerHeight) / 100;
+  }
+
+  if (newUnit === "%") {
+    if (propertyName.includes("width")) {
+      const parentWidth = parentElement ? parentElement.clientWidth : 0;
+      return parentWidth ? (valueInPixels / parentWidth) * 100 : 0;
+    } else if (propertyName.includes("height")) {
+      const parentHeight = parentElement ? parentElement.clientHeight : 0;
+      return parentHeight ? (valueInPixels / parentHeight) * 100 : 0;
+    }
+  } else if (newUnit === "em") {
+    const fontSizeInPx = parseFloat(computedStyle.fontSize);
+    return valueInPixels / fontSizeInPx;
+  } else if (newUnit === "rem") {
+    const rootFontSize = parseFloat(
+      getComputedStyle(document.documentElement).fontSize
+    );
+    return valueInPixels / rootFontSize;
+  } else if (newUnit === "vw") {
+    return (valueInPixels / window.innerWidth) * 100;
+  } else if (newUnit === "vh") {
+    return (valueInPixels / window.innerHeight) * 100;
+  }
+
+  return valueInPixels;
+};
 
 export function ToolInput({
   step = 1,
@@ -48,18 +187,24 @@ export function ToolInput({
   const speedMultiplierRef = useRef(1);
   const isDraggingRef = useRef(false);
   const isInternalUpdate = useRef(false);
-  const previousValueRef = useRef<string | number>(value || customValue || "0");
+  const observerRef = useRef<MutationObserver | null>(null);
 
   const isGridInput = label === "Columns" || label === "Rows";
   const isCustomMode = typeof onCustomChange !== "undefined";
 
+  const hasParent = useCallback(() => {
+    if (!dragState.selectedIds.length) return false;
+    const selectedNode = nodeState.nodes.find(
+      (node) => node.id === dragState.selectedIds[0]
+    );
+    return !!selectedNode?.parentId;
+  }, [dragState.selectedIds, nodeState.nodes]);
+
   const unitOptions = [
-    { label: "px", value: "px" },
-    { label: "%", value: "%" },
-    { label: "em", value: "em" },
-    { label: "rem", value: "rem" },
-    { label: "vw", value: "vw" },
-    { label: "vh", value: "vh" },
+    { label: "Fix", value: "px" },
+    { label: "Fill", value: "fill", disabled: !hasParent() },
+    { label: "%", value: "%", disabled: !hasParent() },
+    { label: "Fit", value: "auto", disabled: !hasParent() },
   ];
 
   const getComputedStyleValue = useCallback(() => {
@@ -96,42 +241,35 @@ export function ToolInput({
         const propertyName = props.name;
         if (!propertyName) return null;
 
-        if (propertyName.startsWith("border")) {
-          const afterStyle = window.getComputedStyle(element, "::after");
-          const value = afterStyle[propertyName as any];
-          if (!value || value === "none") return null;
+        const cssValue = element.style[propertyName as any];
+        if (!cssValue || cssValue === "none") return null;
 
-          const match = value.match(/^([-\d.]+)(\D+)?$/);
-          if (!match) return null;
-
+        if (cssValue === "auto") {
           return {
-            value: parseFloat(match[1]),
-            unit: match[2] || "px",
+            value: 0,
+            unit: "auto",
           };
         }
 
-        if (propertyName === "padding" || propertyName === "margin") {
-          const top = parseFloat(computedStyle[`${propertyName}Top`]);
-          const right = parseFloat(computedStyle[`${propertyName}Right`]);
-          const bottom = parseFloat(computedStyle[`${propertyName}Bottom`]);
-          const left = parseFloat(computedStyle[`${propertyName}Left`]);
+        // Check if element has flex: 1 0 0px and this dimension is 1px to determine if it's in fill mode
+        const flexValue = element.style.flex;
+        const parentLayout = getParentLayoutMode(element);
+        const isWidthProperty = propertyName === "width";
+        const isHeightProperty = propertyName === "height";
 
-          if (top === right && right === bottom && bottom === left) {
+        if (flexValue === "1 0 0px" && cssValue === "1px") {
+          if (
+            (parentLayout === "row" && isWidthProperty) ||
+            (parentLayout === "column" && isHeightProperty)
+          ) {
             return {
-              value: top,
-              unit:
-                computedStyle[`${propertyName}Top`]
-                  .replace(/[\d.]/g, "")
-                  .trim() || "px",
+              value: 1,
+              unit: "fill",
             };
           }
-          return null;
         }
 
-        const value = computedStyle[propertyName as any];
-        if (!value || value === "none") return null;
-
-        const match = value.match(/^([-\d.]+)(\D+)?$/);
+        const match = cssValue.match(/^([-\d.]+)(\D+)?$/);
         if (!match) return null;
 
         return {
@@ -149,15 +287,16 @@ export function ToolInput({
     );
     const allSameUnit = computedValues.every((v) => v.unit === firstValue.unit);
 
-    if (!allSameValue) {
+    if (!allSameValue || !allSameUnit) {
       return { mixed: true, unit: allSameUnit ? firstValue.unit : null };
     }
 
     return firstValue;
   }, [dragState.selectedIds, props.name, label, isGridInput, isCustomMode]);
 
-  const debouncedUpdate = useCallback(
-    debounce((computed: ReturnType<typeof getComputedStyleValue>) => {
+  useEffect(() => {
+    if (!isCustomMode && !isDraggingRef.current && !isInternalUpdate.current) {
+      const computed = getComputedStyleValue();
       if (!computed) {
         const defaultValue = isGridInput ? "3" : "0";
         if (localValue !== defaultValue) {
@@ -169,33 +308,20 @@ export function ToolInput({
 
       if ("mixed" in computed) {
         setIsMixed(true);
-        if (computed.unit) {
-          setLocalUnit(computed.unit);
-        }
       } else {
         const newValue = Math.round(computed.value).toString();
-        if (previousValueRef.current !== newValue) {
-          setIsMixed(false);
-          setLocalValue(newValue);
-          setLocalUnit(computed.unit);
-          currentValueRef.current = computed.value;
-          previousValueRef.current = newValue;
-        }
+        setIsMixed(false);
+        setLocalValue(newValue);
+        setLocalUnit(computed.unit);
+        currentValueRef.current = computed.value;
       }
-    }, 100),
-    []
-  );
-
-  useEffect(() => {
-    if (!isCustomMode && !isDraggingRef.current && !isInternalUpdate.current) {
-      const computed = getComputedStyleValue();
-      debouncedUpdate(computed);
     }
-
-    return () => {
-      debouncedUpdate.cancel();
-    };
-  }, [dragState.selectedIds, nodeState.nodes, debouncedUpdate, isCustomMode]);
+  }, [
+    dragState.selectedIds,
+    nodeState.nodes,
+    isCustomMode,
+    getComputedStyleValue,
+  ]);
 
   useEffect(() => {
     if (isCustomMode && customValue !== undefined) {
@@ -204,21 +330,29 @@ export function ToolInput({
     }
   }, [customValue, isCustomMode]);
 
+  const getStepForUnit = (unit: string) => {
+    if (unit === "%") return 1;
+    if (unit === "em" || unit === "rem") return 0.1;
+    if (unit === "vw" || unit === "vh") return 1;
+    return step;
+  };
+
   const updateValue = (
     increment: boolean,
     multiplier: number = 1,
     isDragging: boolean = false
   ) => {
-    const stepValue = isDragging ? step * multiplier : 1;
-    let newValue = Math.round(
-      currentValueRef.current + (increment ? stepValue : -stepValue)
-    );
+    const stepValue = isDragging
+      ? getStepForUnit(localUnit) * multiplier
+      : getStepForUnit(localUnit);
+    let newValue =
+      currentValueRef.current + (increment ? stepValue : -stepValue);
 
     newValue = Math.max(min, Math.min(max, newValue));
     currentValueRef.current = newValue;
 
     isInternalUpdate.current = true;
-    setLocalValue(newValue.toString());
+    setLocalValue(Math.round(newValue).toString());
     isInternalUpdate.current = false;
 
     if (isCustomMode) {
@@ -232,15 +366,109 @@ export function ToolInput({
       setNodeStyle(
         {
           display: "grid",
-          [property]: `repeat(${newValue}, 1fr)`,
+          [property]: `repeat(${Math.round(newValue)}, 1fr)`,
         },
         undefined,
         true
       );
+    } else if (localUnit === "fill") {
+      const element = document.querySelector(
+        `[data-node-id="${dragState.selectedIds[0]}"]`
+      ) as HTMLElement;
+      if (element) {
+        updateFillStyles(element, props.name || "", setNodeStyle);
+      }
     } else {
       setNodeStyle(
         {
           [props.name || ""]: `${newValue}${localUnit}`,
+        },
+        undefined,
+        true
+      );
+    }
+  };
+
+  const handleUnitChange = (newUnit: string) => {
+    if (isMixed && !isCustomMode) return;
+
+    const elements = dragState.selectedIds
+      .map(
+        (id) => document.querySelector(`[data-node-id="${id}"]`) as HTMLElement
+      )
+      .filter((el): el is HTMLElement => el !== null);
+
+    if (elements.length === 0) return;
+
+    if (newUnit === "fill") {
+      setLocalUnit(newUnit);
+      setLocalValue("1");
+      updateFillStyles(elements[0], props.name || "", setNodeStyle);
+    } else {
+      // Handle conversion from fill or other units
+      const currentValue = parseFloat(localValue.toString()) || 0;
+      const convertedValue = convertToNewUnit(
+        currentValue,
+        localUnit,
+        newUnit,
+        props.name || "",
+        elements[0]
+      );
+
+      setLocalUnit(newUnit);
+      setLocalValue(Math.round(convertedValue).toString());
+
+      if (localUnit === "fill") {
+        // Reset flex property when changing from fill to another unit
+        setNodeStyle(
+          {
+            [props.name || ""]: `${convertedValue}${newUnit}`,
+            flex: "0 0 auto", // Reset flex to default
+          },
+          undefined,
+          true
+        );
+      } else {
+        setNodeStyle(
+          {
+            [props.name || ""]: `${convertedValue}${newUnit}`,
+          },
+          undefined,
+          true
+        );
+      }
+    }
+
+    onUnitChange?.(newUnit);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const inputValue = e.target.value;
+    const parsedValue = parseFloat(inputValue) || 0;
+    const clampedValue = Math.max(min, Math.min(max, parsedValue));
+
+    isInternalUpdate.current = true;
+    setLocalValue(clampedValue.toString());
+    currentValueRef.current = clampedValue;
+    isInternalUpdate.current = false;
+
+    if (isCustomMode) {
+      onCustomChange?.(clampedValue, localUnit);
+      return;
+    }
+
+    if (localUnit === "fill") {
+      const element = document.querySelector(
+        `[data-node-id="${dragState.selectedIds[0]}"]`
+      ) as HTMLElement;
+      if (element) {
+        updateFillStyles(element, props.name || "", setNodeStyle);
+      }
+    } else {
+      setNodeStyle(
+        {
+          [props.name || ""]: `${clampedValue}${localUnit}`,
         },
         undefined,
         true
@@ -300,31 +528,6 @@ export function ToolInput({
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.stopPropagation();
-    const inputValue = e.target.value;
-    const parsedValue = Math.round(parseFloat(inputValue) || 0);
-    const clampedValue = Math.max(min, Math.min(max, parsedValue));
-
-    isInternalUpdate.current = true;
-    setLocalValue(clampedValue.toString());
-    isInternalUpdate.current = false;
-    currentValueRef.current = clampedValue;
-
-    if (isCustomMode) {
-      onCustomChange?.(clampedValue, localUnit);
-      return;
-    }
-
-    setNodeStyle(
-      {
-        [props.name || ""]: `${clampedValue}${localUnit}`,
-      },
-      undefined,
-      true
-    );
   };
 
   const handleFocus = (e: React.FocusEvent) => {
@@ -405,23 +608,7 @@ export function ToolInput({
         {showUnit && (
           <ToolSelect
             value={localUnit}
-            onChange={(value) => {
-              if (isMixed && !isCustomMode) return;
-              setLocalUnit(value);
-              onUnitChange?.(value);
-
-              if (isCustomMode) {
-                onCustomChange?.(localValue, value);
-              } else {
-                setNodeStyle(
-                  {
-                    [props.name || ""]: `${localValue}${value}`,
-                  },
-                  undefined,
-                  true
-                );
-              }
-            }}
+            onChange={handleUnitChange}
             options={unitOptions}
             disabled={isMixed && !isCustomMode}
           />

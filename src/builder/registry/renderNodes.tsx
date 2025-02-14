@@ -7,6 +7,7 @@ import TextElement from "./elements/TextElement";
 import DraggedNode, { VirtualReference } from "./DraggedNode";
 
 import { getFilteredNodes } from "../context/dnd/utils";
+import { VideoElement } from "./elements/VideoElement";
 
 interface RenderNodesProps {
   filter: "inViewport" | "outOfViewport" | "dynamicMode";
@@ -60,6 +61,8 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
           //   nodeDisp.updateNodeDynamicStatus(node.id);
           // }
 
+          // TODO FIX THIS ABOVE WHEN UNCOMMETNING IT DOES 100 CALLS OF UPDATE NODE DYNAMIC STATUS, AND DOES REQUESTANIMATION FRAME ERROR IN SERVER SO AT SAVE IT RELOADS, BUT IF I DONT UNCOMMENT IT THE DYNAMIC ELEMENTS ARE BUGGING AND DUPLICATING STUFF I DROP INSIDE, uncomment it and drop something inside dynamic elements to see
+
           return (
             <Frame key={node.id} node={node}>
               {children.map((childNode) => renderNode(childNode))}
@@ -72,6 +75,9 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
         case "text":
           return <TextElement key={node.id} node={node} />;
+
+        case "video":
+          return <VideoElement key={node.id} node={node} />;
 
         default:
           return (

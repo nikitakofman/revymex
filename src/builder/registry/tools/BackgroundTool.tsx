@@ -28,6 +28,8 @@ const GradientStopButton = ({
   onClick,
   onDrag,
 }: GradientStopButtonProps) => {
+  const { startRecording, stopRecording } = useBuilder();
+
   const [isDragging, setIsDragging] = useState(false);
   const buttonRef = useRef<HTMLDivElement>(null);
 
@@ -45,6 +47,8 @@ const GradientStopButton = ({
   };
 
   useEffect(() => {
+    const sessionId = startRecording();
+
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
         e.preventDefault();
@@ -54,6 +58,7 @@ const GradientStopButton = ({
 
     const handleMouseUp = () => {
       setIsDragging(false);
+      stopRecording(sessionId);
     };
 
     if (isDragging) {

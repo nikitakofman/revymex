@@ -30,7 +30,7 @@ type DistributionMode =
   | "space-evenly";
 
 export default function LayoutTool() {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle, nodeState, dragState } = useBuilder();
 
   // Track which layout mode we're in
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("flex");
@@ -203,6 +203,61 @@ export default function LayoutTool() {
     }
   }
 
+  // Add this function to handle fill mode updates
+  const updateFillModeChildren = (newDirection: "row" | "column") => {
+    // Get selected parent node's children
+    const selectedId = dragState.selectedIds[0];
+    if (!selectedId) return;
+
+    console.log("Updating fill mode for direction:", newDirection);
+
+    const childNodes = nodeState.nodes.filter(
+      (node) => node.parentId === selectedId
+    );
+
+    childNodes.forEach((childNode) => {
+      const childElement = document.querySelector(
+        `[data-node-id="${childNode.id}"]`
+      ) as HTMLElement;
+
+      // Check if child is in fill mode
+      if (childElement?.style.flex === "1 0 0px") {
+        console.log("Found fill mode child:", {
+          childId: childNode.id,
+          newDirection,
+          currentStyles: {
+            flex: childElement.style.flex,
+            width: childElement.style.width,
+            height: childElement.style.height,
+          },
+        });
+
+        if (newDirection === "column") {
+          setNodeStyle(
+            {
+              width: "100%",
+              height: "1px",
+              flex: "1 0 0px",
+            },
+            [childNode.id],
+            true
+          );
+        } else {
+          // row
+          setNodeStyle(
+            {
+              width: "1px",
+              height: "100%",
+              flex: "1 0 0px",
+            },
+            [childNode.id],
+            true
+          );
+        }
+      }
+    });
+  };
+
   return (
     <ToolbarContainer>
       <ToolbarSection title="Layout">
@@ -245,6 +300,11 @@ export default function LayoutTool() {
                     icon: <ArrowDown className="w-3.5 h-3.5" />,
                   },
                 ]}
+                onChange={(newDirection) => {
+                  requestAnimationFrame(() => {
+                    updateFillModeChildren(newDirection as "row" | "column");
+                  });
+                }}
               />
 
               <ToolbarSegmentedControl

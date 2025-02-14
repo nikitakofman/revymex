@@ -9,45 +9,15 @@ type ToolbarSegmentOption = {
 };
 
 interface ToolbarSegmentedControlProps {
-  /**
-   * The CSS property you want to bind to, e.g. "flexDirection", "background",
-   * "justifyContent", etc.
-   */
   cssProperty: string;
-
-  /**
-   * If your property can be empty or invalid, set a default fallback value.
-   */
   defaultValue?: string;
-
-  /**
-   * If you want to parse numeric/units (e.g., `margin: "10px"` -> { value: 10, unit: "px" }),
-   * set `parseValue` to `true`. For something like `flexDirection`, leave it `false`.
-   */
   parseValue?: boolean;
-
-  /**
-   * If your property is definitely a color (like `backgroundColor`), you can set
-   * `isColor = true` to handle converting RGB to HEX internally.
-   */
   isColor?: boolean;
-
-  /**
-   * The list of options to show in the segmented control.
-   * Each option has a `value`, optional `label`, and optional `icon`.
-   */
   options: ToolbarSegmentOption[];
-
-  /**
-   * The size of buttons – "sm", "md", or "lg" (you can expand this as needed).
-   */
   size?: "sm" | "md" | "lg";
+  onChange?: (value: string) => void; // Added onChange prop
 }
 
-/**
- * A SegmentedControl that automatically reads & sets a given CSS property
- * across all selected nodes. If multiple nodes differ, it shows "mixed."
- */
 export function ToolbarSegmentedControl({
   cssProperty,
   defaultValue = "",
@@ -55,10 +25,10 @@ export function ToolbarSegmentedControl({
   isColor = false,
   options,
   size = "md",
+  onChange, // Added to props
 }: ToolbarSegmentedControlProps) {
   const { setNodeStyle } = useBuilder();
 
-  // 1) Get the computed style across selected elements
   const computedStyle = useComputedStyle({
     property: cssProperty,
     parseValue,
@@ -66,22 +36,17 @@ export function ToolbarSegmentedControl({
     isColor,
   });
 
-  // 2) If multiple nodes differ for this property, show "mixed" as a placeholder
   const currentValue = computedStyle.mixed
     ? "mixed"
     : (computedStyle.value as string);
 
-  // 3) When user clicks a segment button, update all selected nodes
   const handleSegmentClick = (newValue: string) => {
-    if (newValue === "mixed") {
-      // if user clicks "Mixed" itself, do nothing (or override with default)
-      return;
-    }
-    // Overwrite the CSS property for all selected nodes
+    if (newValue === "mixed") return;
+
     setNodeStyle({ [cssProperty]: newValue }, undefined, true);
+    onChange?.(newValue); // Call onChange if provided
   };
 
-  // 4) Optionally prepend a "Mixed" button if it’s truly mixed
   const finalOptions = computedStyle.mixed
     ? [{ value: "mixed", label: "Mixed" }, ...options]
     : options;

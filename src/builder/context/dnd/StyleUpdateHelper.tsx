@@ -25,16 +25,22 @@ export const StyleUpdateHelper = () => {
         zIndex: 9999,
       }}
     >
-      {styleHelper.type === "gap" ? (
+      {styleHelper.type === "gap" || styleHelper.type === "radius" ? (
         <div className="flex items-center gap-2">
           <span>{Math.round(styleHelper.value ?? 0)}px</span>
         </div>
       ) : styleHelper.type === "dimensions" && styleHelper.dimensions ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <span>{Math.round(styleHelper.dimensions.width)}px</span>
+            <span>
+              {Math.round(styleHelper.dimensions.width)}
+              {styleHelper.dimensions.widthUnit || styleHelper.dimensions.unit}
+            </span>
             <span>×</span>
-            <span>{Math.round(styleHelper.dimensions.height)}px</span>
+            <span>
+              {Math.round(styleHelper.dimensions.height)}
+              {styleHelper.dimensions.heightUnit || styleHelper.dimensions.unit}
+            </span>
           </div>
         </div>
       ) : styleHelper.type === "rotate" ? (

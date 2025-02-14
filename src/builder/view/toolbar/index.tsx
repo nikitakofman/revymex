@@ -1,24 +1,27 @@
+// components/Toolbar/index.tsx
 import React from "react";
-import { elementRegistry } from "../../registry";
-import { useDragStart } from "@/builder/context/dnd/useDragStart";
+import { useBuilder } from "@/builder/context/builderState";
+import InsertPanel from "./InsertPanel";
+import LayersPanel from "./LayersPanel";
+import CmsPanel from "./CmsPanel";
 
 const Toolbar = () => {
-  const handleDragStart = useDragStart();
+  const { interfaceState } = useBuilder();
+
+  // Render nothing if no panel is open
+  if (
+    !interfaceState.isInsertOpen &&
+    !interfaceState.isLayersOpen &&
+    !interfaceState.isCmsOpen
+  ) {
+    return null;
+  }
 
   return (
-    <div className="w-64 fixed z-50 h-screen bg-[#111111] p-4">
-      <div className="grid grid-cols-2 gap-4">
-        {elementRegistry.map((element, index) => (
-          <div
-            key={index}
-            className="element-box"
-            onMouseDown={(e) => handleDragStart(e, element.type)}
-            draggable={false}
-          >
-            {element.type}
-          </div>
-        ))}
-      </div>
+    <div className="w-64 fixed z-50 h-screen bg-[#111111]">
+      {interfaceState.isInsertOpen && <InsertPanel />}
+      {interfaceState.isLayersOpen && <LayersPanel />}
+      {interfaceState.isCmsOpen && <CmsPanel />}
     </div>
   );
 };

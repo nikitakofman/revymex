@@ -1,11 +1,30 @@
 // Example usage in DimensionsTool.tsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ToolbarContainer, ToolbarSection } from "./_components/test-ui";
 import { ToolInput } from "./_components/ToolInput";
+import { useBuilder } from "@/builder/context/builderState";
 
 const DimensionsTool = () => {
+  const { dragState } = useBuilder();
   const [widthUnit, setWidthUnit] = useState("px");
   const [heightUnit, setHeightUnit] = useState("px");
+
+  useEffect(() => {
+    if (dragState.selectedIds.length > 0) {
+      const element = document.querySelector(
+        `[data-node-id="${dragState.selectedIds[0]}"]`
+      ) as HTMLElement;
+
+      if (element) {
+        const style = window.getComputedStyle(element);
+        const widthMatch = style.width.match(/[a-z%]+$/);
+        const heightMatch = style.height.match(/[a-z%]+$/);
+
+        if (widthMatch) setWidthUnit(widthMatch[0]);
+        if (heightMatch) setHeightUnit(heightMatch[0]);
+      }
+    }
+  }, [dragState.selectedIds]);
 
   return (
     <ToolbarContainer>
@@ -13,19 +32,17 @@ const DimensionsTool = () => {
         <ToolInput
           type="number"
           label="Width"
-          value="100"
-          unit={widthUnit}
           name="width"
           showUnit
+          unit={widthUnit}
           onUnitChange={setWidthUnit}
         />
         <ToolInput
           type="number"
           label="Height"
-          value="100"
-          unit={heightUnit}
           name="height"
           showUnit
+          unit={heightUnit}
           onUnitChange={setHeightUnit}
         />
       </ToolbarSection>

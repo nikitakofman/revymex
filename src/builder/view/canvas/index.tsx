@@ -18,6 +18,8 @@ import { ContextMenu } from "@/builder/context/dnd/ContextMenu";
 // NEW: We import the shared filter
 import { getFilteredNodes } from "@/builder/context/dnd/utils";
 import ViewportBar from "./bar";
+import Header from "./Header";
+import SelectionBox from "@/builder/context/dnd/SelectionBox";
 
 const Canvas = () => {
   const {
@@ -51,63 +53,70 @@ const Canvas = () => {
   }, [dragState.isDragging]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
+    if (dragState.isSelectionBoxActive) {
+      return;
+    }
     if (e.target === containerRef.current || e.target === contentRef.current) {
       dragDisp.clearSelection();
     }
   };
 
-  // Decide which filter to use
-  const activeFilter = dragState.dynamicModeNodeId
-    ? "dynamicMode"
-    : "outOfViewport";
+  // // Decide which filter to use
+  // const activeFilter = dragState.dynamicModeNodeId
+  //   ? "dynamicMode"
+  //   : "outOfViewport";
 
-  // Now get the nodes that should actually be visible in this mode
-  const filteredNodes = getFilteredNodes(
-    nodeState.nodes,
-    activeFilter,
-    dragState.dynamicModeNodeId
-  );
+  // // Now get the nodes that should actually be visible in this mode
+  // const filteredNodes = getFilteredNodes(
+  //   nodeState.nodes,
+  //   activeFilter,
+  //   dragState.dynamicModeNodeId
+  // );
 
   return (
-    <div className="fixed inset-0 flex overflow-hidden bg-[var(--bg-canvas)]">
-      <ViewportDevTools />
-      <Toolbar />
-      <ToolbarDragPreview />
-      <div
-        ref={containerRef}
-        style={{
-          willChange: "transform",
-          transform: "translateZ(0)",
-          backfaceVisibility: "hidden",
-          isolation: "isolate",
-        }}
-        className="w-full h-full canvas relative"
-        onClick={handleCanvasClick}
-      >
-        <SnapGuides />
-        <StyleUpdateHelper />
-        {!isMovingCanvas && <ArrowConnectors />}
-
+    <>
+      <Header />
+      <div className="fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)]">
+        <ViewportDevTools />
+        <Toolbar />
+        <ToolbarDragPreview />
         <div
-          ref={contentRef}
-          className="relative"
+          ref={containerRef}
           style={{
+            willChange: "transform",
+            transform: "translateZ(0)",
+            backfaceVisibility: "hidden",
             isolation: "isolate",
           }}
+          className="w-full h-full canvas relative"
+          onClick={handleCanvasClick}
         >
-          {dragState.dynamicModeNodeId ? (
-            <RenderNodes filter="dynamicMode" />
-          ) : (
-            <RenderNodes filter="outOfViewport" />
-          )}
+          <SnapGuides />
+          <StyleUpdateHelper />
+          <SelectionBox />
+          {!isMovingCanvas && <ArrowConnectors />}
 
-          <LineIndicator />
-          <ContextMenu />
+          <div
+            ref={contentRef}
+            className="relative"
+            style={{
+              isolation: "isolate",
+            }}
+          >
+            {dragState.dynamicModeNodeId ? (
+              <RenderNodes filter="dynamicMode" />
+            ) : (
+              <RenderNodes filter="outOfViewport" />
+            )}
+
+            <LineIndicator />
+            <ContextMenu />
+          </div>
         </div>
+        <ViewportBar />
+        <RightToolbar />
       </div>
-      <ViewportBar />
-      <RightToolbar />
-    </div>
+    </>
   );
 };
 

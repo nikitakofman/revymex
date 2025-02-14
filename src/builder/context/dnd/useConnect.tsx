@@ -11,14 +11,48 @@ export const useConnect = () => {
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
 
+  const isNearEdge = (
+    e: React.MouseEvent,
+    element: HTMLElement,
+    threshold: number = 2.5
+  ) => {
+    const rect = element.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Check if we're near any edge
+    const nearLeft = x <= threshold;
+    const nearRight = x >= rect.width - threshold;
+    const nearTop = y <= threshold;
+    const nearBottom = y >= rect.height - threshold;
+
+    return nearLeft || nearRight || nearTop || nearBottom;
+  };
+
   return useCallback(
     (node: Node) => {
       const handleMouseDown = (e: React.MouseEvent) => {
+        // Check if click is on a resize handle
+        const target = e.target as HTMLElement;
+
+        // First check for explicit resize handles
+        const resizeHandle = target.closest('[data-resize-handle="true"]');
+
+        // Then check if we're near an edge
+        const isEdgeClick = isNearEdge(e, target);
+
+        if (resizeHandle || isEdgeClick) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
         e.preventDefault();
         e.stopPropagation();
 
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
 
+        // Rest of your existing handleMouseDown code...
         const parentNode = node.parentId
           ? nodeState.nodes.find((n) => n.id === node.parentId)
           : null;
@@ -54,7 +88,20 @@ export const useConnect = () => {
                 );
                 mouseMoveHandlerRef.current = null;
               }
-              handleDragStart(e, undefined, node);
+
+              // Check both resize handle and edges before starting drag
+              const currentTarget = document.elementFromPoint(
+                moveEvent.clientX,
+                moveEvent.clientY
+              ) as HTMLElement;
+              const isResizeHandle = currentTarget?.closest(
+                '[data-resize-handle="true"]'
+              );
+              const isEdge = currentTarget && isNearEdge(e, currentTarget);
+
+              if (!isResizeHandle && !isEdge) {
+                handleDragStart(e, undefined, node);
+              }
             }
           }
         };
@@ -62,11 +109,8 @@ export const useConnect = () => {
         window.addEventListener("mousemove", mouseMoveHandlerRef.current);
       };
 
+      // Rest of your existing component code...
       const handleMouseUp = (e: React.MouseEvent) => {
-        // if (e.target !== e.currentTarget) {
-        //   return;
-        // }
-
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
