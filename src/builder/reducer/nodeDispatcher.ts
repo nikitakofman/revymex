@@ -45,7 +45,6 @@ export interface Node {
 
 export interface NodeState {
   nodes: Node[];
-  selectedNodeIds: (string | number)[] | null;
 }
 
 export interface SetStateOptions {
