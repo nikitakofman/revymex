@@ -120,14 +120,63 @@ export const useMouseMove = () => {
           prevMousePosRef.current.y
         );
         if (reorderResult) {
-          const placeholder = nodeState.nodes.find(
-            (n) => n.type === "placeholder"
-          );
-          if (placeholder) {
-            nodeDisp.moveNode(placeholder.id, true, {
+          if (dragState.placeholderInfo) {
+            // Get all nodes and placeholders info
+            const allDraggedNodes = [
+              {
+                nodeId: draggedNode.id,
+                placeholderId: dragState.placeholderInfo.mainPlaceholderId,
+              },
+              ...dragState.placeholderInfo.additionalPlaceholders,
+            ];
+
+            // Sort based on the original stored order
+            const sortedNodes = allDraggedNodes.sort((a, b) => {
+              const orderA = dragState.placeholderInfo!.nodeOrder.indexOf(
+                a.nodeId
+              );
+              const orderB = dragState.placeholderInfo!.nodeOrder.indexOf(
+                b.nodeId
+              );
+              return orderA - orderB;
+            });
+
+            console.log("REORDER - Current State:", {
+              placeholderInfo: dragState.placeholderInfo,
+              originalOrder: dragState.placeholderInfo.nodeOrder,
+              reorderTarget: reorderResult.targetId,
+              position: reorderResult.position,
+            });
+
+            // First move the first placeholder to establish the group position
+            nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
               targetId: reorderResult.targetId,
               position: reorderResult.position,
             });
+
+            // Then move each subsequent placeholder after the previous one
+            for (let i = 1; i < sortedNodes.length; i++) {
+              nodeDisp.moveNode(sortedNodes[i].placeholderId, true, {
+                targetId: sortedNodes[i - 1].placeholderId,
+                position: "after",
+              });
+            }
+
+            console.log("REORDER - After Sort:", {
+              sortedNodes,
+              moveSequence: sortedNodes.map((n) => n.nodeId),
+            });
+          } else {
+            // Single node case
+            const placeholder = nodeState.nodes.find(
+              (n) => n.type === "placeholder"
+            );
+            if (placeholder) {
+              nodeDisp.moveNode(placeholder.id, true, {
+                targetId: reorderResult.targetId,
+                position: reorderResult.position,
+              });
+            }
           }
         }
       }
@@ -273,14 +322,63 @@ export const useMouseMove = () => {
       );
 
       if (reorderResult) {
-        const placeholder = nodeState.nodes.find(
-          (n) => n.type === "placeholder"
-        );
-        if (placeholder) {
-          nodeDisp.moveNode(placeholder.id, true, {
+        if (dragState.placeholderInfo) {
+          // Get all nodes and placeholders info
+          const allDraggedNodes = [
+            {
+              nodeId: draggedNode.id,
+              placeholderId: dragState.placeholderInfo.mainPlaceholderId,
+            },
+            ...dragState.placeholderInfo.additionalPlaceholders,
+          ];
+
+          // Sort based on the original stored order
+          const sortedNodes = allDraggedNodes.sort((a, b) => {
+            const orderA = dragState.placeholderInfo!.nodeOrder.indexOf(
+              a.nodeId
+            );
+            const orderB = dragState.placeholderInfo!.nodeOrder.indexOf(
+              b.nodeId
+            );
+            return orderA - orderB;
+          });
+
+          console.log("REORDER - Current State:", {
+            placeholderInfo: dragState.placeholderInfo,
+            originalOrder: dragState.placeholderInfo.nodeOrder,
+            reorderTarget: reorderResult.targetId,
+            position: reorderResult.position,
+          });
+
+          // First move the first placeholder to establish the group position
+          nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
             targetId: reorderResult.targetId,
             position: reorderResult.position,
           });
+
+          // Then move each subsequent placeholder after the previous one
+          for (let i = 1; i < sortedNodes.length; i++) {
+            nodeDisp.moveNode(sortedNodes[i].placeholderId, true, {
+              targetId: sortedNodes[i - 1].placeholderId,
+              position: "after",
+            });
+          }
+
+          console.log("REORDER - After Sort:", {
+            sortedNodes,
+            moveSequence: sortedNodes.map((n) => n.nodeId),
+          });
+        } else {
+          // Single node case
+          const placeholder = nodeState.nodes.find(
+            (n) => n.type === "placeholder"
+          );
+          if (placeholder) {
+            nodeDisp.moveNode(placeholder.id, true, {
+              targetId: reorderResult.targetId,
+              position: reorderResult.position,
+            });
+          }
         }
       }
       dragDisp.hideLineIndicator();
@@ -397,6 +495,8 @@ export const useMouseMove = () => {
 
     if (overCanvas) {
       dragDisp.setIsOverCanvas(true);
+
+      // TODO: WHEN I DRAG FROM FRAME/VIEWPORT TO CANVAS IF MULTI SELECT ITS ONLY REMOVING THE MAIN ANCHOR NODE NOT THE OTHER ONES, I HAVE TO DO ANY ACTION ON THE OTHER NODES AFTER DROPPING FOR IT TO BE SYNCED AND REMOVE THE OTHER NODES FROM VIEWPORT
 
       const placeholder = nodeState.nodes.find((n) => n.type === "placeholder");
       if (placeholder && isReorderingNode) {

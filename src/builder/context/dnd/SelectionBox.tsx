@@ -123,8 +123,6 @@ export const SelectionBox: React.FC = () => {
 
     const handleMouseUp = (e: MouseEvent) => {
       if (!box?.isSelecting) return;
-
-      console.log("🔄 Starting mouse up sequence");
       setTimeout(() => {
         dragDisp.setIsSelectionBoxActive(false);
       }, 0);
@@ -153,7 +151,6 @@ export const SelectionBox: React.FC = () => {
 
         // Store the selected IDs before we clear the ref
         const selectedIds = dragState.tempSelectedIds;
-        console.log("🎯 Final selected IDs:", selectedIds);
 
         if (selectedIds.length > 0) {
           // Use the new setSelectedIds method to update all at once
@@ -184,8 +181,6 @@ export const SelectionBox: React.FC = () => {
     box?.startY,
     dragState.tempSelectedIds,
   ]);
-
-  console.log("TEMP SELECTED IDS", dragState.tempSelectedIds);
 
   if (!box?.isSelecting) return null;
 

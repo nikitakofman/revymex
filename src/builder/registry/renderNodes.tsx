@@ -5,7 +5,6 @@ import { Frame } from "./elements/Frame";
 import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
 import DraggedNode, { VirtualReference } from "./DraggedNode";
-
 import { getFilteredNodes } from "../context/dnd/utils";
 import { VideoElement } from "./elements/VideoElement";
 
@@ -46,7 +45,15 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     dragState.dynamicModeNodeId
   );
 
-  const renderNode = (node: Node) => {
+  const renderNode = (node: Node, isDraggedVersion = false) => {
+    // Skip rendering non-dragged versions of additional dragged nodes
+    if (
+      !isDraggedVersion &&
+      dragState.additionalDraggedNodes?.some((info) => info.node.id === node.id)
+    ) {
+      return null;
+    }
+
     const isDragged =
       dragState.isDragging && dragState.draggedNode?.node.id === node.id;
 
@@ -56,12 +63,6 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
           const children = nodeState.nodes.filter(
             (child) => child.parentId === node.id
           );
-
-          // if (node.isDynamic && !node.dynamicParentId) {
-          //   nodeDisp.updateNodeDynamicStatus(node.id);
-          // }
-
-          // TODO FIX THIS ABOVE WHEN UNCOMMETNING IT DOES 100 CALLS OF UPDATE NODE DYNAMIC STATUS, AND DOES REQUESTANIMATION FRAME ERROR IN SERVER SO AT SAVE IT RELOADS, BUT IF I DONT UNCOMMENT IT THE DYNAMIC ELEMENTS ARE BUGGING AND DUPLICATING STUFF I DROP INSIDE, uncomment it and drop something inside dynamic elements to see
 
           return (
             <Frame key={node.id} node={node}>
@@ -88,14 +89,27 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
     if (isDragged) {
       return (
-        <DraggedNode
-          key={`dragged-${node.id}`}
-          node={node}
-          content={content}
-          virtualReference={virtualReference}
-          transform={transform}
-          offset={dragState.draggedNode!.offset}
-        />
+        <>
+          <DraggedNode
+            key={`dragged-${node.id}`}
+            node={node}
+            content={content}
+            virtualReference={virtualReference}
+            transform={transform}
+            offset={dragState.draggedNode!.offset}
+          />
+          {dragState.isDragging &&
+            dragState.additionalDraggedNodes?.map((info) => (
+              <DraggedNode
+                key={`dragged-${info.node.id}`}
+                node={info.node}
+                content={renderNode(info.node, true)}
+                virtualReference={virtualReference}
+                transform={transform}
+                offset={info.offset}
+              />
+            ))}
+        </>
       );
     }
 
@@ -104,9 +118,8 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
   const topLevelNodes = filteredNodes.filter((node) => {
     if (node.parentId == null) return true;
-
     return !filteredNodes.some((n) => n.id === node.parentId);
   });
 
-  return <>{topLevelNodes.map(renderNode)}</>;
+  return <>{topLevelNodes.map((node) => renderNode(node))}</>;
 };

@@ -42,6 +42,15 @@ export interface DragState {
   isDragging: boolean;
   draggedItem: string | null;
   draggedNode: DraggedNode | null;
+  additionalDraggedNodes?: Array<{
+    node: Node;
+    offset: {
+      x: number;
+      y: number;
+      mouseX: number;
+      mouseY: number;
+    };
+  }>;
   dropInfo: DropInfo;
   selectedIds: (string | number)[];
   placeholderId: string | number | null;
@@ -73,6 +82,16 @@ export interface DragState {
   originalWidthHeight: { width: number; height: number; isFillMode: boolean };
   isSelectionBoxActive: boolean;
   tempSelectedIds: string[];
+  placeholderInfo: PlaceholderInfo | null;
+}
+
+interface PlaceholderInfo {
+  mainPlaceholderId: string;
+  nodeOrder: string[];
+  additionalPlaceholders: Array<{
+    placeholderId: string;
+    nodeId: string;
+  }>;
 }
 
 export class DragDispatcher {
@@ -126,6 +145,24 @@ export class DragDispatcher {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.draggedNode = { node, offset };
+      })
+    );
+  }
+
+  setAdditionalDraggedNodes(
+    nodes: Array<{
+      node: Node;
+      offset: {
+        x: number;
+        y: number;
+        mouseX: number;
+        mouseY: number;
+      };
+    }>
+  ) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.additionalDraggedNodes = nodes;
       })
     );
   }
@@ -189,18 +226,6 @@ export class DragDispatcher {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.selectedIds = [];
-      })
-    );
-  }
-
-  setPlaceholderInfo(
-    placeholderId: string | number | null,
-    originalIndex: number | null
-  ) {
-    this.setState((prev) =>
-      produce(prev, (draft) => {
-        draft.placeholderId = placeholderId;
-        draft.originalIndex = originalIndex;
       })
     );
   }
@@ -363,6 +388,23 @@ export class DragDispatcher {
     );
   }
 
+  setPlaceholderInfo(placeholderInfo: PlaceholderInfo | null) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.placeholderInfo = placeholderInfo;
+      })
+    );
+  }
+
+  // Optionally, add a method to clear placeholder info
+  clearPlaceholderInfo() {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.placeholderInfo = null;
+      })
+    );
+  }
+
   resetDragState() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -383,7 +425,9 @@ export class DragDispatcher {
         };
         draft.isOverCanvas = false;
         draft.dragPositions = { x: 0, y: 0 };
-        draft.originalWidthHeight = { width: 0, height: 0 };
+        draft.originalWidthHeight = { width: 0, height: 0, isFillMode: false };
+        draft.additionalDraggedNodes = undefined;
+        draft.placeholderInfo = null;
       })
     );
   }

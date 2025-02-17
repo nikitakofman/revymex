@@ -84,8 +84,30 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   const offsetX = (effectiveWidth - width) * 0.5;
   const offsetY = (effectiveHeight - height) * 0.5;
 
-  const rawLeft = baseRect.left - offset.mouseX * transform.scale;
-  const rawTop = baseRect.top - offset.mouseY * transform.scale;
+  // Check if this is an additional dragged node
+  const isAdditionalDraggedNode = dragState.additionalDraggedNodes?.some(
+    (info) => info.node.id === node.id
+  );
+
+  let rawLeft, rawTop;
+  if (isAdditionalDraggedNode) {
+    // For additional nodes, compensate for existing absolute positioning
+    const currentLeft = parseFloat(node.style.left as string) || 0;
+    const currentTop = parseFloat(node.style.top as string) || 0;
+
+    rawLeft =
+      baseRect.left -
+      offset.mouseX * transform.scale -
+      currentLeft * transform.scale;
+    rawTop =
+      baseRect.top -
+      offset.mouseY * transform.scale -
+      currentTop * transform.scale;
+  } else {
+    // Original calculation for main dragged node
+    rawLeft = baseRect.left - offset.mouseX * transform.scale;
+    rawTop = baseRect.top - offset.mouseY * transform.scale;
+  }
 
   const canvasX = (rawLeft - transform.x) / transform.scale;
   const canvasY = (rawTop - transform.y) / transform.scale;
@@ -111,10 +133,8 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
           );
           if (draggedElement) {
             if (flexDirection.includes("row")) {
-              // Lock Y position to the current dragged position
               finalTop = draggedElement.getBoundingClientRect().top;
             } else if (flexDirection.includes("column")) {
-              // Lock X position to the current dragged position
               finalLeft = draggedElement.getBoundingClientRect().left;
             }
           }
@@ -201,7 +221,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
 
   return createPortal(
     <div
-      data-node-dragged
+      data-node-dragged={node.id} // Changed from just data-node-dragged
       style={{
         position: "fixed",
         left: `${finalLeft}px`,

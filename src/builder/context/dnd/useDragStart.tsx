@@ -4,6 +4,8 @@ import { findIndexWithinParent } from "./utils";
 import { nanoid } from "nanoid";
 import { convertToNewUnit } from "@/builder/registry/tools/_components/ToolInput";
 import { parse } from "path";
+import { createPlaceholder } from "./createPlaceholder";
+import { calculateAndUpdateDimensions } from "./calculateAndUpdateDimensions";
 
 export const useDragStart = () => {
   const {
@@ -32,6 +34,8 @@ export const useDragStart = () => {
     // Check if the click is on a resize handle or its parent resize handle container
     const target = e.target as HTMLElement;
     const resizeHandle = target.closest('[data-resize-handle="true"]');
+
+    const selectedIds = dragState.selectedIds;
 
     console.log("STARTING DRAG");
 
@@ -90,8 +94,9 @@ export const useDragStart = () => {
     const elementRect = element.getBoundingClientRect();
     const contentRect = contentRef.current.getBoundingClientRect();
 
+    // TODO EXTEND TO IF NODE IN VIEWPORT TRUE OR NODE PARENT ID TRUE , CURRETNLY EVERYTHING THAT HAS A PRENT IS BECOME IN VIEWPORT TRUE EVEN IF PARENT IN CANVAS AND NOT IN VIEWPORT
+
     if (node.inViewport) {
-      // Rest of your existing viewport logic...
       dragDisp.setDragSource("viewport");
       const oldIndex = findIndexWithinParent(
         nodeState.nodes,
@@ -102,154 +107,49 @@ export const useDragStart = () => {
       const element = document.querySelector(
         `[data-node-id="${node.id}"]`
       ) as HTMLElement;
-      const style = element.style;
-      const isWidthPercent = style.width?.includes("%");
-      const isHeightPercent = style.height?.includes("%");
-      const isWidthAuto = style.width === "auto";
-      const isHeightAuto = style.height === "auto";
-      const isFillMode = style.flex === "1 0 0px";
 
-      if (
-        isWidthPercent ||
-        isHeightPercent ||
-        isWidthAuto ||
-        isHeightAuto ||
-        isFillMode
-      ) {
-        dragDisp.setOriginalWidthHeight(
-          element.style.width,
-          element.style.height,
-          isFillMode
-        );
-      }
+      // TODO: fill mode is good on drag start but when I drop it goes to 1px
 
-      let finalWidth = node.style.width;
-      let finalHeight = node.style.height;
+      const { finalWidth, finalHeight } = calculateAndUpdateDimensions({
+        node,
+        element,
+        transform,
+        setNodeStyle,
+      });
 
-      if (isFillMode) {
-        const rect = element.getBoundingClientRect();
-        finalWidth = `${Math.round(rect.width / transform.scale)}px`;
-        finalHeight = `${Math.round(rect.height / transform.scale)}px`;
+      // Create main placeholder
+      const mainPlaceholder = createPlaceholder({
+        node,
+        element: element as HTMLElement,
+        transform,
+        finalWidth,
+        finalHeight,
+      });
 
-        setNodeStyle(
-          {
-            width: finalWidth,
-            height: finalHeight,
-            flex: "0 0 auto",
-          },
-          [node.id]
-        );
-      } else if ((isWidthPercent || isWidthAuto) && element) {
-        let widthInPx;
-
-        if (isWidthPercent) {
-          widthInPx = convertToNewUnit(
-            parseFloat(style.width),
-            "%",
-            "px",
-            "width",
-            element
-          );
-        } else if (isWidthAuto) {
-          widthInPx = convertToNewUnit(
-            parseFloat(style.width),
-            "auto",
-            "px",
-            "width",
-            element
-          );
-        }
-        finalWidth = `${widthInPx}px`;
-        setNodeStyle(
-          {
-            width: finalWidth,
-          },
-          [node.id]
-        );
-      }
-
-      if ((isHeightPercent || isHeightAuto) && element) {
-        let heightInPx;
-
-        if (isHeightPercent) {
-          heightInPx = convertToNewUnit(
-            parseFloat(style.height),
-            "%",
-            "px",
-            "height",
-            element
-          );
-        } else if (isHeightAuto) {
-          heightInPx = convertToNewUnit(
-            parseFloat(style.height),
-            "auto",
-            "px",
-            "height",
-            element
-          );
-        }
-        finalHeight = `${heightInPx}px`;
-        setNodeStyle(
-          {
-            height: finalHeight,
-          },
-          [node.id]
-        );
-      }
-
-      const placeholderNode: Node = {
-        id: nanoid(),
-        type: "placeholder",
-        style: {
-          width: isFillMode
-            ? finalWidth
-            : isWidthAuto
-            ? convertToNewUnit(
-                parseFloat(style.width),
-                "auto",
-                "px",
-                "width",
-                element
-              )
-            : isWidthPercent
-            ? convertToNewUnit(
-                parseFloat(style.width),
-                "%",
-                "px",
-                "width",
-                element
-              )
-            : node.style.width,
-          height: isFillMode
-            ? finalHeight
-            : isHeightAuto
-            ? convertToNewUnit(
-                parseFloat(style.height),
-                "auto",
-                "px",
-                "height",
-                element
-              )
-            : isHeightPercent
-            ? convertToNewUnit(
-                parseFloat(style.height),
-                "%",
-                "px",
-                "height",
-                element
-              )
-            : node.style.height,
-          backgroundColor: "rgba(0,153,255,0.8)",
-          position: "relative",
-          flex: "0 0 auto",
-          rotate: node.style.rotate,
-          borderRadius: node.style.borderRadius,
-        },
-        inViewport: true,
-        parentId: node.parentId,
+      const placeholderInfo = {
+        mainPlaceholderId: mainPlaceholder.id,
+        // Instead of using selectedIds, get nodes in DOM order
+        nodeOrder: selectedIds
+          .map((id) => {
+            const node = nodeState.nodes.find((n) => n.id === id);
+            return node
+              ? {
+                  id: node.id,
+                  index: findIndexWithinParent(
+                    nodeState.nodes,
+                    node.id,
+                    node.parentId
+                  ),
+                }
+              : null;
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.index - b.index)
+          .map((item) => item.id),
+        additionalPlaceholders: [],
       };
 
-      nodeDisp.insertAtIndex(placeholderNode, oldIndex, node.parentId);
+      nodeDisp.insertAtIndex(mainPlaceholder, oldIndex, node.parentId);
 
       const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
       const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
@@ -261,14 +161,102 @@ export const useDragStart = () => {
         mouseX: mouseOffsetX,
         mouseY: mouseOffsetY,
       });
+
+      if (selectedIds.length > 1) {
+        const additional = selectedIds
+          .filter((id) => id !== node.id)
+          .map((id) => {
+            const otherNode = nodeState.nodes.find((n) => n.id === id);
+            if (!otherNode) return null;
+
+            const el = document.querySelector(
+              `[data-node-id="${id}"]`
+            ) as HTMLElement;
+            if (!el) return null;
+
+            // Calculate dimensions for additional node
+            const {
+              finalWidth: additionalWidth,
+              finalHeight: additionalHeight,
+            } = calculateAndUpdateDimensions({
+              node: otherNode,
+              element: el,
+              transform,
+              setNodeStyle,
+            });
+
+            const additionalOldIndex = findIndexWithinParent(
+              nodeState.nodes,
+              otherNode.id,
+              otherNode.parentId
+            );
+            const additionalPlaceholder = createPlaceholder({
+              node: otherNode,
+              element: el,
+              transform,
+              finalWidth: additionalWidth,
+              finalHeight: additionalHeight,
+            });
+
+            // Insert additional placeholder
+            nodeDisp.insertAtIndex(
+              additionalPlaceholder,
+              additionalOldIndex,
+              otherNode.parentId
+            );
+
+            // Add to placeholder tracking
+            placeholderInfo.additionalPlaceholders.push({
+              placeholderId: additionalPlaceholder.id,
+              nodeId: otherNode.id,
+            });
+
+            const rect = el.getBoundingClientRect();
+            const contentRect = contentRef.current!.getBoundingClientRect();
+
+            const xPos =
+              (rect.left - contentRect.left - transform.x) / transform.scale;
+            const yPos =
+              (rect.top - contentRect.top - transform.y) / transform.scale;
+
+            const mouseOffsetX = (e.clientX - rect.left) / transform.scale;
+            const mouseOffsetY = (e.clientY - rect.top) / transform.scale;
+
+            return {
+              node: otherNode,
+              offset: {
+                x: xPos,
+                y: yPos,
+                mouseX: mouseOffsetX,
+                mouseY: mouseOffsetY,
+              },
+              placeholderId: additionalPlaceholder.id,
+            };
+          })
+          .filter(Boolean) as Array<{ node: Node; offset: any }>;
+
+        console.log("DRAG START - Original Node Order:", {
+          selectedIds,
+          nodeOrder: placeholderInfo.nodeOrder,
+          mainNode: node.id,
+          additionalNodes: placeholderInfo.additionalPlaceholders.map(
+            (p) => p.nodeId
+          ),
+        });
+
+        dragDisp.setPlaceholderInfo(placeholderInfo);
+        dragDisp.setAdditionalDraggedNodes(additional);
+      }
+
+      console.log("ADDTIONANIO", dragState.additionalDraggedNodes);
     } else {
       dragDisp.setDragSource("canvas");
 
       const currentLeft = parseFloat(node.style.left as string) || 0;
       const currentTop = parseFloat(node.style.top as string) || 0;
 
-      const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
-      const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
+      const mouseOffsetX1 = (e.clientX - elementRect.left) / transform.scale;
+      const mouseOffsetY1 = (e.clientY - elementRect.top) / transform.scale;
 
       setNodeStyle(
         {
@@ -284,9 +272,55 @@ export const useDragStart = () => {
       dragDisp.setDraggedNode(node, {
         x: currentLeft,
         y: currentTop,
-        mouseX: mouseOffsetX,
-        mouseY: mouseOffsetY,
+        mouseX: mouseOffsetX1,
+        mouseY: mouseOffsetY1,
       });
+
+      if (selectedIds.length > 1) {
+        const additional = selectedIds
+          .filter((id) => id !== node.id)
+          .map((id) => {
+            const otherNode = nodeState.nodes.find((n) => n.id === id);
+            if (!otherNode) return null;
+
+            const el = document.querySelector(
+              `[data-node-id="${id}"]`
+            ) as HTMLElement;
+            if (!el) return null;
+
+            const rect = el.getBoundingClientRect();
+
+            const xPos =
+              (rect.left - contentRect.left - transform.x) / transform.scale;
+            const yPos =
+              (rect.top - contentRect.top - transform.y) / transform.scale;
+
+            const mouseOffsetX = (e.clientX - rect.left) / transform.scale;
+            const mouseOffsetY = (e.clientY - rect.top) / transform.scale;
+
+            setNodeStyle(
+              {
+                position: "absolute",
+                left: "0px",
+                top: "0px",
+              },
+              [otherNode.id]
+            );
+
+            return {
+              node: otherNode,
+              offset: {
+                x: xPos,
+                y: yPos,
+                mouseX: mouseOffsetX,
+                mouseY: mouseOffsetY,
+              },
+            };
+          })
+          .filter(Boolean) as Array<{ node: Node; offset: any }>;
+
+        dragDisp.setAdditionalDraggedNodes(additional);
+      }
     }
 
     dragDisp.setDraggedItem(null);

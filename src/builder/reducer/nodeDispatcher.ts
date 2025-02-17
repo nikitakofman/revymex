@@ -217,6 +217,8 @@ export class NodeDispatcher {
     options?: {
       targetId?: string | number | null;
       position?: "before" | "after" | "inside" | null;
+      index?: number;
+      newPosition?: Position;
     }
   ) {
     this.setState((prev) =>
@@ -232,7 +234,6 @@ export class NodeDispatcher {
           if (options?.newPosition) {
             node.position = options.newPosition;
           }
-
           return;
         }
 
@@ -249,11 +250,13 @@ export class NodeDispatcher {
           const targetId = options.targetId;
           const position = options.position;
           const targetIndex = draft.nodes.findIndex((n) => n.id === targetId);
+
           if (targetIndex === -1) {
             node.parentId = null;
             draft.nodes.push(node);
             return;
           }
+
           const targetNode = draft.nodes[targetIndex];
 
           if (position === "inside") {
@@ -264,6 +267,20 @@ export class NodeDispatcher {
 
           node.parentId = targetNode.parentId;
 
+          // If index is provided, use it directly
+          if (typeof options.index === "number") {
+            const siblings = draft.nodes.filter(
+              (n) => n.parentId === targetNode.parentId
+            );
+            const insertIndex = Math.min(options.index, siblings.length);
+            const globalIndices = siblings.map((s) => draft.nodes.indexOf(s));
+            const insertGlobalIndex =
+              globalIndices[insertIndex] || draft.nodes.length;
+            draft.nodes.splice(insertGlobalIndex, 0, node);
+            return;
+          }
+
+          // Otherwise use before/after position
           const siblingIds = draft.nodes
             .map((n, i) => ({ node: n, index: i }))
             .filter((obj) => obj.node.parentId === targetNode.parentId);
@@ -271,6 +288,7 @@ export class NodeDispatcher {
           const siblingIdx = siblingIds.findIndex(
             (obj) => obj.node.id === targetId
           );
+
           if (siblingIdx === -1) {
             draft.nodes.push(node);
             return;

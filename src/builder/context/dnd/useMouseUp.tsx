@@ -170,6 +170,49 @@ export const useMouseUp = () => {
       } else {
         nodeDisp.moveNode(realNodeId, true, { targetId, position });
 
+        if (dragState.additionalDraggedNodes?.length) {
+          dragState.additionalDraggedNodes.forEach((info, index) => {
+            if (index === 0) {
+              // First additional node goes after main node
+              nodeDisp.moveNode(info.node.id, true, {
+                targetId: realNodeId,
+                position: "after",
+              });
+            } else {
+              // Subsequent nodes go after previous additional node
+              const previousNodeId =
+                dragState.additionalDraggedNodes[index - 1].node.id;
+              nodeDisp.moveNode(info.node.id, true, {
+                targetId: previousNodeId,
+                position: "after",
+              });
+            }
+
+            // Apply viewport styles to additional nodes
+            setNodeStyle(
+              {
+                position: "relative",
+                zIndex: "",
+                transform: "",
+                left: "",
+                top: "",
+                ...(info.node.style.flex === "1 0 0px" && {
+                  flex: "1 0 0px",
+                }),
+              },
+              [info.node.id],
+              undefined
+            );
+
+            // Update dynamic parent if needed
+            if (targetFrame?.dynamicParentId) {
+              nodeDisp.updateNode(info.node.id, {
+                dynamicParentId: targetFrame.dynamicParentId,
+              });
+            }
+          });
+        }
+
         if (targetFrame?.dynamicParentId) {
           nodeDisp.updateNode(realNodeId, {
             dynamicParentId: targetFrame.dynamicParentId,
@@ -194,6 +237,8 @@ export const useMouseUp = () => {
         );
       }
 
+      console.log("DROPING FROM CANVAS INSIDE A FRAME OR VIEWPORT");
+
       if (!dragState.dynamicModeNodeId) {
         nodeDisp.syncViewports();
       }
@@ -209,42 +254,239 @@ export const useMouseUp = () => {
     );
 
     if (placeholderIndex !== -1) {
-      const placeholderId = nodeState.nodes[placeholderIndex].id;
-      const placeholderNode = nodeState.nodes[placeholderIndex];
+      if (dragState.placeholderInfo) {
+        const allDraggedNodes = [
+          {
+            nodeId: draggedNode.id,
+            placeholderId: dragState.placeholderInfo.mainPlaceholderId,
+          },
+          ...dragState.placeholderInfo.additionalPlaceholders,
+        ].sort((a, b) => {
+          const orderA = dragState.placeholderInfo!.nodeOrder.indexOf(a.nodeId);
+          const orderB = dragState.placeholderInfo!.nodeOrder.indexOf(b.nodeId);
+          return orderA - orderB;
+        });
 
-      const targetIndex = findIndexWithinParent(
-        nodeState.nodes.filter((n) => n.id !== draggedNode.id),
-        placeholderNode.id,
-        placeholderNode.parentId
-      );
+        // For each node, get its original dimensions
+        const nodeDimensions = new Map();
+        allDraggedNodes.forEach((info) => {
+          const node = nodeState.nodes.find((n) => n.id === info.nodeId);
+          if (node) {
+            nodeDimensions.set(info.nodeId, {
+              width: node.style.width,
+              height: node.style.height,
+              isFillMode: node.style.flex === "1 0 0px",
+            });
+          }
+        });
 
-      nodeDisp.removeNode(placeholderId);
+        const firstPlaceholder = nodeState.nodes.find(
+          (n) => n.id === allDraggedNodes[0].placeholderId
+        );
+        if (!firstPlaceholder) return;
 
-      nodeDisp.reorderNode(
-        draggedNode.id,
-        placeholderNode.parentId,
-        targetIndex
-      );
+        const parentId = firstPlaceholder.parentId;
+        const currentNodes = nodeState.nodes.filter(
+          (n) => n.parentId === parentId
+        );
+        const placeholderIndex = findIndexWithinParent(
+          nodeState.nodes,
+          firstPlaceholder.id,
+          parentId
+        );
 
-      setNodeStyle(
-        {
-          position: "relative",
-          zIndex: "",
-          transform: "",
-          left: "",
-          top: "",
-          ...(dragState.originalWidthHeight.isFillMode && {
-            flex: "1 0 0px",
-          }),
-          width: dropWidth,
-          height: dropHeight,
-        },
-        [realNodeId],
-        undefined
-      );
+        // Remove all placeholders
+        allDraggedNodes.forEach((info) => {
+          const placeholder = nodeState.nodes.find(
+            (n) => n.id === info.placeholderId
+          );
+          if (placeholder) {
+            nodeDisp.removeNode(placeholder.id);
+          }
+        });
 
-      if (sourceViewportId) {
-        nodeDisp.syncFromViewport(sourceViewportId);
+        if (placeholderIndex === 0) {
+          // Get all non-placeholder siblings first
+          const siblings = nodeState.nodes.filter(
+            (n) => n.parentId === parentId && n.type !== "placeholder"
+          );
+
+          // Find the first non-dragged sibling
+          const firstSibling = siblings.find(
+            (n) => !allDraggedNodes.some((d) => d.nodeId === n.id)
+          );
+
+          if (firstSibling) {
+            // Move nodes in sequence before the first non-dragged sibling
+            allDraggedNodes.forEach((info, index) => {
+              if (index === 0) {
+                nodeDisp.moveNode(info.nodeId, true, {
+                  targetId: firstSibling.id,
+                  position: "before",
+                });
+              } else {
+                nodeDisp.moveNode(info.nodeId, true, {
+                  targetId: allDraggedNodes[index - 1].nodeId,
+                  position: "after",
+                });
+              }
+
+              const dimensions = nodeDimensions.get(info.nodeId);
+              setNodeStyle(
+                {
+                  position: "relative",
+                  zIndex: "",
+                  transform: "",
+                  left: "",
+                  top: "",
+                  ...(dimensions?.isFillMode
+                    ? {
+                        flex: "1 0 0px",
+                        width: "auto", // Reset width/height when restoring fill mode
+                        height: "auto",
+                      }
+                    : {
+                        width: dimensions?.width || dropWidth,
+                        height: dimensions?.height || dropHeight,
+                        flex: "0 0 auto",
+                      }),
+
+                  width: dimensions?.width || dropWidth,
+                  height: dimensions?.height || dropHeight,
+                },
+                [info.nodeId],
+                undefined
+              );
+            });
+          } else {
+            // If no siblings, move as first children
+            allDraggedNodes.forEach((info, index) => {
+              if (index === 0) {
+                nodeDisp.moveNode(info.nodeId, true, {
+                  targetId: parentId,
+                  position: "inside",
+                });
+              } else {
+                nodeDisp.moveNode(info.nodeId, true, {
+                  targetId: allDraggedNodes[index - 1].nodeId,
+                  position: "after",
+                });
+              }
+
+              const dimensions = nodeDimensions.get(info.nodeId);
+              setNodeStyle(
+                {
+                  position: "relative",
+                  zIndex: "",
+                  transform: "",
+                  left: "",
+                  top: "",
+                  ...(dimensions?.isFillMode
+                    ? {
+                        flex: "1 0 0px",
+                        width: "auto", // Reset width/height when restoring fill mode
+                        height: "auto",
+                      }
+                    : {
+                        width: dimensions?.width || dropWidth,
+                        height: dimensions?.height || dropHeight,
+                        flex: "0 0 auto",
+                      }),
+
+                  width: dimensions?.width || dropWidth,
+                  height: dimensions?.height || dropHeight,
+                },
+                [info.nodeId],
+                undefined
+              );
+            });
+          }
+        } else {
+          // Existing logic for non-first positions
+          const targetNode = currentNodes[placeholderIndex - 1];
+          allDraggedNodes.forEach((info, index) => {
+            if (index === 0) {
+              nodeDisp.moveNode(info.nodeId, true, {
+                targetId: targetNode.id,
+                position: "after",
+              });
+            } else {
+              nodeDisp.moveNode(info.nodeId, true, {
+                targetId: allDraggedNodes[index - 1].nodeId,
+                position: "after",
+              });
+            }
+
+            const dimensions = nodeDimensions.get(info.nodeId);
+            setNodeStyle(
+              {
+                position: "relative",
+                zIndex: "",
+                transform: "",
+                left: "",
+                top: "",
+                ...(dimensions?.isFillMode
+                  ? {
+                      flex: "1 0 0px",
+                      width: "auto", // Reset width/height when restoring fill mode
+                      height: "auto",
+                    }
+                  : {
+                      width: dimensions?.width || dropWidth,
+                      height: dimensions?.height || dropHeight,
+                      flex: "0 0 auto",
+                    }),
+
+                width: dimensions?.width || dropWidth,
+                height: dimensions?.height || dropHeight,
+              },
+              [info.nodeId],
+              undefined
+            );
+          });
+        }
+
+        if (sourceViewportId) {
+          nodeDisp.syncFromViewport(sourceViewportId);
+        }
+      } else {
+        const placeholderId = nodeState.nodes[placeholderIndex].id;
+        const placeholderNode = nodeState.nodes[placeholderIndex];
+
+        const targetIndex = findIndexWithinParent(
+          nodeState.nodes.filter((n) => n.id !== draggedNode.id),
+          placeholderNode.id,
+          placeholderNode.parentId
+        );
+
+        nodeDisp.removeNode(placeholderId);
+
+        nodeDisp.reorderNode(
+          draggedNode.id,
+          placeholderNode.parentId,
+          targetIndex
+        );
+
+        setNodeStyle(
+          {
+            position: "relative",
+            zIndex: "",
+            transform: "",
+            left: "",
+            top: "",
+            ...(dragState.originalWidthHeight.isFillMode && {
+              flex: "1 0 0px",
+            }),
+            width: dropWidth,
+            height: dropHeight,
+          },
+          [realNodeId],
+          undefined
+        );
+
+        if (sourceViewportId) {
+          nodeDisp.syncFromViewport(sourceViewportId);
+        }
       }
     } else if (dragState.draggedItem && !draggedNode.dynamicParentId) {
       const { dropX, dropY } = dragState.dropInfo;
@@ -271,45 +513,115 @@ export const useMouseUp = () => {
 
       nodeDisp.addNode(newNode, null, null, false);
     } else if (containerRef.current) {
-      const draggedElement = document.querySelector("[data-node-dragged]");
+      const draggedElement = document.querySelector(
+        `[data-node-dragged="${draggedNode.id}"]`
+      );
 
       if (draggedElement && containerRef.current) {
-        const draggedRect = draggedElement.getBoundingClientRect();
         const containerRect = containerRef.current.getBoundingClientRect();
+        const mainDraggedRect = draggedElement.getBoundingClientRect();
 
-        const canvasX =
-          (draggedRect.left - containerRect.left - transform.x) /
+        // Get the main node's true position after transform
+        const mainNodeX =
+          (mainDraggedRect.left - containerRect.left - transform.x) /
           transform.scale;
-        const canvasY =
-          (draggedRect.top - containerRect.top - transform.y) / transform.scale;
+        const mainNodeY =
+          (mainDraggedRect.top - containerRect.top - transform.y) /
+          transform.scale;
 
-        if (dragState.dynamicModeNodeId) {
-          nodeDisp.updateDynamicPosition(draggedNode.id, {
-            x: canvasX,
-            y: canvasY,
-          });
-          if (draggedNode.id !== dragState.dynamicModeNodeId) {
-            nodeDisp.updateNode(draggedNode.id, {
-              dynamicParentId: dragState.dynamicModeNodeId,
-            });
-          }
-        }
+        console.log("MAIN NODE:", {
+          id: draggedNode.id,
+          mainDraggedRect,
+          containerRect,
+          transform,
+          finalPosition: { x: mainNodeX, y: mainNodeY },
+        });
 
         setNodeStyle(
           {
             position: "absolute",
-            left: `${canvasX}px`,
-            top: `${canvasY}px`,
+            left: `${mainNodeX}px`,
+            top: `${mainNodeY}px`,
           },
           [draggedNode.id]
         );
 
         nodeDisp.moveNode(draggedNode.id, false, {
           newPosition: {
-            x: canvasX,
-            y: canvasY,
+            x: mainNodeX,
+            y: mainNodeY,
           },
         });
+
+        if (dragState.additionalDraggedNodes?.length) {
+          dragState.additionalDraggedNodes.forEach((info) => {
+            const additionalElement = document.querySelector(
+              `[data-node-dragged="${info.node.id}"]`
+            );
+
+            if (additionalElement) {
+              const additionalRect = additionalElement.getBoundingClientRect();
+
+              if (info.node.inViewport || info.node.parentId) {
+                // For nodes from viewport/frames, use their actual dragged positions
+                const additionalX =
+                  (additionalRect.left - containerRect.left - transform.x) /
+                  transform.scale;
+                const additionalY =
+                  (additionalRect.top - containerRect.top - transform.y) /
+                  transform.scale;
+
+                setNodeStyle(
+                  {
+                    position: "absolute",
+                    left: `${additionalX}px`,
+                    top: `${additionalY}px`,
+                  },
+                  [info.node.id]
+                );
+
+                nodeDisp.moveNode(info.node.id, false, {
+                  newPosition: {
+                    x: additionalX,
+                    y: additionalY,
+                  },
+                });
+              } else {
+                // For canvas nodes, maintain relative distances
+                const originalLeft =
+                  parseFloat(info.node.style.left as string) || 0;
+                const originalTop =
+                  parseFloat(info.node.style.top as string) || 0;
+                const mainNodeLeft =
+                  parseFloat(draggedNode.style.left as string) || 0;
+                const mainNodeTop =
+                  parseFloat(draggedNode.style.top as string) || 0;
+
+                const distanceX = originalLeft - mainNodeLeft;
+                const distanceY = originalTop - mainNodeTop;
+
+                const finalX = mainNodeX + distanceX;
+                const finalY = mainNodeY + distanceY;
+
+                setNodeStyle(
+                  {
+                    position: "absolute",
+                    left: `${finalX}px`,
+                    top: `${finalY}px`,
+                  },
+                  [info.node.id]
+                );
+
+                nodeDisp.moveNode(info.node.id, false, {
+                  newPosition: {
+                    x: finalX,
+                    y: finalY,
+                  },
+                });
+              }
+            }
+          });
+        }
       }
     }
 
