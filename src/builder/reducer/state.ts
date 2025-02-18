@@ -227,6 +227,8 @@ export const dragInitialState: DragState = {
   originalWidthHeight: { width: 0, height: 0, isFillMode: false },
   isSelectionBoxActive: false,
   tempSelectedIds: [],
+  nodeDimensions: {},
+  duplicatedFromAlt: false,
 };
 
 export const interfaceInitialState: InterfaceState = {

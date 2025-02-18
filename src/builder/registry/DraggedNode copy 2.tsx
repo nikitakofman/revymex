@@ -251,18 +251,18 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     }
   }, [snapResult, dragDisp]);
 
+  // Only try to update the actual element immediately when mounting
   useEffect(() => {
     if ((node.parentId || node.inViewport) && initialDimensionsRef.current) {
       const el = document.querySelector(
         `[data-node-id="${node.id}"]`
       ) as HTMLElement;
-
       if (el) {
         el.style.width = `${initialDimensionsRef.current.width}px`;
         el.style.height = `${initialDimensionsRef.current.height}px`;
       }
     }
-  }, [node.id, node.inViewport, node.parentId]);
+  }, [node.id]);
 
   return createPortal(
     <div
@@ -274,19 +274,26 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
         transform: `scale(${transform.scale})`,
         transformOrigin: "top left",
         pointerEvents: "none",
+        width: `${width}px`,
+        height: `${height}px`,
         zIndex: 9999,
       }}
     >
       {cloneElement(content, {
+        "data-node-id": undefined,
         style: {
           position: "fixed",
-          // rotate: node.style.rotate,
+          rotate: node.style.rotate,
           transformOrigin: "top left",
           pointerEvents: "none",
           left: undefined,
           top: undefined,
           width: `${width}px`,
           height: `${height}px`,
+          background: isAdditionalDraggedNode
+            ? "rgba(255,0,0,0.2)"
+            : "rgba(0,0,255,0.2)",
+          border: "1px solid blue",
         },
       })}
     </div>,

@@ -4,8 +4,14 @@ import { useBuilder } from "@/builder/context/builderState";
 import { useDragStart } from "./useDragStart";
 
 export const useConnect = () => {
-  const { dragDisp, dragState, nodeDisp, nodeState, isMovingCanvas } =
-    useBuilder();
+  const {
+    dragDisp,
+    dragState,
+    nodeDisp,
+    nodeState,
+    isMovingCanvas,
+    selectedIdsRef,
+  } = useBuilder();
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -35,6 +41,8 @@ export const useConnect = () => {
         // Check if click is on a resize handle
         const target = e.target as HTMLElement;
 
+        console.log("mouse down now");
+
         // First check for explicit resize handles
         const resizeHandle = target.closest('[data-resize-handle="true"]');
 
@@ -52,6 +60,8 @@ export const useConnect = () => {
 
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
 
+        const isAlreadySelected = dragState.selectedIds.includes(node.id);
+
         // Rest of your existing handleMouseDown code...
         const parentNode = node.parentId
           ? nodeState.nodes.find((n) => n.id === node.parentId)
@@ -64,10 +74,15 @@ export const useConnect = () => {
             dragDisp.addToSelection(parentNode.id);
           }
         } else {
-          if (!e.shiftKey) {
-            dragDisp.selectNode(node.id);
-          } else {
+          if (isAlreadySelected && dragState.selectedIds.length > 1) {
+            // Don't change the selection - the node is already part of multi-selection
+            // We simply do nothing here to preserve all selected nodes
+          } else if (e.shiftKey) {
+            // Add to selection with shift key
             dragDisp.addToSelection(node.id);
+          } else {
+            // Otherwise select just this node
+            dragDisp.selectNode(node.id);
           }
         }
 

@@ -103,7 +103,6 @@ export function useNodeHistory(initialState: NodeState) {
       id: sessionId,
       startState: JSON.parse(JSON.stringify(state)), // Deep clone to prevent reference issues
     };
-    console.log("Start recording session:", sessionId, "with state:", state);
     return sessionId;
   }, [state]);
 
@@ -111,7 +110,6 @@ export function useNodeHistory(initialState: NodeState) {
     (sessionId: string) => {
       const session = currentSessionRef.current;
       if (session?.id !== sessionId) {
-        console.log("Session ID mismatch or no active session");
         return false;
       }
 
@@ -135,7 +133,6 @@ export function useNodeHistory(initialState: NodeState) {
 
       // Only record if there are actual changes
       if (patches.length > 0) {
-        console.log("Recording patches:", patches);
         setHistory((h) => ({
           past: [...h.past, inversePatches].slice(-50),
           future: [],
@@ -143,7 +140,6 @@ export function useNodeHistory(initialState: NodeState) {
       }
 
       currentSessionRef.current = null;
-      console.log("Stop recording session:", sessionId);
       return true;
     },
     [state]

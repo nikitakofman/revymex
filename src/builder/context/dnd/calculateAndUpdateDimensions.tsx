@@ -36,8 +36,16 @@ export const calculateAndUpdateDimensions = ({
   // Handle fill mode
   if (isFillMode) {
     const rect = element.getBoundingClientRect();
+
+    console.log("fill mode true");
+
     finalWidth = `${Math.round(rect.width / transform.scale)}px`;
     finalHeight = `${Math.round(rect.height / transform.scale)}px`;
+
+    console.log("setting conversion fill for node type", node.id, node.type);
+
+    console.log("finalWidth", finalWidth);
+    console.log("finalHeight", finalHeight);
 
     setNodeStyle(
       {

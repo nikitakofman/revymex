@@ -79,8 +79,6 @@ export const BorderRadiusHandle: React.FC<{
   const borderWidth = 1 / transform.scale;
   const offset = 12 / transform.scale;
 
-  console.log(" TRANSFORM", transform.scale);
-
   if (transform.scale < 0.25) return;
 
   return (

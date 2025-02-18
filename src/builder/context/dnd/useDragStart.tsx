@@ -17,6 +17,7 @@ export const useDragStart = () => {
     dragState,
     setNodeStyle,
     startRecording,
+    selectedIdsRef,
   } = useBuilder();
 
   const getDynamicParentNode = (node: Node): Node | null => {
@@ -35,11 +36,9 @@ export const useDragStart = () => {
     const target = e.target as HTMLElement;
     const resizeHandle = target.closest('[data-resize-handle="true"]');
 
+    selectedIdsRef.current = [...dragState.selectedIds];
+
     const selectedIds = dragState.selectedIds;
-
-    console.log("STARTING DRAG");
-
-    console.log("REISZE HANDLE", resizeHandle);
     if (resizeHandle) {
       e.preventDefault();
       e.stopPropagation();
@@ -126,6 +125,18 @@ export const useDragStart = () => {
         finalHeight,
       });
 
+      const isFillMode = element.style.flex === "1 0 0px";
+
+      const mainDimensions = {
+        width: element.style.width,
+        height: element.style.height,
+        isFillMode: isFillMode,
+        finalWidth,
+        finalHeight,
+      };
+
+      dragDisp.setNodeDimensions(node.id, mainDimensions);
+
       const placeholderInfo = {
         mainPlaceholderId: mainPlaceholder.id,
         // Instead of using selectedIds, get nodes in DOM order
@@ -175,6 +186,7 @@ export const useDragStart = () => {
             if (!el) return null;
 
             // Calculate dimensions for additional node
+
             const {
               finalWidth: additionalWidth,
               finalHeight: additionalHeight,
@@ -183,6 +195,14 @@ export const useDragStart = () => {
               element: el,
               transform,
               setNodeStyle,
+            });
+
+            dragDisp.setNodeDimensions(otherNode.id, {
+              width: el.style.width,
+              height: el.style.height,
+              isFillMode: el.style.flex === "1 0 0px",
+              finalWidth: additionalWidth as string,
+              finalHeight: additionalHeight as string,
             });
 
             const additionalOldIndex = findIndexWithinParent(
@@ -235,20 +255,9 @@ export const useDragStart = () => {
           })
           .filter(Boolean) as Array<{ node: Node; offset: any }>;
 
-        console.log("DRAG START - Original Node Order:", {
-          selectedIds,
-          nodeOrder: placeholderInfo.nodeOrder,
-          mainNode: node.id,
-          additionalNodes: placeholderInfo.additionalPlaceholders.map(
-            (p) => p.nodeId
-          ),
-        });
-
         dragDisp.setPlaceholderInfo(placeholderInfo);
         dragDisp.setAdditionalDraggedNodes(additional);
       }
-
-      console.log("ADDTIONANIO", dragState.additionalDraggedNodes);
     } else {
       dragDisp.setDragSource("canvas");
 

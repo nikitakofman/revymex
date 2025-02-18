@@ -34,7 +34,6 @@ export const useMouseMove = () => {
 
   return (e: MouseEvent) => {
     e.preventDefault();
-
     if (
       !dragState.isDragging ||
       !dragState.draggedNode ||
@@ -47,6 +46,7 @@ export const useMouseMove = () => {
       }
       return;
     }
+    console.log("dragState sel ids", dragState.selectedIds);
 
     const draggedNode = dragState.draggedNode.node;
 
@@ -141,13 +141,6 @@ export const useMouseMove = () => {
               return orderA - orderB;
             });
 
-            console.log("REORDER - Current State:", {
-              placeholderInfo: dragState.placeholderInfo,
-              originalOrder: dragState.placeholderInfo.nodeOrder,
-              reorderTarget: reorderResult.targetId,
-              position: reorderResult.position,
-            });
-
             // First move the first placeholder to establish the group position
             nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
               targetId: reorderResult.targetId,
@@ -161,11 +154,6 @@ export const useMouseMove = () => {
                 position: "after",
               });
             }
-
-            console.log("REORDER - After Sort:", {
-              sortedNodes,
-              moveSequence: sortedNodes.map((n) => n.nodeId),
-            });
           } else {
             // Single node case
             const placeholder = nodeState.nodes.find(
@@ -343,13 +331,6 @@ export const useMouseMove = () => {
             return orderA - orderB;
           });
 
-          console.log("REORDER - Current State:", {
-            placeholderInfo: dragState.placeholderInfo,
-            originalOrder: dragState.placeholderInfo.nodeOrder,
-            reorderTarget: reorderResult.targetId,
-            position: reorderResult.position,
-          });
-
           // First move the first placeholder to establish the group position
           nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
             targetId: reorderResult.targetId,
@@ -363,11 +344,6 @@ export const useMouseMove = () => {
               position: "after",
             });
           }
-
-          console.log("REORDER - After Sort:", {
-            sortedNodes,
-            moveSequence: sortedNodes.map((n) => n.nodeId),
-          });
         } else {
           // Single node case
           const placeholder = nodeState.nodes.find(

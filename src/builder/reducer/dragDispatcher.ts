@@ -83,6 +83,16 @@ export interface DragState {
   isSelectionBoxActive: boolean;
   tempSelectedIds: string[];
   placeholderInfo: PlaceholderInfo | null;
+  nodeDimensions: {
+    [nodeId: string]: {
+      width: string;
+      height: string;
+      isFillMode: boolean;
+      finalWidth: string;
+      finalHeight: string;
+    };
+  };
+  duplicatedFromAlt: boolean;
 }
 
 interface PlaceholderInfo {
@@ -405,6 +415,31 @@ export class DragDispatcher {
     );
   }
 
+  setNodeDimensions(
+    nodeId: string,
+    dimensions: {
+      width: string;
+      height: string;
+      isFillMode: boolean;
+      finalWidth: string;
+      finalHeight: string;
+    }
+  ) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.nodeDimensions[nodeId] = dimensions;
+      })
+    );
+  }
+
+  setDuplicatedFromAlt(duplicatedFromAlt: boolean) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.duplicatedFromAlt = duplicatedFromAlt;
+      })
+    );
+  }
+
   resetDragState() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -428,6 +463,7 @@ export class DragDispatcher {
         draft.originalWidthHeight = { width: 0, height: 0, isFillMode: false };
         draft.additionalDraggedNodes = undefined;
         draft.placeholderInfo = null;
+        draft.nodeDimensions = {};
       })
     );
   }

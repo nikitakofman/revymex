@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
   useMemo,
+  RefObject,
 } from "react";
 import { NodeState } from "../reducer/nodeDispatcher";
 import { DragState } from "../reducer/dragDispatcher";
@@ -74,11 +75,17 @@ interface BuilderContextType {
   stopRecording: (sessionId: string) => boolean;
   interfaceState: InterfaceState;
   interfaceDisp: InterfaceDispatcher;
+  dragDimensionsRef: RefObject<DragDimensions>;
+  selectedIdsRef: RefObject<(string | number)[]>;
 }
 
 export interface RecordingSession {
   id: string;
   startState: NodeState;
+}
+
+interface DragDimensions {
+  [nodeId: string]: { width: number; height: number };
 }
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
@@ -106,6 +113,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [isResizing, setIsResizing] = useState(false);
   const [isAdjustingGap, setIsAdjustingGap] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const dragDimensionsRef = useRef<DragDimensions>({});
+  const selectedIdsRef = useRef(null);
 
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -145,12 +154,10 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
         if (e.shiftKey) {
           // Cmd/Ctrl + Shift + Z = Redo
-          console.log("Triggering redo");
           redo();
           window.dispatchEvent(new Event("resize"));
         } else {
           // Cmd/Ctrl + Z = Undo
-          console.log("Triggering undo");
           undo();
           window.dispatchEvent(new Event("resize"));
         }
@@ -253,8 +260,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     ) => {
       const targetIds = nodeIds || dragState.selectedIds;
 
-      console.log("targetIds", targetIds);
-
       if (targetIds.length > 0) {
         nodeDisp.updateNodeStyle(targetIds, styles);
         if (sync) {
@@ -293,6 +298,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     stopRecording,
     interfaceState,
     interfaceDisp,
+    dragDimensionsRef,
+    selectedIdsRef,
   };
 
   return (

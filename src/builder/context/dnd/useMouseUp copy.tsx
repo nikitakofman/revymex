@@ -19,7 +19,6 @@ export const useMouseUp = () => {
     nodeState,
     setNodeStyle,
     stopRecording,
-    selectedIdsRef,
   } = useBuilder();
 
   const originalIndexRef = useRef<number | null>(null);
@@ -115,6 +114,7 @@ export const useMouseUp = () => {
         (targetNode?.type === "image" || targetNode?.type === "video") &&
         dragState.draggedItem
       ) {
+        console.log("Attempting image transformation");
         const newNode = {
           ...draggedNode,
           sharedId,
@@ -188,7 +188,8 @@ export const useMouseUp = () => {
               });
             }
 
-            // Apply viewport styles to additional nodes
+            const dimensions = dragState.nodeDimensions[info.node.id];
+
             setNodeStyle(
               {
                 position: "relative",
@@ -196,9 +197,11 @@ export const useMouseUp = () => {
                 transform: "",
                 left: "",
                 top: "",
-                ...(info.node.style.flex === "1 0 0px" && {
+                ...(dimensions?.isFillMode && {
                   flex: "1 0 0px",
                 }),
+                width: dimensions?.width,
+                height: dimensions?.height,
               },
               [info.node.id],
               undefined
@@ -219,6 +222,8 @@ export const useMouseUp = () => {
           });
         }
 
+        const dimensions = dragState.nodeDimensions[realNodeId];
+
         setNodeStyle(
           {
             position: "relative",
@@ -226,16 +231,18 @@ export const useMouseUp = () => {
             transform: "",
             left: "",
             top: "",
-            ...(dragState.originalWidthHeight.isFillMode
-              ? {
-                  flex: "1 0 0px",
-                }
-              : {}),
+            ...(dimensions?.isFillMode && {
+              flex: "1 0 0px",
+            }),
+            width: dimensions?.width,
+            height: dimensions?.height,
           },
           [realNodeId],
           undefined
         );
       }
+
+      console.log("DROPING FROM CANVAS INSIDE A FRAME OR VIEWPORT");
 
       if (!dragState.dynamicModeNodeId) {
         nodeDisp.syncViewports();
@@ -246,6 +253,8 @@ export const useMouseUp = () => {
       stopRecording(dragState.recordingSessionId as string);
       return;
     }
+
+    console.log("DIMENSIONS", dragState.nodeDimensions);
 
     const placeholderIndex = nodeState.nodes.findIndex(
       (node) => node.type === "placeholder"
@@ -265,17 +274,8 @@ export const useMouseUp = () => {
           return orderA - orderB;
         });
 
+        // For each node, get its original dimensions
         const nodeDimensions = new Map();
-        allDraggedNodes.forEach((info) => {
-          const node = nodeState.nodes.find((n) => n.id === info.nodeId);
-          if (node) {
-            nodeDimensions.set(info.nodeId, {
-              width: node.style.width,
-              height: node.style.height,
-              isFillMode: node.style.flex === "1 0 0px",
-            });
-          }
-        });
 
         const firstPlaceholder = nodeState.nodes.find(
           (n) => n.id === allDraggedNodes[0].placeholderId
@@ -348,7 +348,6 @@ export const useMouseUp = () => {
             });
           } else {
             // If no siblings, move as first children
-
             allDraggedNodes.forEach((info, index) => {
               if (index === 0) {
                 nodeDisp.moveNode(info.nodeId, true, {
@@ -373,8 +372,8 @@ export const useMouseUp = () => {
                   ...(dimensions?.isFillMode && {
                     flex: "1 0 0px",
                   }),
-                  width: dimensions?.width || dropWidth,
-                  height: dimensions?.height || dropHeight,
+                  width: dimensions?.width,
+                  height: dimensions?.height,
                 },
                 [info.nodeId],
                 undefined
@@ -397,7 +396,7 @@ export const useMouseUp = () => {
               });
             }
 
-            const dimensions = dragState.nodeDimensions[info.nodeId];
+            const dimensions = nodeDimensions.get(info.nodeId);
             setNodeStyle(
               {
                 position: "relative",
@@ -501,6 +500,14 @@ export const useMouseUp = () => {
         const mainNodeY =
           (mainDraggedRect.top - containerRect.top - transform.y) /
           transform.scale;
+
+        console.log("MAIN NODE:", {
+          id: draggedNode.id,
+          mainDraggedRect,
+          containerRect,
+          transform,
+          finalPosition: { x: mainNodeX, y: mainNodeY },
+        });
 
         setNodeStyle(
           {

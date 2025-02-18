@@ -310,7 +310,8 @@ export const VisualHelpers = ({
       {/* Group (Multi-Selection) Border */}
       {dragState.selectedIds.length > 1 &&
         groupBoundsState &&
-        !isMovingCanvas && (
+        !isMovingCanvas &&
+        isInteractive && (
           <div
             style={{
               position: "absolute",

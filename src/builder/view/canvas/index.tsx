@@ -20,6 +20,7 @@ import { getFilteredNodes } from "@/builder/context/dnd/utils";
 import ViewportBar from "./bar";
 import Header from "./Header";
 import SelectionBox from "@/builder/context/dnd/SelectionBox";
+import { useKeyboardDrag } from "@/builder/context/hooks/useKeyboardDrag";
 
 const Canvas = () => {
   const {
@@ -30,6 +31,8 @@ const Canvas = () => {
     dragDisp,
     nodeState,
   } = useBuilder();
+
+  useKeyboardDrag();
 
   const handleMouseMove = useMouseMove();
   const handleMouseUp = useMouseUp();
