@@ -12,7 +12,7 @@ export const LineIndicator = () => {
   return createPortal(
     <>
       <div
-        className="pointer-events-none fixed z-[9997] bg-blue-500"
+        className="pointer-events-none fixed z-[9999] bg-blue-500"
         style={{
           left: `${x}px`,
           top: `${y}px`,

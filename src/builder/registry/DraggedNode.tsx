@@ -93,15 +93,8 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     };
   }
 
-  // Use stored dimensions instead of live dimensions
-  const width =
-    initialDimensionsRef.current?.width ||
-    parseFloat(dimensions?.finalWidth as string) ||
-    0;
-  const height =
-    initialDimensionsRef.current?.height ||
-    parseFloat(dimensions?.finalHeight as string) ||
-    0;
+  const width = parseFloat(node.style.width as string) || 0;
+  const height = parseFloat(node.style.height as string) || 0;
 
   const rotationDeg = parseRotation(node.style.rotate as string);
   const rotationRad = (rotationDeg * Math.PI) / 180;
@@ -279,6 +272,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     >
       {cloneElement(content, {
         style: {
+          ...content.props.style,
           position: "fixed",
           // rotate: node.style.rotate,
           transformOrigin: "top left",

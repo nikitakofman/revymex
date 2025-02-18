@@ -34,12 +34,21 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     e.nativeEvent.stopImmediatePropagation();
   };
 
-  // Handle pointer down events for resize
+  // Handle pointer down events for resize with shift key info
   const handlePointerDown = (e: React.PointerEvent, direction: Direction) => {
     e.preventDefault();
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
-    handleResizeStart(e, direction);
+
+    // Check if this is a direct border (not corner) resize
+    const isDirectBorderResize =
+      direction === "top" ||
+      direction === "right" ||
+      direction === "bottom" ||
+      direction === "left";
+
+    // Pass the original event and an additional parameter
+    handleResizeStart(e, direction, isDirectBorderResize);
   };
 
   // If it's a group selection and we don't have group bounds, don't render anything
@@ -248,6 +257,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
           <div
             key={direction}
             data-resize-handle="true"
+            data-direct-resize="true"
             className="bg-transparent"
             style={{
               ...getGroupBorderStyles(direction as Direction),
@@ -303,6 +313,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             <div
               key={direction}
               data-resize-handle="true"
+              data-direct-resize="true"
               className={`absolute ${
                 node.isDynamic || dragState.dynamicModeNodeId
                   ? "bg-[var(--accent-secondary)]"
@@ -333,6 +344,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             <div
               key={direction}
               data-resize-handle="true"
+              data-direct-resize="true"
               className={`absolute ${
                 node.isDynamic || dragState.dynamicModeNodeId
                   ? "bg-[var(--accent-secondary)]"
@@ -373,6 +385,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
           <div
             key={direction}
             data-resize-handle="true"
+            data-direct-resize="true"
             className="absolute bg-transparent"
             style={{
               ...getGroupBorderStyles(direction as Direction),

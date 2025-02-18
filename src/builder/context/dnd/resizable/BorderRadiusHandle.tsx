@@ -2,12 +2,31 @@ import React, { useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 
-export const BorderRadiusHandle: React.FC<{
+interface BorderRadiusHandleProps {
   node: Node;
   elementRef: React.RefObject<HTMLDivElement>;
-}> = ({ node, elementRef }) => {
-  const { setNodeStyle, transform, dragDisp, startRecording, stopRecording } =
-    useBuilder();
+  groupBounds?: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null;
+  isGroupSelection?: boolean;
+}
+
+export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
+  node,
+  groupBounds,
+  isGroupSelection = false,
+}) => {
+  const {
+    setNodeStyle,
+    transform,
+    dragDisp,
+    startRecording,
+    stopRecording,
+    dragState,
+  } = useBuilder();
 
   const startPosRef = useRef<number>(0);
   const startRadiusRef = useRef<number>(0);
@@ -15,11 +34,10 @@ export const BorderRadiusHandle: React.FC<{
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!elementRef.current) return;
 
     const sessionId = startRecording();
 
-    // Get current radius in pixels
+    // Get current radius in pixels - use the primary node as reference
     let currentRadius = 0;
     if (node.style.borderRadius) {
       const match = node.style.borderRadius.toString().match(/(\d+)/);
@@ -38,8 +56,6 @@ export const BorderRadiusHandle: React.FC<{
     });
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!elementRef.current) return;
-
       const deltaY = (e.clientY - startPosRef.current) / transform.scale;
       let newRadius = Math.max(0, startRadiusRef.current + deltaY);
 
@@ -53,12 +69,17 @@ export const BorderRadiusHandle: React.FC<{
         value: newRadius,
       });
 
+      // Apply border radius to all selected nodes if it's a group selection
+      const nodesToUpdate = isGroupSelection
+        ? dragState.selectedIds
+        : [node.id];
+
       if (newRadius === 0) {
-        setNodeStyle({ borderRadius: undefined }, undefined, true);
+        setNodeStyle({ borderRadius: undefined }, nodesToUpdate, true);
       } else {
         setNodeStyle(
           { borderRadius: `${Math.round(newRadius)}px` },
-          undefined,
+          nodesToUpdate,
           true
         );
       }
@@ -75,19 +96,37 @@ export const BorderRadiusHandle: React.FC<{
     window.addEventListener("mouseup", handleMouseUp);
   };
 
+  // Don't render if this isn't the primary selected node in a group
+  if (isGroupSelection && node.id !== dragState.selectedIds[0]) {
+    return null;
+  }
+
+  // Don't render at very small scales
+  if (transform.scale < 0.25) return null;
+
   const handleSize = 8 / transform.scale;
   const borderWidth = 1 / transform.scale;
   const offset = 12 / transform.scale;
 
-  if (transform.scale < 0.25) return;
+  // For group selection, position at top-left of group bounds
+  const handlePosition =
+    isGroupSelection && groupBounds
+      ? {
+          position: "absolute" as const,
+          left: `${offset}px`,
+          top: `${offset}px`,
+        }
+      : {
+          position: "absolute" as const,
+          left: `${offset}px`,
+          top: `${offset}px`,
+        };
 
   return (
     <div
       onMouseDown={handleMouseDown}
       style={{
-        position: "absolute",
-        left: `${offset}px`,
-        top: `${offset}px`,
+        ...handlePosition,
         width: `${handleSize}px`,
         height: `${handleSize}px`,
         borderRadius: "50%",

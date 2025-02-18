@@ -71,6 +71,8 @@ export const VisualHelpers = ({
     !isResizing && !isAdjustingGap && !isRotating && !dragState.dragSource;
   const showHelpers = !isMovingCanvas && isInteractive;
   const cumulativeRotation = getCumulativeRotation(node, nodeState);
+  const isMultiSelection = dragState.selectedIds.length > 1;
+  const isPrimarySelected = isSelected && dragState.selectedIds[0] === node.id;
 
   // --- Individual Element Calculation (Same as Original) ---
   useLayoutEffect(() => {
@@ -251,22 +253,33 @@ export const VisualHelpers = ({
                 pointerEvents: "none",
               }}
             />
-            {/* Always show Resize and Grip handles */}
-            {/* Only for single selection: show Border Radius, Rotate, and Gap controls */}
-            {dragState.selectedIds.length <= 1 && (
+
+            {/* Show resize handles for individual or primary selection */}
+            <ResizeHandles
+              node={node}
+              handleResizeStart={handleResizeStart}
+              isGroupSelection={isMultiSelection}
+            />
+
+            {/* Show individual element controls if not multi-selection */}
+            {!isMultiSelection && (
               <>
-                <ResizeHandles
-                  node={node}
-                  handleResizeStart={handleResizeStart}
-                />
+                {/* Rotate handle for single selection */}
                 {!node.id.includes("viewport") && (
-                  <>
-                    <GripHandles node={node} elementRef={elementRef} />
-                    <BorderRadiusHandle node={node} elementRef={elementRef} />
-                    <RotateHandle node={node} elementRef={elementRef} />
-                  </>
+                  <RotateHandle node={node} elementRef={elementRef} />
                 )}
 
+                {/* Border radius handle for single selection */}
+                {!node.id.includes("viewport") && (
+                  <BorderRadiusHandle node={node} elementRef={elementRef} />
+                )}
+
+                {/* Grip handles for individual elements only */}
+                {!node.id.includes("viewport") && (
+                  <GripHandles node={node} elementRef={elementRef} />
+                )}
+
+                {/* Gap handles when applicable */}
                 {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) &&
                   localComputedStyle?.display !== "grid" && (
                     <GapHandles
@@ -275,40 +288,17 @@ export const VisualHelpers = ({
                       elementRef={elementRef}
                     />
                   )}
+
+                {/* Connection handle for individual elements */}
                 <ConnectionHandle node={node} transform={transform} />
               </>
             )}
-            {/* {node.isDynamic && !dragState.dynamicModeNodeId && (
-              <div
-                className="absolute inset-0 flex items-center justify-center"
-                style={{ zIndex: 1000 }}
-              >
-                <button
-                  className="rounded text-white text-[10px]"
-                  style={{
-                    backgroundColor: "var(--accent-secondary)",
-                    transformOrigin: "center center",
-                    padding: "8px",
-                    fontSize: `${10 / transform.scale}px`,
-                    lineHeight: 1,
-                    pointerEvents: "auto",
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    dragDisp.setDynamicModeNodeId(node.id);
-                  }}
-                >
-                  Edit
-                </button>
-              </div>
-            )} */}
           </>
         )}
       </div>
 
-      {/* Group (Multi-Selection) Border */}
-      {dragState.selectedIds.length > 1 &&
+      {/* Group (Multi-Selection) Border and Controls */}
+      {isMultiSelection &&
         groupBoundsState &&
         !isMovingCanvas &&
         isInteractive && (
@@ -334,13 +324,34 @@ export const VisualHelpers = ({
                 boxSizing: "border-box",
               }}
             />
-            {node.id === dragState.selectedIds[0] && (
-              <ResizeHandles
-                node={node}
-                handleResizeStart={handleResizeStart}
-                groupBounds={groupBoundsState}
-                isGroupSelection={true}
-              />
+
+            {/* Only render these controls on the primary selected node */}
+            {isPrimarySelected && (
+              <>
+                {/* Resize handles for the group */}
+                <ResizeHandles
+                  node={node}
+                  handleResizeStart={handleResizeStart}
+                  groupBounds={groupBoundsState}
+                  isGroupSelection={true}
+                />
+
+                {/* Add Rotate handle for group */}
+                <RotateHandle
+                  node={node}
+                  elementRef={elementRef}
+                  groupBounds={groupBoundsState}
+                  isGroupSelection={true}
+                />
+
+                {/* Add Border Radius handle for group */}
+                <BorderRadiusHandle
+                  node={node}
+                  elementRef={elementRef}
+                  groupBounds={groupBoundsState}
+                  isGroupSelection={true}
+                />
+              </>
             )}
           </div>
         )}

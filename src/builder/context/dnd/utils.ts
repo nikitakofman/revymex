@@ -304,7 +304,6 @@ export const computeFrameDropIndicator = (
   const computedStyle = window.getComputedStyle(frameElement);
   const isColumn = computedStyle.flexDirection === "column";
 
-  // If no children, show indicator in middle of frame
   if (frameChildren.length === 0) {
     return {
       dropInfo: {
@@ -317,104 +316,106 @@ export const computeFrameDropIndicator = (
     };
   }
 
-  // Find the child we're hovering over
-  const hoveredChild = frameChildren.find(({ rect }) => {
-    if (isColumn) {
-      return mouseY >= rect.top && mouseY <= rect.bottom;
-    } else {
-      return mouseX >= rect.left && mouseX <= rect.right;
-    }
-  });
-
-  if (hoveredChild) {
-    // We're over a child - decide whether to show before or after
-    const relativePosition = isColumn
-      ? mouseY - hoveredChild.rect.top
-      : mouseX - hoveredChild.rect.left;
-
-    const elementSize = isColumn
-      ? hoveredChild.rect.height
-      : hoveredChild.rect.width;
-
-    const isBeforeMiddle = relativePosition < elementSize / 2;
-
-    return {
-      dropInfo: {
-        targetId: hoveredChild.id.toString(),
-        position: isBeforeMiddle ? "before" : "after",
-      },
-      lineIndicator: {
-        show: true,
-        x: isColumn
-          ? frameRect.left
-          : isBeforeMiddle
-          ? hoveredChild.rect.left
-          : hoveredChild.rect.right,
-        y: isColumn
-          ? isBeforeMiddle
-            ? hoveredChild.rect.top
-            : hoveredChild.rect.bottom
-          : frameRect.top,
-        width: isColumn ? frameRect.width : "2px",
-        height: isColumn ? "2px" : frameRect.height,
-      },
-    };
-  }
-
-  // If not over any child, find nearest child
+  // Sort children by position
   const sortedChildren = [...frameChildren].sort((a, b) =>
     isColumn ? a.rect.top - b.rect.top : a.rect.left - b.rect.left
   );
 
-  const nearestChild = sortedChildren.reduce((nearest, current) => {
-    const currentDist = isColumn
-      ? Math.abs(mouseY - (current.rect.top + current.rect.height / 2))
-      : Math.abs(mouseX - (current.rect.left + current.rect.width / 2));
-    const nearestDist = nearest
-      ? isColumn
-        ? Math.abs(mouseY - (nearest.rect.top + nearest.rect.height / 2))
-        : Math.abs(mouseX - (nearest.rect.left + nearest.rect.width / 2))
-      : Infinity;
-    return currentDist < nearestDist ? current : nearest;
+  // Find the gaps between children
+  const gaps = [];
+  for (let i = 0; i < sortedChildren.length - 1; i++) {
+    const current = sortedChildren[i];
+    const next = sortedChildren[i + 1];
+
+    if (isColumn) {
+      const gapCenter = (current.rect.bottom + next.rect.top) / 2;
+      gaps.push({
+        center: gapCenter,
+        firstId: current.id,
+        secondId: next.id,
+        region: {
+          start: current.rect.top + current.rect.height / 2, // Start from middle of first element
+          end: next.rect.top + next.rect.height / 2, // End at middle of second element
+        },
+      });
+    } else {
+      const gapCenter = (current.rect.right + next.rect.left) / 2;
+      gaps.push({
+        center: gapCenter,
+        firstId: current.id,
+        secondId: next.id,
+        region: {
+          start: current.rect.left + current.rect.width / 2, // Start from middle of first element
+          end: next.rect.left + next.rect.width / 2, // End at middle of second element
+        },
+      });
+    }
+  }
+
+  // Find which gap region we're in
+  for (const gap of gaps) {
+    const isInRegion = isColumn
+      ? mouseY >= gap.region.start && mouseY <= gap.region.end
+      : mouseX >= gap.region.start && mouseX <= gap.region.end;
+
+    if (isInRegion) {
+      return {
+        dropInfo: {
+          targetId: gap.secondId.toString(),
+          position: "before",
+        },
+        lineIndicator: {
+          show: true,
+          x: isColumn ? frameRect.left : gap.center,
+          y: isColumn ? gap.center : frameRect.top,
+          width: isColumn ? frameRect.width : "2px",
+          height: isColumn ? "2px" : frameRect.height,
+        },
+      };
+    }
+  }
+
+  // If we're not in any gap region, find the nearest child
+  const hoveredChild = sortedChildren.find(({ rect }) => {
+    if (isColumn) {
+      return mouseY < rect.top + rect.height / 2;
+    } else {
+      return mouseX < rect.left + rect.width / 2;
+    }
   });
 
-  if (nearestChild) {
-    const isBeforeNearest = isColumn
-      ? mouseY < nearestChild.rect.top + nearestChild.rect.height / 2
-      : mouseX < nearestChild.rect.left + nearestChild.rect.width / 2;
-
+  if (hoveredChild) {
+    // We're before the middle of this child
     return {
       dropInfo: {
-        targetId: nearestChild.id.toString(),
-        position: isBeforeNearest ? "before" : "after",
+        targetId: hoveredChild.id.toString(),
+        position: "before",
       },
       lineIndicator: {
         show: true,
-        x: isColumn
-          ? frameRect.left
-          : isBeforeNearest
-          ? nearestChild.rect.left
-          : nearestChild.rect.right,
-        y: isColumn
-          ? isBeforeNearest
-            ? nearestChild.rect.top
-            : nearestChild.rect.bottom
-          : frameRect.top,
+        x: isColumn ? frameRect.left : hoveredChild.rect.left,
+        y: isColumn ? hoveredChild.rect.top : frameRect.top,
+        width: isColumn ? frameRect.width : "2px",
+        height: isColumn ? "2px" : frameRect.height,
+      },
+    };
+  } else {
+    // We're after the middle of the last child
+    const lastChild = sortedChildren[sortedChildren.length - 1];
+    return {
+      dropInfo: {
+        targetId: lastChild.id.toString(),
+        position: "after",
+      },
+      lineIndicator: {
+        show: true,
+        x: isColumn ? frameRect.left : lastChild.rect.right,
+        y: isColumn ? lastChild.rect.bottom : frameRect.top,
         width: isColumn ? frameRect.width : "2px",
         height: isColumn ? "2px" : frameRect.height,
       },
     };
   }
-
-  return {
-    dropInfo: {
-      targetId: frameId,
-      position: "inside" as const,
-    },
-    lineIndicator: {
-      show: false,
-    },
-  };
 };
 
 export const computeMidPoints = (

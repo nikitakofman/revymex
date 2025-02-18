@@ -4,10 +4,24 @@ import { Node } from "@/builder/reducer/nodeDispatcher";
 
 const SNAP_ANGLE = 15; // Defines the increment for snapping (15 degrees)
 
-export const RotateHandle: React.FC<{
+interface RotateHandleProps {
   node: Node;
   elementRef: React.RefObject<HTMLDivElement>;
-}> = ({ node, elementRef }) => {
+  groupBounds?: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null;
+  isGroupSelection?: boolean;
+}
+
+export const RotateHandle: React.FC<RotateHandleProps> = ({
+  node,
+  elementRef,
+  groupBounds,
+  isGroupSelection = false,
+}) => {
   const {
     setNodeStyle,
     transform,
@@ -16,11 +30,27 @@ export const RotateHandle: React.FC<{
     dragDisp,
     startRecording,
     stopRecording,
+    dragState,
+    nodeState,
   } = useBuilder();
   const initialMouseAngleRef = useRef<number>(0);
   const initialRotationRef = useRef<number>(0);
+  const initialRotationsRef = useRef<Map<string, number>>(new Map());
 
   const getElementCenter = () => {
+    if (isGroupSelection && groupBounds) {
+      // For group selection, use the center of group bounds
+      return {
+        x:
+          (groupBounds.left + groupBounds.width / 2) * transform.scale +
+          transform.x,
+        y:
+          (groupBounds.top + groupBounds.height / 2) * transform.scale +
+          transform.y,
+      };
+    }
+
+    // For single element, use its center
     if (!elementRef.current) return { x: 0, y: 0 };
     const rect = elementRef.current.getBoundingClientRect();
     return {
@@ -31,24 +61,22 @@ export const RotateHandle: React.FC<{
 
   const snapToAngle = (angle: number, isShiftKey: boolean): number => {
     if (!isShiftKey) return angle;
-
-    // Simply round to nearest snap angle without any threshold
     return Math.round(angle / SNAP_ANGLE) * SNAP_ANGLE;
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!elementRef.current) return;
 
     const sessionId = startRecording();
-
     setIsRotating(true);
+
     const center = getElementCenter();
     const dx = e.clientX - center.x;
     const dy = e.clientY - center.y;
     initialMouseAngleRef.current = Math.atan2(dy, dx);
 
+    // Store the initial rotation for reference
     let currentRotation = 0;
     if (node.style.rotate) {
       const match = node.style.rotate.match(/([-\d.]+)deg/);
@@ -58,6 +86,24 @@ export const RotateHandle: React.FC<{
     }
     initialRotationRef.current = currentRotation;
 
+    // For group rotation, store initial rotation of all selected nodes
+    initialRotationsRef.current.clear();
+    if (isGroupSelection) {
+      dragState.selectedIds.forEach((id) => {
+        const selectedNode = nodeState.nodes.find((n) => n.id === id);
+        if (selectedNode) {
+          let rotation = 0;
+          if (selectedNode.style.rotate) {
+            const match = selectedNode.style.rotate.match(/([-\d.]+)deg/);
+            if (match) {
+              rotation = parseFloat(match[1]);
+            }
+          }
+          initialRotationsRef.current.set(id, rotation);
+        }
+      });
+    }
+
     dragDisp.updateStyleHelper({
       type: "rotate",
       position: { x: e.clientX, y: e.clientY },
@@ -65,7 +111,6 @@ export const RotateHandle: React.FC<{
     });
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!elementRef.current) return;
       const center = getElementCenter();
       const dx = e.clientX - center.x;
       const dy = e.clientY - center.y;
@@ -73,29 +118,53 @@ export const RotateHandle: React.FC<{
       const deltaAngleDeg =
         ((currentMouseAngle - initialMouseAngleRef.current) * 180) / Math.PI;
 
-      // Normalize the rotation to be between 0 and 360 degrees
-      let newRotation = initialRotationRef.current + deltaAngleDeg;
-      newRotation = ((newRotation % 360) + 360) % 360;
-
-      let displayRotation = newRotation;
-      if (e.shiftKey) {
-        // For shift key, directly snap to the nearest angle
-        displayRotation = snapToAngle(newRotation, true);
-        newRotation = displayRotation;
-      }
-
-      // Update the style helper with either snapped or smooth value
+      // Update UI helper
       dragDisp.updateStyleHelper({
         type: "rotate",
         position: { x: e.clientX, y: e.clientY },
-        value: displayRotation,
+        value: initialRotationRef.current + deltaAngleDeg,
       });
 
-      // If rotation is very close to 0 or 360, remove the rotate property
-      if (Math.abs(newRotation) < 0.5 || Math.abs(newRotation - 360) < 0.5) {
-        setNodeStyle({ rotate: undefined }, undefined, true);
+      // Handle multiple nodes for group rotation
+      if (isGroupSelection) {
+        dragState.selectedIds.forEach((nodeId) => {
+          const initialRotation = initialRotationsRef.current.get(nodeId) || 0;
+          let newRotation = initialRotation + deltaAngleDeg;
+
+          if (e.shiftKey) {
+            newRotation = snapToAngle(newRotation, true);
+          }
+
+          // Normalize rotation
+          newRotation = ((newRotation % 360) + 360) % 360;
+
+          // Apply rotation to each node individually to improve performance
+          if (
+            Math.abs(newRotation) < 0.5 ||
+            Math.abs(newRotation - 360) < 0.5
+          ) {
+            setNodeStyle({ rotate: undefined }, [nodeId], false);
+          } else {
+            setNodeStyle({ rotate: `${newRotation}deg` }, [nodeId], false);
+          }
+        });
       } else {
-        setNodeStyle({ rotate: `${newRotation}deg` }, undefined, true);
+        // Single node rotation (original logic)
+        let newRotation = initialRotationRef.current + deltaAngleDeg;
+
+        if (e.shiftKey) {
+          newRotation = snapToAngle(newRotation, true);
+        }
+
+        // Normalize rotation
+        newRotation = ((newRotation % 360) + 360) % 360;
+
+        // Apply rotation
+        if (Math.abs(newRotation) < 0.5 || Math.abs(newRotation - 360) < 0.5) {
+          setNodeStyle({ rotate: undefined }, [node.id], true);
+        } else {
+          setNodeStyle({ rotate: `${newRotation}deg` }, [node.id], true);
+        }
       }
     };
 
@@ -103,7 +172,7 @@ export const RotateHandle: React.FC<{
       setIsRotating(false);
       dragDisp.hideStyleHelper();
       stopRecording(sessionId);
-
+      initialRotationsRef.current.clear();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
@@ -111,6 +180,16 @@ export const RotateHandle: React.FC<{
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
   };
+
+  // Don't render if this isn't the primary selected node in a group
+  if (isGroupSelection && node.id !== dragState.selectedIds[0]) {
+    return null;
+  }
+
+  // Skip for viewport nodes in single selection mode
+  if (!isGroupSelection && node.id.includes("viewport")) {
+    return null;
+  }
 
   // Calculate scaled dimensions
   const handleSize = 8 / transform.scale;
@@ -123,7 +202,6 @@ export const RotateHandle: React.FC<{
       style={{
         position: "absolute",
         left: "50%",
-
         top: `-${handleOffset}px`,
         transform: "translateX(-50%)",
         width: `${handleSize}px`,

@@ -4,6 +4,8 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Direction, ResizableWrapperProps } from "../utils";
 import { VisualHelpers } from "./VisualHelpers";
 
+const SHIFT_INCREMENT = 100;
+
 export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   node,
   children,
@@ -35,7 +37,11 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   >({});
 
   const handleResizeStart = useCallback(
-    (e: React.PointerEvent, direction: Direction) => {
+    (
+      e: React.PointerEvent,
+      direction: Direction,
+      isDirectBorderResize = false
+    ) => {
       if (!elementRef.current) return;
 
       e.preventDefault();
@@ -102,8 +108,27 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       const handlePointerMove = (moveEvent: PointerEvent) => {
         moveEvent.preventDefault();
 
-        const deltaX = (moveEvent.clientX - startX) / transform.scale;
-        const deltaY = (moveEvent.clientY - startY) / transform.scale;
+        let deltaX = (moveEvent.clientX - startX) / transform.scale;
+        let deltaY = (moveEvent.clientY - startY) / transform.scale;
+
+        // Apply increment snapping for direct border resize with shift key
+        if (isDirectBorderResize && moveEvent.shiftKey) {
+          // For horizontal resize (left/right handles)
+          if (direction === "left" || direction === "right") {
+            // Calculate raw delta
+            const rawDeltaX = deltaX;
+            // Round to nearest SHIFT_INCREMENT
+            deltaX = Math.round(rawDeltaX / SHIFT_INCREMENT) * SHIFT_INCREMENT;
+          }
+          // For vertical resize (top/bottom handles)
+          else if (direction === "top" || direction === "bottom") {
+            // Calculate raw delta
+            const rawDeltaY = deltaY;
+            // Round to nearest SHIFT_INCREMENT
+            deltaY = Math.round(rawDeltaY / SHIFT_INCREMENT) * SHIFT_INCREMENT;
+          }
+        }
+
         const isCornerResize = [
           "topLeft",
           "topRight",
