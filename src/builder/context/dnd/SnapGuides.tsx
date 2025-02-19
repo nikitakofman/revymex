@@ -19,7 +19,7 @@ const SnapGuides = () => {
             key={`${guide.orientation}-${guide.position}-${i}`}
             style={{
               position: "absolute",
-              backgroundColor: "rgba(255, 105, 180, 0.5)",
+              backgroundColor: "rgba(255, 105, 180, 0.8)",
               ...(guide.orientation === "vertical"
                 ? {
                     left: `${position}px`,

@@ -171,6 +171,7 @@ export const useMouseUp = () => {
         }
 
         nodeDisp.addNode(newNode, targetId, position, shouldBeInViewport);
+        dragDisp.setSelectedIds([newNode.id]);
       } else {
         nodeDisp.moveNode(realNodeId, true, { targetId, position });
 
@@ -489,6 +490,7 @@ export const useMouseUp = () => {
       }
 
       nodeDisp.addNode(newNode, null, null, false);
+      dragDisp.setSelectedIds([newNode.id]);
     } else if (containerRef.current) {
       const draggedElement = document.querySelector(
         `[data-node-dragged="${draggedNode.id}"]`
