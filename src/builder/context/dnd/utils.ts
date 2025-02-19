@@ -1,7 +1,12 @@
-import { SnapGuideLine } from "@/builder/reducer/dragDispatcher";
-import { Node, NodeState } from "@/builder/reducer/nodeDispatcher";
+import { DragState, SnapGuideLine } from "@/builder/reducer/dragDispatcher";
+import {
+  Node,
+  NodeDispatcher,
+  NodeState,
+} from "@/builder/reducer/nodeDispatcher";
 import { LineIndicatorState } from "../builderState";
 import { HTMLAttributes } from "react";
+import { createPlaceholder } from "./createPlaceholder";
 
 export interface Transform {
   x: number;
@@ -983,5 +988,315 @@ export function getFilteredNodes(
     }
 
     return true;
+  });
+}
+
+interface HandlePlaceholderRecreationParams {
+  draggedNode: Node;
+  originalData: {
+    originalParentId: string | number | null;
+    nodesToRestore: Array<{
+      nodeId: string | number;
+      parentId: string | number | null;
+      index: number;
+      siblings: Array<string | number>;
+    }>;
+  };
+  dragState: DragState;
+  nodeState: { nodes: Node[] };
+  nodeDisp: NodeDispatcher;
+  transform: Transform;
+  setNodeStyle: Function;
+}
+
+export const handlePlaceholderRecreation = ({
+  draggedNode,
+  originalData,
+  dragState,
+  nodeState,
+  nodeDisp,
+  transform,
+  setNodeStyle,
+}: HandlePlaceholderRecreationParams) => {
+  const mainNodeInfo = originalData.nodesToRestore.find(
+    (info) => info.nodeId === dragState.draggedNode.node.id
+  );
+
+  if (!mainNodeInfo) return null;
+
+  const mainElement = document.querySelector(
+    `[data-node-id="${draggedNode.id}"]`
+  ) as HTMLElement;
+  if (!mainElement) return null;
+
+  const parentId = mainNodeInfo.parentId;
+  const currentSiblings = nodeState.nodes
+    .filter((n) => n.parentId === parentId && n.type !== "placeholder")
+    .map((n) => n.id);
+
+  const { targetId, position } = calculateTargetPosition(
+    mainNodeInfo.index,
+    currentSiblings,
+    parentId
+  );
+
+  const mainDimensions = dragState.nodeDimensions[draggedNode.id];
+  const mainPlaceholder = createPlaceholder({
+    node: draggedNode,
+    element: mainElement,
+    transform,
+    finalWidth: mainDimensions?.finalWidth,
+    finalHeight: mainDimensions?.finalHeight,
+  });
+
+  insertPlaceholder(nodeDisp, mainPlaceholder, parentId, targetId, position);
+
+  const additionalPlaceholders = handleAdditionalPlaceholders({
+    dragState,
+    originalData,
+    nodeState,
+    nodeDisp,
+    transform,
+    mainPlaceholder,
+    parentId,
+  });
+
+  return {
+    mainPlaceholderId: mainPlaceholder.id,
+    nodeOrder: [
+      draggedNode.id,
+      ...(dragState.additionalDraggedNodes?.map((info) => info.node.id) || []),
+    ],
+    additionalPlaceholders,
+  };
+};
+
+function calculateTargetPosition(
+  originalIndex: number,
+  currentSiblings: (string | number)[],
+  parentId: string | number | null
+) {
+  let targetId: string | number | null = null;
+  let position: "before" | "after" | "inside" = "inside";
+
+  if (currentSiblings.length > 0) {
+    if (originalIndex === 0) {
+      targetId = currentSiblings[0];
+      position = "before";
+    } else if (originalIndex >= currentSiblings.length) {
+      targetId = currentSiblings[currentSiblings.length - 1];
+      position = "after";
+    } else {
+      targetId =
+        currentSiblings[Math.min(originalIndex, currentSiblings.length - 1)];
+      position = "before";
+    }
+  } else {
+    targetId = parentId;
+    position = "inside";
+  }
+
+  return { targetId, position };
+}
+
+// dragFrameUtils.ts
+export const handleFrameDropInteraction = (
+  frameElement: Element,
+  frameChildren: { id: string | number; rect: DOMRect }[],
+  mouseX: number,
+  mouseY: number,
+  draggedNode: Node,
+  nodeState: { nodes: Node[] },
+  dragDisp: any,
+  dragState: DragState,
+  canvasX: number,
+  canvasY: number
+) => {
+  const frameId = frameElement.getAttribute("data-node-id")!;
+  const targetNode = nodeState.nodes.find((n) => String(n.id) === frameId);
+
+  if (targetNode?.isDynamic && !dragState.dynamicModeNodeId) {
+    dragDisp.setDropInfo(null, null, canvasX, canvasY);
+    return;
+  }
+
+  const result = computeFrameDropIndicator(
+    frameElement,
+    frameChildren,
+    mouseX,
+    mouseY
+  );
+
+  if (result) {
+    dragDisp.setDropInfo(
+      result.dropInfo.targetId,
+      result.dropInfo.position,
+      canvasX,
+      canvasY
+    );
+    if (result.lineIndicator.show) {
+      dragDisp.setLineIndicator(result.lineIndicator);
+    } else {
+      dragDisp.hideLineIndicator();
+    }
+  }
+};
+
+// dragViewportUtils.ts
+export const handleViewportTransition = (
+  isOverViewportArea: boolean,
+  hasLeftViewportRef: { current: boolean },
+  originalViewportDataRef: any,
+  dragState: DragState,
+  nodeState: { nodes: Node[] },
+  dragDisp: any,
+  nodeDisp: NodeDispatcher,
+  transform: Transform,
+  setNodeStyle: Function
+) => {
+  if (
+    isOverViewportArea &&
+    hasLeftViewportRef.current &&
+    originalViewportDataRef.current &&
+    !dragState.placeholderInfo
+  ) {
+    const placeholderInfo = handlePlaceholderRecreation({
+      draggedNode: dragState.draggedNode.node,
+      originalData: originalViewportDataRef.current,
+      dragState,
+      nodeState,
+      nodeDisp,
+      transform,
+      setNodeStyle,
+    });
+
+    if (placeholderInfo) {
+      dragDisp.setPlaceholderInfo(placeholderInfo);
+      hasLeftViewportRef.current = false;
+    }
+  }
+};
+
+type NodePosition = {
+  id: string | number;
+  rect: DOMRect;
+};
+
+/**
+ * Determines the spatial order of nodes relative to a main anchor node
+ * @param mainNodeId - The ID of the main anchor node being dragged
+ * @param additionalNodes - Array of additional node IDs being dragged
+ * @param containerDirection - The flex direction of the target container ('row' | 'column')
+ * @returns Ordered array of node IDs based on their spatial relationship
+ */
+export const computeSpatialNodeOrder = (
+  mainNodeId: string | number,
+  additionalNodes: Array<{ node: { id: string | number } }>,
+  containerDirection: "row" | "column"
+): Array<string | number> => {
+  // Get all node positions including main node
+  const nodePositions: NodePosition[] = [];
+
+  // Get main node position
+  const mainElement = document.querySelector(
+    `[data-node-dragged="${mainNodeId}"]`
+  ) as HTMLElement;
+  if (!mainElement)
+    return [mainNodeId, ...additionalNodes.map((n) => n.node.id)];
+
+  const mainRect = mainElement.getBoundingClientRect();
+  nodePositions.push({ id: mainNodeId, rect: mainRect });
+
+  // Get additional node positions
+  additionalNodes.forEach(({ node }) => {
+    const element = document.querySelector(
+      `[data-node-dragged="${node.id}"]`
+    ) as HTMLElement;
+    if (element) {
+      const rect = element.getBoundingClientRect();
+      nodePositions.push({ id: node.id, rect });
+    }
+  });
+
+  // Sort based on container direction
+  if (containerDirection === "row") {
+    // For row layout, sort primarily by x position
+    nodePositions.sort((a, b) => {
+      // Primary sort by X position
+      const xDiff = a.rect.left - b.rect.left;
+      if (Math.abs(xDiff) > 5) {
+        // 5px threshold for horizontal alignment
+        return xDiff;
+      }
+      // Secondary sort by Y position if X positions are similar
+      return a.rect.top - b.rect.top;
+    });
+  } else {
+    // For column layout, sort primarily by y position
+    nodePositions.sort((a, b) => {
+      // Primary sort by Y position
+      const yDiff = a.rect.top - b.rect.top;
+      if (Math.abs(yDiff) > 5) {
+        // 5px threshold for vertical alignment
+        return yDiff;
+      }
+      // Secondary sort by X position if Y positions are similar
+      return a.rect.left - b.rect.left;
+    });
+  }
+
+  return nodePositions.map((pos) => pos.id);
+};
+
+/**
+ * Determines the flex direction of a container element
+ * @param containerId - The ID of the container element
+ * @returns 'row' | 'column' based on the container's flex direction
+ */
+export const getContainerDirection = (
+  containerId: string | number
+): "row" | "column" => {
+  const container = document.querySelector(
+    `[data-node-id="${containerId}"]`
+  ) as HTMLElement;
+  if (!container) return "row"; // Default to row
+
+  const computedStyle = window.getComputedStyle(container);
+  const flexDirection = computedStyle.getPropertyValue("flex-direction");
+
+  return flexDirection.includes("row") ? "row" : "column";
+};
+
+export function sortDraggedNodesByVisualPosition(
+  allDraggedNodes: Array<{ nodeId: string | number; placeholderId: string }>,
+  mainAnchorId: string | number
+): Array<{ nodeId: string | number; placeholderId: string }> {
+  // Get the main anchor element and its parent container.
+  const mainEl = document.querySelector(
+    `[data-node-id="${mainAnchorId}"]`
+  ) as HTMLElement;
+  if (!mainEl) return allDraggedNodes;
+
+  // Determine the sort key (assume row by default)
+  let sortKey: "left" | "top" = "left";
+  if (mainEl.parentElement) {
+    const parentStyle = window.getComputedStyle(mainEl.parentElement);
+    if (parentStyle.flexDirection === "column") {
+      sortKey = "top";
+    }
+  }
+
+  // Sort based on the node’s bounding rect property (left or top)
+  return allDraggedNodes.sort((a, b) => {
+    const aEl = document.querySelector(
+      `[data-node-id="${a.nodeId}"]`
+    ) as HTMLElement;
+    const bEl = document.querySelector(
+      `[data-node-id="${b.nodeId}"]`
+    ) as HTMLElement;
+    if (!aEl || !bEl) return 0;
+    const aRect = aEl.getBoundingClientRect();
+    const bRect = bEl.getBoundingClientRect();
+    return aRect[sortKey] - bRect[sortKey];
   });
 }

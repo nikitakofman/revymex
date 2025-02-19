@@ -87,10 +87,6 @@ export const useMouseUp = () => {
 
     stopAutoScroll();
 
-    console.log("SEL IDS REF", selectedIdsRef.current);
-
-    // dragDisp.setSelectedIds(selectedIdsRef.current);
-
     const draggedNode = dragState.draggedNode.node;
     const realNodeId = draggedNode.id;
     const sharedId = nanoid();

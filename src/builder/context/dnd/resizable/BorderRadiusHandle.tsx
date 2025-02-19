@@ -102,7 +102,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
   }
 
   // Don't render at very small scales
-  if (transform.scale < 0.25) return null;
+  if (transform.scale < 0.2) return null;
 
   const handleSize = 8 / transform.scale;
   const borderWidth = 1 / transform.scale;

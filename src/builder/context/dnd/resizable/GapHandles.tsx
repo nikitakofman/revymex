@@ -97,7 +97,13 @@ export const GapHandles = ({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  if (!elementRef.current || !isSelected || isMovingCanvas || isResizing)
+  if (
+    !elementRef.current ||
+    !isSelected ||
+    isMovingCanvas ||
+    isResizing ||
+    transform.scale < 0.2
+  )
     return null;
   if (node.type !== "frame") return null;
 

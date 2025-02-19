@@ -32,28 +32,35 @@ export const useMouseMove = () => {
   const originalIndexRef = useRef<number | null>(null);
   const isAutoScrollingRef = useRef(false);
 
-  // Original viewport data storage with exact indexes
+  // NEW: Flag to ensure placeholders are only inserted once per re-entry.
+  const hasReenteredContainerRef = useRef(false);
+
+  // NEW: Remember the last drop position (target id & position) before leaving a container.
+  const lastPlaceholderPositionRef = useRef<{
+    targetId: string | number;
+    position: "before" | "after" | "inside";
+  } | null>(null);
+
+  // Original container (viewport/frame) data storage.
   const originalViewportDataRef = useRef<{
     originalParentId: string | number | null;
     nodesToRestore: Array<{
       nodeId: string | number;
       parentId: string | number | null;
       index: number;
-      siblings: Array<string | number>; // Store siblings to accurately determine position
+      siblings: Array<string | number>;
     }>;
   } | null>(null);
 
   const hasLeftViewportRef = useRef(false);
 
-  // Initialize viewport data when drag starts
+  // Initialize container data when drag starts.
   useEffect(() => {
     if (
       dragState.isDragging &&
-      dragState.dragSource === "viewport" &&
       dragState.draggedNode &&
       !originalViewportDataRef.current
     ) {
-      // Store main node data with siblings
       const mainNode = dragState.draggedNode.node;
       const siblings = nodeState.nodes
         .filter((n) => n.parentId === mainNode.parentId && n.id !== mainNode.id)
@@ -72,14 +79,12 @@ export const useMouseMove = () => {
         },
       ];
 
-      // Store data for additional nodes
       if (dragState.additionalDraggedNodes?.length) {
         dragState.additionalDraggedNodes.forEach((info) => {
           const node = info.node;
           const nodeSiblings = nodeState.nodes
             .filter((n) => n.parentId === node.parentId && n.id !== node.id)
             .map((n) => n.id);
-
           nodesToRestore.push({
             nodeId: node.id,
             parentId: node.parentId,
@@ -99,19 +104,34 @@ export const useMouseMove = () => {
       };
     }
 
-    // Reset when drag ends
+    // Reset everything when drag ends.
     if (!dragState.isDragging) {
       originalViewportDataRef.current = null;
       hasLeftViewportRef.current = false;
+      lastPlaceholderPositionRef.current = null;
+      hasReenteredContainerRef.current = false;
     }
   }, [
     dragState.isDragging,
-    dragState.dragSource,
-    dragState.draggedNode?.node.id,
+    dragState.draggedNode,
+    nodeState.nodes,
+    dragState.additionalDraggedNodes,
   ]);
+
+  // Helper: Checks if the mouse is inside a container's bounds.
+  const isOverContainer = (e: MouseEvent, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    return (
+      e.clientX >= rect.left &&
+      e.clientX <= rect.right &&
+      e.clientY >= rect.top &&
+      e.clientY <= rect.bottom
+    );
+  };
 
   return (e: MouseEvent) => {
     e.preventDefault();
+
     if (
       !dragState.isDragging ||
       !dragState.draggedNode ||
@@ -132,12 +152,10 @@ export const useMouseMove = () => {
       .querySelector(`[data-node-dragged]`)
       ?.getBoundingClientRect();
 
-    let finalX;
-    let finalY;
+    let finalX: number, finalY: number;
     if (rect) {
-      finalX =
-        (rect!.left - containerRect.left - transform.x) / transform.scale;
-      finalY = (rect!.top - containerRect.top - transform.y) / transform.scale;
+      finalX = (rect.left - containerRect.left - transform.x) / transform.scale;
+      finalY = (rect.top - containerRect.top - transform.y) / transform.scale;
 
       const adjustedPosition = getCalibrationAdjustedPosition(
         { x: finalX, y: finalY },
@@ -174,17 +192,16 @@ export const useMouseMove = () => {
     const canvasY =
       (e.clientY - containerRect.top - transform.y) / transform.scale;
 
+    // --- DRAG VIA GRIP HANDLE (moving within container) ---
     if (dragState.dragSource === "gripHandle") {
       const draggedElement = document.querySelector(
         `[data-node-id="${draggedNode.id}"]`
       ) as HTMLElement | null;
-
       if (!draggedElement) return;
 
       const parentElement = document.querySelector(
         `[data-node-id="${draggedNode.parentId}"]`
       );
-
       if (parentElement) {
         const reorderResult = computeSiblingReorderResult(
           draggedNode,
@@ -196,8 +213,13 @@ export const useMouseMove = () => {
           prevMousePosRef.current.y
         );
         if (reorderResult) {
+          // Update last known drop info.
+          lastPlaceholderPositionRef.current = {
+            targetId: reorderResult.targetId,
+            position: reorderResult.position,
+          };
+
           if (dragState.placeholderInfo) {
-            // Get all nodes and placeholders info
             const allDraggedNodes = [
               {
                 nodeId: draggedNode.id,
@@ -205,8 +227,6 @@ export const useMouseMove = () => {
               },
               ...dragState.placeholderInfo.additionalPlaceholders,
             ];
-
-            // Sort based on the original stored order
             const sortedNodes = allDraggedNodes.sort((a, b) => {
               const orderA = dragState.placeholderInfo!.nodeOrder.indexOf(
                 a.nodeId
@@ -216,14 +236,10 @@ export const useMouseMove = () => {
               );
               return orderA - orderB;
             });
-
-            // First move the first placeholder to establish the group position
             nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
               targetId: reorderResult.targetId,
               position: reorderResult.position,
             });
-
-            // Then move each subsequent placeholder after the previous one
             for (let i = 1; i < sortedNodes.length; i++) {
               nodeDisp.moveNode(sortedNodes[i].placeholderId, true, {
                 targetId: sortedNodes[i - 1].placeholderId,
@@ -231,7 +247,6 @@ export const useMouseMove = () => {
               });
             }
           } else {
-            // Single node case
             const placeholder = nodeState.nodes.find(
               (n) => n.type === "placeholder"
             );
@@ -244,7 +259,6 @@ export const useMouseMove = () => {
           }
         }
       }
-
       dragDisp.setDropInfo(
         dragState.dropInfo.targetId,
         dragState.dropInfo.position,
@@ -254,10 +268,9 @@ export const useMouseMove = () => {
       return;
     }
 
+    // --- DRAGGED ITEM (e.g. new element) handling ---
     if (dragState.draggedItem) {
       const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-
-      // Check for both frames and images as potential drop targets
       const dropTargetElement = elementsUnder.find(
         (el) =>
           el.getAttribute("data-node-type") === "frame" ||
@@ -282,7 +295,6 @@ export const useMouseMove = () => {
           return;
         }
 
-        // If it's an image, always set position to "inside" when hovering near center
         if (nodeType === "image" || nodeType === "video") {
           const rect = dropTargetElement.getBoundingClientRect();
           const centerX = rect.left + rect.width / 2;
@@ -291,7 +303,6 @@ export const useMouseMove = () => {
             Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2)
           );
           const threshold = Math.min(rect.width, rect.height) * 0.4;
-
           if (distanceFromCenter < threshold) {
             dragDisp.setDropInfo(targetId, "inside", canvasX, canvasY);
             dragDisp.hideLineIndicator();
@@ -310,7 +321,6 @@ export const useMouseMove = () => {
           return;
         }
 
-        // Existing frame handling logic
         const frameChildren = nodeState.nodes.filter(
           (child) => child.parentId === targetId
         );
@@ -345,7 +355,6 @@ export const useMouseMove = () => {
             dragDisp.hideLineIndicator();
           }
         }
-
         prevMousePosRef.current = { x: e.clientX, y: e.clientY };
         return;
       } else {
@@ -364,107 +373,86 @@ export const useMouseMove = () => {
     ) as HTMLElement | null;
     if (!draggedElement) return;
 
-    // Check if we're over any viewport or frame in a viewport
     const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-
-    // First check for direct viewport elements
     const viewportElement = elementsUnder.find((el) =>
       el.getAttribute("data-node-id")?.includes("viewport")
     );
-
-    // Then check for frames within viewports
     const frameInViewportElements = elementsUnder.filter((el) => {
       const nodeId = el.getAttribute("data-node-id");
       if (!nodeId || nodeId.includes("viewport")) return false;
-
       const node = nodeState.nodes.find((n) => n.id.toString() === nodeId);
       return node && isWithinViewport(nodeId, nodeState.nodes);
     });
-
     const isOverViewportArea =
       viewportElement || frameInViewportElements.length > 0;
-
-    // Original reordering logic - for when we're already in viewport
     const isReorderingNode =
       dragState.dragSource === "viewport" &&
       (draggedNode.inViewport || originalIndexRef.current !== null);
 
-    // Detect re-entry into viewport after being on canvas
+    // --- RE-ENTERING THE ORIGINAL CONTAINER ---
+    // Only run this block when the dragged node has previously left the container.
     if (
-      isOverViewportArea &&
-      hasLeftViewportRef.current &&
       originalViewportDataRef.current &&
-      !dragState.placeholderInfo
+      !dragState.placeholderInfo &&
+      originalViewportDataRef.current.originalParentId &&
+      !hasReenteredContainerRef.current &&
+      hasLeftViewportRef.current
     ) {
-      console.log(
-        "Re-entering viewport with node that originated from viewport"
-      );
-      const originalData = originalViewportDataRef.current;
-      const mainNodeInfo = originalData.nodesToRestore.find(
-        (info) => info.nodeId === dragState.draggedNode.node.id
-      );
-
-      if (mainNodeInfo) {
-        // RECREATE PLACEHOLDERS WITH ACCURATE POSITIONS
-        // 1. Get main node and its element
-        const mainNode = dragState.draggedNode.node;
-        const mainElement = document.querySelector(
-          `[data-node-id="${mainNode.id}"]`
-        ) as HTMLElement;
-
-        if (mainElement) {
-          // Get main node's parent and current siblings
+      const originalParentElement = document.querySelector(
+        `[data-node-id="${originalViewportDataRef.current.originalParentId}"]`
+      ) as HTMLElement | null;
+      if (originalParentElement && isOverContainer(e, originalParentElement)) {
+        console.log(
+          "Re-entering original container with stored placeholder data"
+        );
+        const originalData = originalViewportDataRef.current;
+        const mainNodeInfo = originalData.nodesToRestore.find(
+          (info) => info.nodeId === draggedNode.id
+        );
+        if (mainNodeInfo) {
           const parentId = mainNodeInfo.parentId;
-
-          // Determine the target position
           let targetId: string | number | null = null;
           let position: "before" | "after" | "inside" = "inside";
 
-          // Get the current siblings in the parent (excluding placeholders)
-          const currentSiblings = nodeState.nodes
-            .filter((n) => n.parentId === parentId && n.type !== "placeholder")
-            .map((n) => n.id);
-
-          // If there are current siblings, determine where to insert
-          if (currentSiblings.length > 0) {
-            // Calculate proper insertion position based on original index
-            const originalIndex = mainNodeInfo.index;
-
-            if (originalIndex === 0) {
-              // It was first - insert before the current first sibling
-              targetId = currentSiblings[0];
-              position = "before";
-            } else if (originalIndex >= currentSiblings.length) {
-              // It was last or beyond - insert after the last sibling
-              targetId = currentSiblings[currentSiblings.length - 1];
-              position = "after";
-            } else {
-              // It was in the middle - insert before the node at that index
-              targetId =
-                currentSiblings[
-                  Math.min(originalIndex, currentSiblings.length - 1)
-                ];
-              position = "before";
-            }
+          if (lastPlaceholderPositionRef.current) {
+            targetId = lastPlaceholderPositionRef.current.targetId;
+            position = lastPlaceholderPositionRef.current.position;
           } else {
-            // No siblings, insert directly inside parent
-            targetId = parentId;
-            position = "inside";
+            const currentSiblings = nodeState.nodes
+              .filter(
+                (n) => n.parentId === parentId && n.type !== "placeholder"
+              )
+              .map((n) => n.id);
+            if (currentSiblings.length > 0) {
+              const originalIndex = mainNodeInfo.index;
+              if (originalIndex === 0) {
+                targetId = currentSiblings[0];
+                position = "before";
+              } else if (originalIndex >= currentSiblings.length) {
+                targetId = currentSiblings[currentSiblings.length - 1];
+                position = "after";
+              } else {
+                targetId =
+                  currentSiblings[
+                    Math.min(originalIndex, currentSiblings.length - 1)
+                  ];
+                position = "before";
+              }
+            } else {
+              targetId = parentId;
+              position = "inside";
+            }
           }
 
-          // 2. Get dimensions
-          const mainDimensions = dragState.nodeDimensions[mainNode.id];
-
-          // 3. Create main placeholder
+          const mainDimensions = dragState.nodeDimensions[draggedNode.id];
           const mainPlaceholder = createPlaceholder({
-            node: mainNode,
-            element: mainElement,
+            node: draggedNode,
+            element: draggedElement,
             transform,
             finalWidth: mainDimensions?.finalWidth,
             finalHeight: mainDimensions?.finalHeight,
           });
 
-          // 4. Insert placeholder at the calculated position
           if (targetId) {
             nodeDisp.insertAtIndex(mainPlaceholder, 0, parentId);
             nodeDisp.moveNode(mainPlaceholder.id, true, {
@@ -472,30 +460,24 @@ export const useMouseMove = () => {
               position,
             });
           } else {
-            // Fallback - just insert at beginning
             nodeDisp.insertAtIndex(mainPlaceholder, 0, parentId);
           }
 
-          // 5. Create placeholders for additional nodes if any
           const additionalPlaceholders: Array<{
             placeholderId: string;
             nodeId: string | number;
           }> = [];
 
           if (dragState.additionalDraggedNodes?.length) {
-            // Create and position each additional placeholder
             dragState.additionalDraggedNodes.forEach((info) => {
               const additionalNode = info.node;
               const originalAdditionalInfo = originalData.nodesToRestore.find(
                 (d) => d.nodeId === additionalNode.id
               );
-
               if (!originalAdditionalInfo) return;
-
               const additionalElement = document.querySelector(
                 `[data-node-id="${additionalNode.id}"]`
               ) as HTMLElement;
-
               if (additionalElement) {
                 const dimensions = dragState.nodeDimensions[additionalNode.id];
                 const additionalPlaceholder = createPlaceholder({
@@ -506,15 +488,12 @@ export const useMouseMove = () => {
                   finalHeight: dimensions?.finalHeight,
                 });
 
-                // Calculate original relative position for this node
                 const additionalParentId = originalAdditionalInfo.parentId;
                 const additionalOriginalIndex = originalAdditionalInfo.index;
-
                 let additionalTargetId: string | number | null = null;
                 let additionalPosition: "before" | "after" | "inside" =
                   "inside";
 
-                // If same parent as main node, position after main placeholder
                 if (additionalParentId === parentId) {
                   if (additionalPlaceholders.length > 0) {
                     additionalTargetId =
@@ -526,7 +505,6 @@ export const useMouseMove = () => {
                     additionalPosition = "after";
                   }
                 } else {
-                  // Different parent - handle original position in that parent
                   const addSiblings = nodeState.nodes
                     .filter(
                       (n) =>
@@ -534,7 +512,6 @@ export const useMouseMove = () => {
                         n.type !== "placeholder"
                     )
                     .map((n) => n.id);
-
                   if (addSiblings.length > 0) {
                     if (additionalOriginalIndex === 0) {
                       additionalTargetId = addSiblings[0];
@@ -558,20 +535,17 @@ export const useMouseMove = () => {
                   }
                 }
 
-                // Insert the placeholder
                 nodeDisp.insertAtIndex(
                   additionalPlaceholder,
                   0,
                   additionalParentId
                 );
-
                 if (additionalTargetId) {
                   nodeDisp.moveNode(additionalPlaceholder.id, true, {
                     targetId: additionalTargetId,
                     position: additionalPosition,
                   });
                 }
-
                 additionalPlaceholders.push({
                   placeholderId: additionalPlaceholder.id,
                   nodeId: additionalNode.id,
@@ -580,9 +554,8 @@ export const useMouseMove = () => {
             });
           }
 
-          // 6. Set placeholder info
           const nodeOrder = [
-            mainNode.id,
+            draggedNode.id,
             ...(dragState.additionalDraggedNodes?.map((info) => info.node.id) ||
               []),
           ];
@@ -592,9 +565,9 @@ export const useMouseMove = () => {
             nodeOrder,
             additionalPlaceholders,
           });
-
-          // 7. Reset flag since we're back in viewport with proper placeholders
           hasLeftViewportRef.current = false;
+          // Mark that we've re-entered so we don't duplicate placeholders.
+          hasReenteredContainerRef.current = true;
         }
       }
     }
@@ -603,7 +576,6 @@ export const useMouseMove = () => {
       const parentElement = document.querySelector(
         `[data-node-id="${draggedNode.parentId}"]`
       );
-
       if (!parentElement) return;
 
       const reorderResult = computeSiblingReorderResult(
@@ -617,8 +589,12 @@ export const useMouseMove = () => {
       );
 
       if (reorderResult) {
+        lastPlaceholderPositionRef.current = {
+          targetId: reorderResult.targetId,
+          position: reorderResult.position,
+        };
+
         if (dragState.placeholderInfo) {
-          // Get all nodes and placeholders info
           const allDraggedNodes = [
             {
               nodeId: draggedNode.id,
@@ -626,8 +602,6 @@ export const useMouseMove = () => {
             },
             ...dragState.placeholderInfo.additionalPlaceholders,
           ];
-
-          // Sort based on the original stored order
           const sortedNodes = allDraggedNodes.sort((a, b) => {
             const orderA = dragState.placeholderInfo!.nodeOrder.indexOf(
               a.nodeId
@@ -637,14 +611,10 @@ export const useMouseMove = () => {
             );
             return orderA - orderB;
           });
-
-          // First move the first placeholder to establish the group position
           nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
             targetId: reorderResult.targetId,
             position: reorderResult.position,
           });
-
-          // Then move each subsequent placeholder after the previous one
           for (let i = 1; i < sortedNodes.length; i++) {
             nodeDisp.moveNode(sortedNodes[i].placeholderId, true, {
               targetId: sortedNodes[i - 1].placeholderId,
@@ -652,7 +622,6 @@ export const useMouseMove = () => {
             });
           }
         } else {
-          // Single node case
           const placeholder = nodeState.nodes.find(
             (n) => n.type === "placeholder"
           );
@@ -667,7 +636,6 @@ export const useMouseMove = () => {
       dragDisp.hideLineIndicator();
     } else {
       dragDisp.hideLineIndicator();
-      const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
       const filteredElements = elementsUnder.filter((el) => {
         const closestNode = el.closest(`[data-node-id="${draggedNode.id}"]`);
         return !closestNode;
@@ -735,7 +703,6 @@ export const useMouseMove = () => {
             e.clientX,
             e.clientY
           );
-
           if (result) {
             dragDisp.setDropInfo(
               result.dropInfo.targetId,
@@ -746,7 +713,6 @@ export const useMouseMove = () => {
             dragDisp.hideLineIndicator();
           }
         }
-
         prevMousePosRef.current = { x: e.clientX, y: e.clientY };
         return;
       }
@@ -760,13 +726,11 @@ export const useMouseMove = () => {
         const siblingId = siblingElement.getAttribute("data-node-id")!;
         const nodeType = siblingElement.getAttribute("data-node-type");
         const rect = siblingElement.getBoundingClientRect();
-
         const { position, lineIndicator } = getDropPosition(
           e.clientY,
           rect,
           nodeType
         );
-
         if (position !== "inside") {
           dragDisp.setLineIndicator(lineIndicator);
         }
@@ -779,25 +743,23 @@ export const useMouseMove = () => {
     if (overCanvas) {
       dragDisp.setIsOverCanvas(true);
 
-      // Mark that we've left the viewport (only if we were originally from viewport)
+      // When leaving the container, mark as left and remove placeholders.
       if (
         dragState.dragSource === "viewport" &&
         originalViewportDataRef.current
       ) {
         hasLeftViewportRef.current = true;
-
-        // Remove any existing placeholders (to allow future recreation)
         const allPlaceholders = nodeState.nodes.filter(
           (n) => n.type === "placeholder"
         );
         allPlaceholders.forEach((placeholder) => {
           nodeDisp.removeNode(placeholder.id);
         });
-
-        // Clear placeholder info to ensure we can recreate later
         if (dragState.placeholderInfo) {
           dragDisp.setPlaceholderInfo(null);
         }
+        // Reset our re-entry flag so placeholders can be re-inserted on next entry.
+        hasReenteredContainerRef.current = false;
       }
 
       nodeDisp.moveNode(draggedNode.id, false);
