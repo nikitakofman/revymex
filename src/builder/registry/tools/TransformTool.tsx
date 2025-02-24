@@ -1,4 +1,4 @@
-import { ToolbarSection } from "./_components/test-ui";
+import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
 
 export const TransformTool = () => {

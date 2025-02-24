@@ -14,7 +14,7 @@ import {
 import { useBuilder } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 
-import { ToolbarContainer, ToolbarSection } from "./_components/test-ui";
+import { ToolbarContainer, ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolbarSegmentedControl } from "./_components/ToolbarSegmentedControl";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";

@@ -1,3 +1,5 @@
+// DraggedNode.tsx
+
 import React, {
   ReactElement,
   CSSProperties,
@@ -8,8 +10,12 @@ import React, {
 import { createPortal } from "react-dom";
 import { Node } from "../reducer/nodeDispatcher";
 import { useBuilder } from "../context/builderState";
-import { useSnapGrid } from "../context/dnd/SnapGrid";
-import { getFilteredNodes, parseRotation } from "../context/dnd/utils";
+import {
+  useSnapGrid,
+  SnapGrid,
+  SnapResult,
+} from "../context/canvasHelpers/SnapGrid";
+import { getFilteredNodes, parseRotation } from "../context/utils";
 
 interface Transform {
   x: number;
@@ -55,15 +61,15 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   transform,
   offset,
 }) => {
-  const { dragState, nodeState, dragDisp } = useBuilder();
+  const { dragState, nodeState, dragDisp, containerRef } = useBuilder();
   const initialDimensionsRef = useRef<{ width: number; height: number } | null>(
     null
   );
 
+  // figure out which nodes to show
   const activeFilter = dragState.dynamicModeNodeId
     ? "dynamicMode"
     : "outOfViewport";
-
   const filteredNodes = getFilteredNodes(
     nodeState.nodes,
     activeFilter,
@@ -71,96 +77,104 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   );
 
   const snapGrid = useSnapGrid(filteredNodes);
-  const lastSnapGuideRef = useRef<any>(null);
 
+  // Keep track of the last used SnapResult so we don't re‐dispatch identical guides
+  const lastSnapRef = useRef<SnapResult | null>(null);
+
+  // bounding rect of the node in window coords
   const baseRect = virtualReference?.getBoundingClientRect() || {
+    left: 0,
+    top: 0,
+    width: 0,
+    height: 0,
+  };
+
+  // container bounding rect in window coords
+  const containerRect = containerRef.current?.getBoundingClientRect() || {
     left: 0,
     top: 0,
   };
 
-  // Get dimensions from dragState
-  const dimensions = dragState.nodeDimensions[node.id];
-
-  // Store initial dimensions on first render if we haven't already
-  if (
-    !initialDimensionsRef.current &&
-    dimensions?.finalWidth &&
-    dimensions?.finalHeight
-  ) {
+  // store initial dimensions
+  const dims = dragState.nodeDimensions[node.id];
+  if (!initialDimensionsRef.current && dims?.finalWidth && dims?.finalHeight) {
     initialDimensionsRef.current = {
-      width: parseFloat(dimensions.finalWidth as string),
-      height: parseFloat(dimensions.finalHeight as string),
+      width: parseFloat(dims.finalWidth),
+      height: parseFloat(dims.finalHeight),
     };
   }
 
-  const width = parseFloat(node.style.width as string) || 0;
-  const height = parseFloat(node.style.height as string) || 0;
+  const nodeWidth = parseFloat(node.style.width as string) || 0;
+  const nodeHeight = parseFloat(node.style.height as string) || 0;
 
+  // rotation
   const rotationDeg = parseRotation(node.style.rotate as string);
   const rotationRad = (rotationDeg * Math.PI) / 180;
 
-  const effectiveHeight =
-    Math.abs(height * Math.cos(rotationRad)) +
-    Math.abs(width * Math.sin(rotationRad));
   const effectiveWidth =
-    Math.abs(width * Math.cos(rotationRad)) +
-    Math.abs(height * Math.sin(rotationRad));
+    Math.abs(nodeWidth * Math.cos(rotationRad)) +
+    Math.abs(nodeHeight * Math.sin(rotationRad));
+  const effectiveHeight =
+    Math.abs(nodeHeight * Math.cos(rotationRad)) +
+    Math.abs(nodeWidth * Math.sin(rotationRad));
+  const offsetX = (effectiveWidth - nodeWidth) / 2;
+  const offsetY = (effectiveHeight - nodeHeight) / 2;
 
-  const offsetX = (effectiveWidth - width) * 0.5;
-  const offsetY = (effectiveHeight - height) * 0.5;
-
-  // Check if this is an additional dragged node
+  // is this an additional (multi) dragged node?
   const isAdditionalDraggedNode = dragState.additionalDraggedNodes?.some(
     (info) => info.node.id === node.id
   );
 
-  let rawLeft, rawTop;
+  // Step 1: compute rawLeft, rawTop from mouse coords
+  let rawLeft: number;
+  let rawTop: number;
   if (isAdditionalDraggedNode) {
-    // For additional nodes, compensate for existing absolute positioning
     const currentLeft = parseFloat(node.style.left as string) || 0;
     const currentTop = parseFloat(node.style.top as string) || 0;
 
     rawLeft =
       baseRect.left -
+      containerRect.left -
       offset.mouseX * transform.scale -
       currentLeft * transform.scale;
     rawTop =
       baseRect.top -
+      containerRect.top -
       offset.mouseY * transform.scale -
       currentTop * transform.scale;
   } else {
-    // Original calculation for main dragged node
-    rawLeft = baseRect.left - offset.mouseX * transform.scale;
-    rawTop = baseRect.top - offset.mouseY * transform.scale;
+    rawLeft =
+      baseRect.left - containerRect.left - offset.mouseX * transform.scale;
+    rawTop = baseRect.top - containerRect.top - offset.mouseY * transform.scale;
   }
 
+  // convert to canvas coords
   const canvasX = (rawLeft - transform.x) / transform.scale;
   const canvasY = (rawTop - transform.y) / transform.scale;
 
+  // add rotation offset
   let finalLeft = rawLeft + offsetX * transform.scale;
   let finalTop = rawTop + offsetY * transform.scale;
 
+  // handle "grip handle" in flex, etc.
   if (dragState.dragSource === "gripHandle") {
     const parentNode = nodeState.nodes.find((n) => n.id === node.parentId);
     if (parentNode) {
-      const parentElement = document.querySelector(
+      const parentEl = document.querySelector(
         `[data-node-id="${parentNode.id}"]`
       ) as HTMLElement;
-
-      if (parentElement) {
-        const parentStyle = window.getComputedStyle(parentElement);
-        const flexDirection = parentStyle.flexDirection;
-        const display = parentStyle.display;
-
+      if (parentEl) {
+        const { display, flexDirection } = window.getComputedStyle(parentEl);
         if (display === "flex") {
-          const draggedElement = document.querySelector(
+          const draggedEl = document.querySelector(
             `[data-node-id="${node.id}"]`
-          );
-          if (draggedElement) {
+          ) as HTMLElement;
+          if (draggedEl) {
+            const r = draggedEl.getBoundingClientRect();
             if (flexDirection.includes("row")) {
-              finalTop = draggedElement.getBoundingClientRect().top;
+              finalTop = r.top - containerRect.top;
             } else if (flexDirection.includes("column")) {
-              finalLeft = draggedElement.getBoundingClientRect().left;
+              finalLeft = r.left - containerRect.left;
             }
           }
         }
@@ -168,88 +182,125 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     }
   }
 
+  // Build the 6 snap points
   const snapPoints = [
     { value: canvasX, type: "left" },
-    { value: canvasX + width, type: "right" },
-    { value: canvasX + width / 2, type: "centerX" },
+    { value: canvasX + nodeWidth, type: "right" },
+    { value: canvasX + nodeWidth / 2, type: "centerX" },
     { value: canvasY, type: "top" },
-    { value: canvasY + height, type: "bottom" },
-    { value: canvasY + height / 2, type: "centerY" },
+    { value: canvasY + nodeHeight, type: "bottom" },
+    { value: canvasY + nodeHeight / 2, type: "centerY" },
   ];
 
-  let snapResult = null;
+  let snapResult: SnapResult | null = null;
 
+  // Step 2: compute prospective snaps
   if (snapGrid && (dragState.isOverCanvas || dragState.dynamicModeNodeId)) {
     snapResult = snapGrid.findNearestSnaps(snapPoints, 10, node.id);
 
-    if (snapResult.horizontalSnap || snapResult.verticalSnap) {
-      if (snapResult.verticalSnap) {
-        const snappedScreenX =
-          transform.x + snapResult.verticalSnap.position * transform.scale;
-
-        switch (snapResult.verticalSnap.type) {
-          case "left":
-            finalLeft = snappedScreenX + offsetX * transform.scale;
-            break;
-          case "right":
-            finalLeft =
-              snappedScreenX -
-              width * transform.scale +
-              offsetX * transform.scale;
-            break;
-          case "centerX":
-            finalLeft =
-              snappedScreenX -
-              (width / 2) * transform.scale +
-              offsetX * transform.scale;
-            break;
-        }
+    // apply alignment snap
+    if (snapResult.verticalSnap) {
+      const snappedX =
+        transform.x + snapResult.verticalSnap.position * transform.scale;
+      switch (snapResult.verticalSnap.type) {
+        case "left":
+          finalLeft = snappedX + offsetX * transform.scale;
+          break;
+        case "right":
+          finalLeft =
+            snappedX - nodeWidth * transform.scale + offsetX * transform.scale;
+          break;
+        case "centerX":
+          finalLeft =
+            snappedX -
+            (nodeWidth / 2) * transform.scale +
+            offsetX * transform.scale;
+          break;
       }
-
-      if (snapResult.horizontalSnap) {
-        const snappedScreenY =
-          transform.y + snapResult.horizontalSnap.position * transform.scale;
-
-        switch (snapResult.horizontalSnap.type) {
-          case "top":
-            finalTop = snappedScreenY + offsetY * transform.scale;
-            break;
-          case "bottom":
-            finalTop =
-              snappedScreenY -
-              height * transform.scale +
-              offsetY * transform.scale;
-            break;
-          case "centerY":
-            finalTop =
-              snappedScreenY -
-              (height / 2) * transform.scale +
-              offsetY * transform.scale;
-            break;
-        }
+    }
+    if (snapResult.horizontalSnap) {
+      const snappedY =
+        transform.y + snapResult.horizontalSnap.position * transform.scale;
+      switch (snapResult.horizontalSnap.type) {
+        case "top":
+          finalTop = snappedY + offsetY * transform.scale;
+          break;
+        case "bottom":
+          finalTop =
+            snappedY - nodeHeight * transform.scale + offsetY * transform.scale;
+          break;
+        case "centerY":
+          finalTop =
+            snappedY -
+            (nodeHeight / 2) * transform.scale +
+            offsetY * transform.scale;
+          break;
       }
+    }
+
+    // apply spacing snap (for "best" offset)
+    if (typeof snapResult.horizontalSpacingSnap === "number") {
+      const snappedCanvasX = snapResult.horizontalSpacingSnap;
+      const snappedScreenX = transform.x + snappedCanvasX * transform.scale;
+      finalLeft = snappedScreenX + offsetX * transform.scale;
+    }
+    if (typeof snapResult.verticalSpacingSnap === "number") {
+      const snappedCanvasY = snapResult.verticalSpacingSnap;
+      const snappedScreenY = transform.y + snappedCanvasY * transform.scale;
+      finalTop = snappedScreenY + offsetY * transform.scale;
     }
   }
 
+  // OPTIONAL: Recompute the final snap lines from the final (snapped) position
+  // so they do not move if the mouse slightly moves.
+  // We'll do a "mini second pass" for stable lines:
+  let stableSnapResult: SnapResult | null = null;
+  if (snapGrid && snapResult) {
+    // figure out final left/top in canvas coords
+    const stableCanvasX = (finalLeft - transform.x) / transform.scale;
+    const stableCanvasY = (finalTop - transform.y) / transform.scale;
+
+    const stablePoints = [
+      { value: stableCanvasX, type: "left" },
+      { value: stableCanvasX + nodeWidth, type: "right" },
+      { value: stableCanvasX + nodeWidth / 2, type: "centerX" },
+      { value: stableCanvasY, type: "top" },
+      { value: stableCanvasY + nodeHeight, type: "bottom" },
+      { value: stableCanvasY + nodeHeight / 2, type: "centerY" },
+    ];
+    stableSnapResult = snapGrid.findNearestSnaps(stablePoints, 10, node.id);
+  }
+
+  // Decide which result to dispatch (the stable one if we have it)
+  const finalSnapResult = stableSnapResult || snapResult;
+
+  // Step 3: dispatch the final guides
   useEffect(() => {
-    if (
-      JSON.stringify(snapResult) !== JSON.stringify(lastSnapGuideRef.current)
-    ) {
-      lastSnapGuideRef.current = snapResult;
-      if (snapResult?.snapGuides?.length) {
-        dragDisp.setSnapGuides(snapResult.snapGuides);
+    if (!finalSnapResult) {
+      dragDisp.clearSnapGuides();
+      lastSnapRef.current = null;
+      return;
+    }
+    const { snapGuides } = finalSnapResult;
+    // compare
+    const oldString = JSON.stringify(lastSnapRef.current);
+    const newString = JSON.stringify(finalSnapResult);
+    if (oldString !== newString) {
+      lastSnapRef.current = finalSnapResult;
+      if (snapGuides.length) {
+        dragDisp.setSnapGuides(snapGuides);
       } else {
         dragDisp.clearSnapGuides();
       }
     }
-  }, [snapResult, dragDisp]);
+  }, [finalSnapResult, dragDisp]);
 
+  // keep original node width/height while dragging
   useEffect(() => {
     if ((node.parentId || node.inViewport) && initialDimensionsRef.current) {
       const el = document.querySelector(
         `[data-node-id="${node.id}"]`
       ) as HTMLElement;
-
       if (el) {
         el.style.width = `${initialDimensionsRef.current.width}px`;
         el.style.height = `${initialDimensionsRef.current.height}px`;
@@ -261,7 +312,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     <div
       data-node-dragged={node.id}
       style={{
-        position: "fixed",
+        position: "absolute",
         left: `${finalLeft}px`,
         top: `${finalTop}px`,
         transform: `scale(${transform.scale})`,
@@ -273,18 +324,17 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
       {cloneElement(content, {
         style: {
           ...content.props.style,
-          position: "fixed",
-          // rotate: node.style.rotate,
+          position: "absolute",
           transformOrigin: "top left",
           pointerEvents: "none",
           left: undefined,
           top: undefined,
-          width: `${width}px`,
-          height: `${height}px`,
+          width: `${nodeWidth}px`,
+          height: `${nodeHeight}px`,
         },
       })}
     </div>,
-    document.body
+    containerRef.current as Element | DocumentFragment
   );
 };
 

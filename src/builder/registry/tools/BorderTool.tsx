@@ -1,6 +1,6 @@
 import React from "react";
 import { ToolInput } from "./_components/ToolInput";
-import { ToolbarSection } from "./_components/test-ui";
+import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ColorPicker } from "./_components/ColorPicker";
 import { ToolSelect } from "./_components/ToolSelect";
 

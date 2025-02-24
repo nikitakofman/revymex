@@ -1,6 +1,6 @@
 // Example usage in DimensionsTool.tsx
 import React, { useEffect, useState } from "react";
-import { ToolbarContainer, ToolbarSection } from "./_components/test-ui";
+import { ToolbarContainer, ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
 import { useBuilder } from "@/builder/context/builderState";
 

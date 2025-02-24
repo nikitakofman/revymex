@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ToolbarSection, ToolbarSegmentedControl } from "./_components/test-ui";
+import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ColorPicker } from "./_components/ColorPicker";
 import {
   Plus,
@@ -8,13 +8,17 @@ import {
   Video,
   Search,
   RefreshCw,
+  Eraser,
+  Loader2,
 } from "lucide-react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
-import Image from "next/image";
+import { removeBackground } from "@imgly/background-removal";
+import { preload } from "@imgly/background-removal";
+import BackgroundRemovalNoSSR from "./BackgroundRemovalNoSSR";
+import { ToolbarSegmentedControl } from "./_components/ToolbarSegmentedControl";
 
 type FillType = "solid" | "linear" | "radial" | "image" | "video";
 
@@ -100,19 +104,17 @@ const GradientStopButton = ({
         e.stopPropagation();
         setIsDragging(true);
       }}
-      className={`absolute -translate-x-1/2 cursor-move transition-shadow
-        ${isSelected ? "z-10" : "z-0"}
-      `}
+      className={`absolute -translate-x-1/2 cursor-move transition-shadow ${
+        isSelected ? "z-10" : "z-0"
+      }`}
       style={{ left: `${position}%`, top: "-4px" }}
     >
       <div
-        className={`w-4 h-4 rounded-full border-2 
-          ${
-            isSelected
-              ? "border-[var(--accent)] shadow-lg"
-              : "border-white shadow-sm"
-          }
-        `}
+        className={`w-4 h-4 rounded-full border-2 ${
+          isSelected
+            ? "border-[var(--accent)] shadow-md"
+            : "border-white shadow-sm"
+        }`}
         style={{ backgroundColor: color }}
       />
     </div>
@@ -153,27 +155,29 @@ const ImageSearchModal = ({
   };
 
   return (
-    <div className="mt-2 p-3 bg-[var(--bg-surface)] rounded-lg border border-[var(--border-default)]">
-      <div className="flex gap-2 mb-3">
-        <ToolInput
+    <div className="mt-2 p-4 bg-[var(--bg-surface)] rounded-lg border border-[var(--border-default)] shadow-sm">
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text" // Changed from ToolInput to native text input
           value={query}
-          onChange={(value) => setQuery(value)}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Search images..."
+          className="flex-1 px-3 py-1.5 bg-[var(--bg-default)] border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />
         <button
           className="px-3 py-1.5 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center transition-colors"
           onClick={() => fetchImages(query)}
         >
-          <Search className="w-3.5 h-3.5 mr-1.5" />
+          <Search className="w-4 h-4 mr-1.5" />
           Search
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto">
         {images.map((image) => (
           <div
             key={image.id}
-            className="relative group cursor-pointer aspect-square"
+            className="relative group cursor-pointer aspect-square rounded-md overflow-hidden"
             onClick={() => {
               onSelectImage(image.urls.regular);
               onClose();
@@ -182,15 +186,15 @@ const ImageSearchModal = ({
             <img
               src={image.urls.small}
               alt={image.alt_description}
-              className="w-full h-full object-cover rounded-md"
+              className="w-full h-full object-cover transition-transform group-hover:scale-105"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all rounded-md" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
           </div>
         ))}
       </div>
 
       {loading && (
-        <div className="flex justify-center mt-3">
+        <div className="flex justify-center mt-4">
           <RefreshCw className="w-5 h-5 animate-spin text-[var(--text-default)]" />
         </div>
       )}
@@ -227,27 +231,29 @@ const VideoSearchModal = ({
   };
 
   return (
-    <div className="mt-2 p-3 bg-[var(--bg-surface)] rounded-lg border border-[var(--border-default)]">
-      <div className="flex gap-2 mb-3">
-        <ToolInput
+    <div className="mt-2 p-4 bg-[var(--bg-surface)] rounded-lg border border-[var(--border-default)] shadow-sm">
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text" // Changed from ToolInput to native text input
           value={query}
-          onChange={(value) => setQuery(value)}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Search videos..."
+          className="flex-1 px-3 py-1.5 bg-[var(--bg-default)] border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />
         <button
           className="px-3 py-1.5 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center transition-colors"
           onClick={() => fetchVideos(query)}
         >
-          <Search className="w-3.5 h-3.5 mr-1.5" />
+          <Search className="w-4 h-4 mr-1.5" />
           Search
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
         {videos.map((video) => (
           <div
             key={video.id}
-            className="relative group cursor-pointer aspect-video"
+            className="relative group cursor-pointer aspect-video rounded-md overflow-hidden"
             onClick={() => {
               onSelectVideo(video.videos.tiny.url);
               onClose();
@@ -255,19 +261,19 @@ const VideoSearchModal = ({
           >
             <video
               src={video.videos.tiny.url}
-              className="w-full h-full object-cover rounded-md"
+              className="w-full h-full object-cover transition-transform group-hover:scale-105"
               muted
               loop
               onMouseOver={(e) => e.currentTarget.play()}
               onMouseOut={(e) => e.currentTarget.pause()}
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all rounded-md" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
           </div>
         ))}
       </div>
 
       {loading && (
-        <div className="flex justify-center mt-3">
+        <div className="flex justify-center mt-4">
           <RefreshCw className="w-5 h-5 animate-spin text-[var(--text-default)]" />
         </div>
       )}
@@ -275,7 +281,6 @@ const VideoSearchModal = ({
   );
 };
 
-// Main FillTool Component
 export const FillTool = () => {
   const { nodeState, dragState, nodeDisp, setNodeStyle } = useBuilder();
   const selectedNode = nodeState.nodes.find(
@@ -289,6 +294,7 @@ export const FillTool = () => {
   });
 
   const [showMediaSearch, setShowMediaSearch] = useState(false);
+  const [removingBackground, setRemovingBackground] = useState(false);
   const [gradientStops, setGradientStops] = useState<GradientStop[]>([
     { color: "#FFFFFF", position: 0, id: "1" },
     { color: "#000000", position: 100, id: "2" },
@@ -318,6 +324,60 @@ export const FillTool = () => {
     parseValue: false,
     defaultValue: "center",
   });
+
+  const handleRemoveBackground = async () => {
+    let imageUrl =
+      selectedNode?.style.src || selectedNode?.style.backgroundImage;
+    if (!imageUrl) {
+      alert("No image found");
+      return;
+    }
+
+    // Remove 'url()' wrapper if it exists
+    imageUrl = imageUrl.replace(/^url\(['"](.+)['"]\)$/, "$1");
+
+    setRemovingBackground(true);
+
+    const config = {
+      debug: false,
+      progress: (key: string, current: number, total: number) => {
+        const [type, subtype] = key.split(":");
+        const progress = Math.round((current / total) * 100);
+        console.log(`${type} ${subtype} ${progress}%`);
+      },
+      rescale: true,
+      device: "cpu",
+      output: {
+        quality: 0.8,
+        format: "image/png",
+      },
+    };
+
+    try {
+      await preload(config);
+      const processedBlob = await removeBackground(imageUrl, config);
+      const processedImageUrl = URL.createObjectURL(processedBlob);
+
+      if (selectedNode?.type === "image") {
+        setNodeStyle({ src: processedImageUrl }, dragState.selectedIds);
+      } else {
+        setNodeStyle(
+          {
+            backgroundImage: `url('${processedImageUrl}')`,
+            src: undefined,
+          },
+          dragState.selectedIds
+        );
+      }
+
+      alert("Background removed");
+    } catch (error) {
+      console.error("Error removing background:", error);
+      alert("Failed to remove background");
+    } finally {
+      setRemovingBackground(false);
+    }
+  };
 
   if (!selectedNode) return null;
 
@@ -358,7 +418,7 @@ export const FillTool = () => {
   };
 
   const renderMediaControls = () => (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 gap-3">
       <ToolSelect
         name="objectFit"
         label="Fit"
@@ -391,13 +451,35 @@ export const FillTool = () => {
     if (selectedNode.type === "image" && !selectedNode.children?.length) {
       return (
         <div className="space-y-4">
-          <button
-            onClick={() => setShowMediaSearch(true)}
-            className="w-full px-3 py-1.5 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center"
-          >
-            <ImageIcon className="w-3.5 h-3.5 mr-1.5" />
-            Choose Image
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowMediaSearch(true)}
+              className="flex-1 px-3 py-2 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center transition-colors"
+            >
+              <ImageIcon className="w-4 h-4 mr-2" />
+              Choose Image
+            </button>
+            <BackgroundRemovalNoSSR
+              imageUrl={
+                selectedNode?.style.src ||
+                selectedNode?.style.backgroundImage ||
+                ""
+              }
+              disabled={
+                !selectedNode?.style.src && !selectedNode?.style.backgroundImage
+              }
+              onComplete={(newUrl) => {
+                if (selectedNode?.type === "image") {
+                  setNodeStyle({ src: newUrl }, dragState.selectedIds);
+                } else {
+                  setNodeStyle(
+                    { backgroundImage: `url(${newUrl})` },
+                    dragState.selectedIds
+                  );
+                }
+              }}
+            />
+          </div>
 
           {showMediaSearch && (
             <ImageSearchModal
@@ -419,9 +501,9 @@ export const FillTool = () => {
         <div className="space-y-4">
           <button
             onClick={() => setShowMediaSearch(true)}
-            className="w-full px-3 py-1.5 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center"
+            className="w-full px-3 py-2 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center transition-colors"
           >
-            <Video className="w-3.5 h-3.5 mr-1.5" />
+            <Video className="w-4 h-4 mr-2" />
             Choose Video
           </button>
 
@@ -437,7 +519,7 @@ export const FillTool = () => {
 
           {renderMediaControls()}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 text-sm">
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -448,9 +530,9 @@ export const FillTool = () => {
                     dragState.selectedIds
                   );
                 }}
-                className="w-3 h-3"
+                className="w-4 h-4 accent-[var(--accent)]"
               />
-              <span className="text-xs">Autoplay</span>
+              Autoplay
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -462,9 +544,9 @@ export const FillTool = () => {
                     dragState.selectedIds
                   );
                 }}
-                className="w-3 h-3"
+                className="w-4 h-4 accent-[var(--accent)]"
               />
-              <span className="text-xs">Loop</span>
+              Loop
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -476,9 +558,9 @@ export const FillTool = () => {
                     dragState.selectedIds
                   );
                 }}
-                className="w-3 h-3"
+                className="w-4 h-4 accent-[var(--accent)]"
               />
-              <span className="text-xs">Muted</span>
+              Muted
             </label>
           </div>
         </div>
@@ -494,7 +576,7 @@ export const FillTool = () => {
           options={[
             {
               icon: (
-                <div className="w-4 h-4 bg-[var(--text-primary)] rounded" />
+                <div className="w-3 h-3 bg-[var(--text-primary)] rounded-sm" />
               ),
               value: "solid",
             },
@@ -503,6 +585,7 @@ export const FillTool = () => {
             { icon: <ImageIcon className="w-4 h-4" />, value: "image" },
             { icon: <Video className="w-4 h-4" />, value: "video" },
           ]}
+          className="grid grid-cols-5 gap-1 p-1 bg-[var(--control-bg)] rounded-md"
         />
 
         {fillType === "solid" && (
@@ -523,10 +606,10 @@ export const FillTool = () => {
         )}
 
         {(fillType === "linear" || fillType === "radial") && (
-          <div className="space-y-4">
-            <div className="relative h-[9.8px] bg-[var(--control-bg)] rounded">
+          <div className="space-y-3">
+            <div className="relative h-2 bg-[var(--control-bg)] rounded-full overflow-hidden">
               <div
-                className="absolute inset-x-0 h-full rounded"
+                className="absolute inset-0 h-full"
                 style={{
                   background: `linear-gradient(to right, ${gradientStops
                     .map((stop) => `${stop.color} ${stop.position}%`)
@@ -551,8 +634,8 @@ export const FillTool = () => {
               ))}
             </div>
 
-            <div className="flex items-center gap-2 justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => {
                     const newStop = {
@@ -567,9 +650,9 @@ export const FillTool = () => {
                     setSelectedStopId(newStop.id);
                     updateGradientBackground(newStops);
                   }}
-                  className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded"
+                  className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded-md transition-colors"
                 >
-                  <Plus className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <Plus className="w-4 h-4 text-[var(--text-secondary)]" />
                 </button>
                 <button
                   onClick={() => {
@@ -581,10 +664,10 @@ export const FillTool = () => {
                     setSelectedStopId(newStops[0].id);
                     updateGradientBackground(newStops);
                   }}
-                  className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded"
+                  className="p-1.5 hover:bg-[var(--control-bg-hover)] rounded-md transition-colors disabled:opacity-50"
                   disabled={gradientStops.length <= 2}
                 >
-                  <Trash2 className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                  <Trash2 className="w-4 h-4 text-[var(--text-secondary)]" />
                 </button>
               </div>
               {selectedStopId && (
@@ -602,13 +685,34 @@ export const FillTool = () => {
 
         {fillType === "image" && (
           <>
-            <button
-              onClick={() => setShowMediaSearch(true)}
-              className="w-full px-3 py-1.5 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center"
-            >
-              <ImageIcon className="w-3.5 h-3.5 mr-1.5" />
-              Choose Image
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowMediaSearch(true)}
+                className="flex-1 px-3 py-2 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center transition-colors"
+              >
+                <ImageIcon className="w-4 h-4 mr-2" />
+                Choose Image
+              </button>
+
+              <button
+                onClick={handleRemoveBackground}
+                disabled={
+                  removingBackground || !selectedNode?.style.backgroundImage
+                }
+                className={`flex-1 px-3 py-2 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center transition-colors ${
+                  removingBackground || !selectedNode?.style.backgroundImage
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                }`}
+              >
+                {removingBackground ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Eraser className="w-4 h-4 mr-2" />
+                )}
+                Remove BG
+              </button>
+            </div>
 
             {showMediaSearch && (
               <ImageSearchModal
@@ -616,12 +720,12 @@ export const FillTool = () => {
                   if (selectedNode.type !== "frame") {
                     transformNodeToFrame(
                       selectedNode,
-                      { backgroundImage: url, src: undefined },
+                      { backgroundImage: `url(${url})`, src: undefined },
                       nodeDisp
                     );
                   } else {
                     setNodeStyle(
-                      { backgroundImage: url, src: undefined },
+                      { backgroundImage: `url(${url})`, src: undefined },
                       dragState.selectedIds
                     );
                   }
@@ -637,9 +741,9 @@ export const FillTool = () => {
           <>
             <button
               onClick={() => setShowMediaSearch(true)}
-              className="w-full px-3 py-1.5 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center"
+              className="w-full px-3 py-2 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md text-sm flex items-center justify-center transition-colors"
             >
-              <Video className="w-3.5 h-3.5 mr-1.5" />
+              <Video className="w-4 h-4 mr-2" />
               Choose Video
             </button>
 
@@ -680,6 +784,7 @@ export const FillTool = () => {
             selectedNode.type.slice(1)
           : "Fill"
       }
+      className="p-4 bg-[var(--bg-surface)] rounded-lg shadow-sm"
     >
       {renderControls()}
     </ToolbarSection>

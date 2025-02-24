@@ -5,7 +5,7 @@ import { Frame } from "./elements/Frame";
 import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
 import DraggedNode, { VirtualReference } from "./DraggedNode";
-import { getFilteredNodes } from "../context/dnd/utils";
+import { getFilteredNodes } from "../context/utils";
 import { VideoElement } from "./elements/VideoElement";
 
 interface RenderNodesProps {
@@ -13,7 +13,7 @@ interface RenderNodesProps {
 }
 
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
-  const { nodeState, dragState, nodeDisp, transform } = useBuilder();
+  const { nodeState, dragState, transform } = useBuilder();
 
   const [virtualReference, setVirtualReference] =
     useState<VirtualReference | null>(null);
@@ -39,10 +39,16 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     };
   }, []);
 
-  const filteredNodes = getFilteredNodes(
+  // Get basic filtered nodes based on viewport status
+  const viewportFilteredNodes = getFilteredNodes(
     nodeState.nodes,
     filter,
     dragState.dynamicModeNodeId
+  );
+
+  // Further filter out nodes with display: none
+  const filteredNodes = viewportFilteredNodes.filter(
+    (node) => node.style.display !== "none"
   );
 
   const renderNode = (node: Node, isDraggedVersion = false) => {
@@ -54,14 +60,21 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
       return null;
     }
 
+    // Skip rendering hidden nodes
+    if (node.style.display === "none") {
+      return null;
+    }
+
     const isDragged =
       dragState.isDragging && dragState.draggedNode?.node.id === node.id;
 
     const content = (() => {
       switch (node.type) {
         case "frame": {
+          // Only include visible children
           const children = nodeState.nodes.filter(
-            (child) => child.parentId === node.id
+            (child) =>
+              child.parentId === node.id && child.style.display !== "none"
           );
 
           return (

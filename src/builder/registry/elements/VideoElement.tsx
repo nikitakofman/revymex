@@ -1,6 +1,6 @@
 import { useBuilder } from "@/builder/context/builderState";
 import { ResizableWrapper } from "@/builder/context/dnd/resizable";
-import { useConnect } from "@/builder/context/dnd/useConnect";
+import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
 import React from "react";
 

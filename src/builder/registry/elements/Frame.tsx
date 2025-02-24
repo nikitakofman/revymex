@@ -1,6 +1,6 @@
 import { useBuilder } from "@/builder/context/builderState";
 import { ResizableWrapper } from "@/builder/context/dnd/resizable";
-import { useConnect } from "@/builder/context/dnd/useConnect";
+import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
 import { Plus } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -20,10 +20,12 @@ export const Frame = ({ children, node }: ElementProps) => {
     const scaledHeaderHeight = headerHeight / transform.scale;
     const scaledHeaderMargin = headerMargin / transform.scale;
 
+    // Get connect handlers but only apply them to the header
+    const connectHandlers = connect(node);
+
     return (
       <ResizableWrapper node={node}>
         <div
-          {...connect(node)}
           className={`${
             isDropTarget ? "dropTarget border-4 border-blue-900" : ""
           } relative`}
@@ -31,9 +33,14 @@ export const Frame = ({ children, node }: ElementProps) => {
             ...node.style,
             overflow: "visible",
           }}
+          // Remove all handlers from the main frame
+          data-node-id={node.id}
+          data-node-type={node.type}
         >
+          {/* Header with all the interaction handlers */}
           <div
-            className="absolute viewport-header left-0 right-0 bg-[var(--grid-line)]  rounded-t-lg z-[9999] flex items-center shadow-lg"
+            {...connectHandlers}
+            className="absolute viewport-header left-0 right-0 bg-[var(--grid-line)] rounded-t-lg z-[9999] flex items-center shadow-lg cursor-move"
             style={{
               zIndex: 9999,
               top: `-${scaledHeaderHeight + scaledHeaderMargin}px`,

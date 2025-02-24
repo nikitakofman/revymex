@@ -1,5 +1,5 @@
 import { useBuilder } from "@/builder/context/builderState";
-import { ToolbarSection } from "./_components/test-ui";
+import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";

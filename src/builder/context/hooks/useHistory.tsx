@@ -24,6 +24,7 @@ export function useNodeHistory(initialState: NodeState) {
   const isUndoingRef = useRef(false);
   const prevStateRef = useRef(state);
   const currentSessionRef = useRef<RecordingSession | null>(null);
+  const lastOperationTimeRef = useRef<number>(0);
 
   const hasStyleChanged = (prevStyle: any, nextStyle: any) => {
     const tempStyles = ["transform", "zIndex", "position", "left", "top"];
@@ -59,6 +60,10 @@ export function useNodeHistory(initialState: NodeState) {
     let positionChanged = false;
     let styleChanged = false;
 
+    // Check for node removals
+    const removedNodes = Array.from(prevIds).filter((id) => !nextIds.has(id));
+    const isNodeRemoval = removedNodes.length > 0;
+
     for (const id of prevIds) {
       if (!nextIds.has(id)) continue;
       const prevNode = prevState.nodes.find((n) => n.id === id)!;
@@ -93,8 +98,133 @@ export function useNodeHistory(initialState: NodeState) {
     return {
       nonPlaceholderChanged:
         positionChanged || prevIds.size !== nextIds.size || styleChanged,
+      isNodeRemoval,
+      removedNodesCount: removedNodes.length,
     };
   };
+
+  const setStateWithHistory = useCallback(
+    (updater: React.SetStateAction<NodeState>) => {
+      setState((prev) => {
+        const nextState =
+          typeof updater === "function" ? updater(prev) : updater;
+
+        if (currentSessionRef.current) {
+          prevStateRef.current = nextState;
+          return nextState;
+        }
+
+        if (!isUndoingRef.current) {
+          const currentTime = Date.now();
+          const changes = getChanges(prevStateRef.current, nextState);
+
+          if (changes.nonPlaceholderChanged) {
+            let patches: Patch[] = [];
+            let inversePatches: Patch[] = [];
+
+            produce(
+              prevStateRef.current,
+              (draft) => {
+                Object.assign(draft, nextState);
+              },
+              (p, ip) => {
+                patches = p;
+                inversePatches = ip;
+              }
+            );
+
+            if (patches.length > 0) {
+              setHistory((h) => {
+                // Check if this is a batch node removal operation
+                if (
+                  changes.isNodeRemoval &&
+                  currentTime - lastOperationTimeRef.current < 50 &&
+                  h.past.length > 0
+                ) {
+                  // 50ms threshold for batch operations
+                  // Combine with the last operation
+                  const newPast = [...h.past];
+                  // Make sure the last entry exists and is an array before spreading
+                  const lastEntry = newPast[newPast.length - 1];
+                  if (Array.isArray(lastEntry)) {
+                    newPast[newPast.length - 1] = [
+                      ...lastEntry,
+                      ...inversePatches,
+                    ];
+                    lastOperationTimeRef.current = currentTime;
+                    return {
+                      past: newPast,
+                      future: [],
+                    };
+                  }
+                }
+
+                // New operation
+                lastOperationTimeRef.current = currentTime;
+                return {
+                  past: [...h.past, inversePatches].slice(-50),
+                  future: [],
+                };
+              });
+            }
+          }
+        }
+
+        prevStateRef.current = nextState;
+        return nextState;
+      });
+    },
+    []
+  );
+
+  const undo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.past.length === 0) return prev;
+
+      isUndoingRef.current = true;
+      const newPast = [...prev.past];
+      const patchesToUndo = newPast.pop()!;
+
+      setState((currentState) =>
+        produce(currentState, (draft) => {
+          applyPatches(draft, patchesToUndo);
+        })
+      );
+
+      Promise.resolve().then(() => {
+        isUndoingRef.current = false;
+      });
+
+      return {
+        past: newPast,
+        future: [patchesToUndo, ...prev.future],
+      };
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.future.length === 0) return prev;
+
+      isUndoingRef.current = true;
+      const [patchesToRedo, ...newFuture] = prev.future;
+
+      setState((currentState) =>
+        produce(currentState, (draft) => {
+          applyPatches(draft, patchesToRedo);
+        })
+      );
+
+      Promise.resolve().then(() => {
+        isUndoingRef.current = false;
+      });
+
+      return {
+        past: [...prev.past, patchesToRedo],
+        future: newFuture,
+      };
+    });
+  }, []);
 
   const startRecording = useCallback(() => {
     // Always use the current state as the starting point
@@ -144,102 +274,6 @@ export function useNodeHistory(initialState: NodeState) {
     },
     [state]
   );
-
-  const setStateWithHistory = useCallback(
-    (updater: React.SetStateAction<NodeState>) => {
-      setState((prev) => {
-        const nextState =
-          typeof updater === "function" ? updater(prev) : updater;
-
-        // Skip history recording if we're in an active session
-        if (currentSessionRef.current) {
-          prevStateRef.current = nextState;
-          return nextState;
-        }
-
-        // Only record if not undoing and not in a session
-        if (!isUndoingRef.current) {
-          const changes = getChanges(prevStateRef.current, nextState);
-          if (changes.nonPlaceholderChanged) {
-            let patches: Patch[] = [];
-            let inversePatches: Patch[] = [];
-
-            produce(
-              prevStateRef.current,
-              (draft) => {
-                Object.assign(draft, nextState);
-              },
-              (p, ip) => {
-                patches = p;
-                inversePatches = ip;
-              }
-            );
-
-            if (patches.length > 0) {
-              setHistory((h) => ({
-                past: [...h.past, inversePatches].slice(-50),
-                future: [],
-              }));
-            }
-          }
-        }
-
-        prevStateRef.current = nextState;
-        return nextState;
-      });
-    },
-    []
-  );
-
-  const undo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.past.length === 0) return prev;
-
-      isUndoingRef.current = true;
-      const newPast = [...prev.past];
-      const patchesToUndo = newPast.pop()!;
-
-      setState((currentState) =>
-        produce(currentState, (draft) => {
-          applyPatches(draft, patchesToUndo);
-        })
-      );
-
-      // Use a microtask instead of setTimeout
-      Promise.resolve().then(() => {
-        isUndoingRef.current = false;
-      });
-
-      return {
-        past: newPast,
-        future: [patchesToUndo, ...prev.future],
-      };
-    });
-  }, []);
-
-  const redo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.future.length === 0) return prev;
-
-      isUndoingRef.current = true;
-      const [patchesToRedo, ...newFuture] = prev.future;
-
-      setState((currentState) =>
-        produce(currentState, (draft) => {
-          applyPatches(draft, patchesToRedo);
-        })
-      );
-
-      Promise.resolve().then(() => {
-        isUndoingRef.current = false;
-      });
-
-      return {
-        past: [...prev.past, patchesToRedo],
-        future: newFuture,
-      };
-    });
-  }, []);
 
   return {
     nodeState: state,

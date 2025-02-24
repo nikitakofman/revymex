@@ -3,7 +3,7 @@ import {
   findIndexWithinParent,
   findParentViewport,
   isWithinViewport,
-} from "./utils";
+} from "../utils";
 import { useRef } from "react";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
@@ -126,6 +126,7 @@ export const useMouseUp = () => {
             ...draggedNode.style,
             width: dropWidth,
             height: dropHeight,
+            gap: "0px",
           } as Node["style"],
         };
 
@@ -151,6 +152,7 @@ export const useMouseUp = () => {
       const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
 
       if (dragState.draggedItem) {
+        console.log("dragState", dragState.draggedItem, draggedNode);
         const newNode = {
           ...draggedNode,
           sharedId,
@@ -163,6 +165,11 @@ export const useMouseUp = () => {
             top: "",
             width: dropWidth,
             height: dropHeight,
+            display: "flex",
+            flexDirection: "row",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: "0px",
           } as Node["style"],
         };
 

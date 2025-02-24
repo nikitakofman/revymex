@@ -1,7 +1,8 @@
 import { useRef, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 
-export const EDGE_SIZE = 50;
+export const VERTICAL_EDGE_SIZE = 50; // Top and bottom edges
+export const HORIZONTAL_EDGE_SIZE = 256; // Left and right edges
 const MAX_SCROLL_SPEED = 4;
 const MIN_SCROLL_SPEED = 0.5;
 
@@ -43,9 +44,9 @@ export const useAutoScroll = () => {
         return { left: 0, right: 0, up: 0, down: 0 };
       }
 
-      const getScrollSpeed = (distance: number): number => {
-        if (distance > EDGE_SIZE) return 0;
-        const distancePercent = distance / EDGE_SIZE;
+      const getScrollSpeed = (distance: number, edgeSize: number): number => {
+        if (distance > edgeSize) return 0;
+        const distancePercent = distance / edgeSize;
         const speedFactor = Math.pow(1 - distancePercent, 2);
         return (
           MIN_SCROLL_SPEED + (MAX_SCROLL_SPEED - MIN_SCROLL_SPEED) * speedFactor
@@ -54,15 +55,20 @@ export const useAutoScroll = () => {
 
       return {
         left:
-          distanceFromLeft <= EDGE_SIZE ? getScrollSpeed(distanceFromLeft) : 0,
-        right:
-          distanceFromRight <= EDGE_SIZE
-            ? -getScrollSpeed(distanceFromRight)
+          distanceFromLeft <= HORIZONTAL_EDGE_SIZE
+            ? getScrollSpeed(distanceFromLeft, HORIZONTAL_EDGE_SIZE)
             : 0,
-        up: distanceFromTop <= EDGE_SIZE ? getScrollSpeed(distanceFromTop) : 0,
+        right:
+          distanceFromRight <= HORIZONTAL_EDGE_SIZE
+            ? -getScrollSpeed(distanceFromRight, HORIZONTAL_EDGE_SIZE)
+            : 0,
+        up:
+          distanceFromTop <= VERTICAL_EDGE_SIZE
+            ? getScrollSpeed(distanceFromTop, VERTICAL_EDGE_SIZE)
+            : 0,
         down:
-          distanceFromBottom <= EDGE_SIZE
-            ? -getScrollSpeed(distanceFromBottom)
+          distanceFromBottom <= VERTICAL_EDGE_SIZE
+            ? -getScrollSpeed(distanceFromBottom, VERTICAL_EDGE_SIZE)
             : 0,
       };
     },

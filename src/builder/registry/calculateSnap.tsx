@@ -1,5 +1,5 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { useSnapGrid } from "../context/dnd/SnapGrid";
+import { useSnapGrid } from "../context/canvasHelpers/SnapGrid";
 import { Transform } from "../types";
 
 type SnapGridReturn = ReturnType<typeof useSnapGrid>;

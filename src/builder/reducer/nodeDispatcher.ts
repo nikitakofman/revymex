@@ -1,7 +1,7 @@
 import { produce } from "immer";
 import { nanoid } from "nanoid";
 import { CSSProperties } from "react";
-import { findParentViewport } from "../context/dnd/utils";
+import { findParentViewport } from "../context/utils";
 
 export interface Position {
   x: number;
@@ -11,6 +11,7 @@ export interface Position {
 export interface Node {
   id: string;
   type: "frame" | "image" | "text" | "placeholder" | string;
+  customName?: string;
   style: CSSProperties & {
     src?: string;
     text?: string;
@@ -18,6 +19,7 @@ export interface Node {
     isVideoBackground?: boolean;
     backgroundVideo?: string;
   };
+  isHidden?: boolean;
   sharedId?: string;
   independentStyles?: {
     [styleProperty: string]: boolean;
@@ -28,6 +30,7 @@ export interface Node {
   position?: Position;
   inViewport?: boolean;
   isViewport?: boolean;
+  viewportName?: string;
   viewportWidth?: number;
   isDynamic?: boolean;
   dynamicParentId?: string | number;
@@ -409,6 +412,55 @@ export class NodeDispatcher {
           // Set up for dynamic mode
           node.parentId = null;
           node.inViewport = false;
+        }
+      })
+    );
+  }
+
+  toggleNodeVisibility(nodeId: string | number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const node = draft.nodes.find((n) => n.id === nodeId);
+        if (node) {
+          // Toggle the isHidden property
+          node.isHidden = !node.isHidden;
+
+          // If this node has a sharedId, update all other nodes with the same sharedId
+          if (node.sharedId) {
+            draft.nodes.forEach((otherNode) => {
+              if (
+                otherNode.id !== nodeId &&
+                otherNode.sharedId === node.sharedId
+              ) {
+                otherNode.isHidden = node.isHidden;
+              }
+            });
+          }
+        }
+      })
+    );
+  }
+
+  setCustomName(nodeId: string | number, customName: string) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // First find the node we're directly naming
+        const node = draft.nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+
+        // Set its custom name
+        node.customName = customName;
+
+        // If this node has a sharedId, update all other nodes with the same sharedId
+        if (node.sharedId) {
+          draft.nodes.forEach((otherNode) => {
+            if (
+              otherNode.id !== nodeId &&
+              otherNode.sharedId === node.sharedId
+            ) {
+              otherNode.customName = customName;
+            }
+          });
         }
       })
     );

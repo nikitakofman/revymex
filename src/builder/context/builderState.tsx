@@ -77,6 +77,8 @@ interface BuilderContextType {
   interfaceDisp: InterfaceDispatcher;
   dragDimensionsRef: RefObject<DragDimensions>;
   selectedIdsRef: RefObject<(string | number)[]>;
+  isFrameModeActive: boolean;
+  setIsFrameModeActive: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface RecordingSession {
@@ -104,6 +106,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const [dragState, setDragState] = useState(dragInitialState);
   const [interfaceState, setInterfaceState] = useState(interfaceInitialState);
+  const [isFrameModeActive, setIsFrameModeActive] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -300,6 +303,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     interfaceDisp,
     dragDimensionsRef,
     selectedIdsRef,
+    isFrameModeActive,
+    setIsFrameModeActive,
   };
 
   return (

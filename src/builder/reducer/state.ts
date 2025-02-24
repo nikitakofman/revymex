@@ -15,6 +15,7 @@ export const nodeInitialState: NodeState = {
       id: "viewport-1440",
       type: "frame",
       isViewport: true,
+      viewportName: "Desktop",
       viewportWidth: 1440,
       style: {
         width: "1440px",
@@ -52,6 +53,7 @@ export const nodeInitialState: NodeState = {
         alignItems: "center",
       },
       inViewport: false,
+      viewportName: "Tablet",
       parentId: null,
       position: { x: 100 + 1440 + VIEWPORT_GAP, y: 100 },
     },
@@ -74,6 +76,7 @@ export const nodeInitialState: NodeState = {
         alignItems: "center",
       },
       inViewport: false,
+      viewportName: "Mobile",
       parentId: null,
       position: { x: 100 + 1440 + VIEWPORT_GAP + 768 + VIEWPORT_GAP, y: 100 },
     },
@@ -229,6 +232,7 @@ export const dragInitialState: DragState = {
   tempSelectedIds: [],
   nodeDimensions: {},
   duplicatedFromAlt: false,
+  placeholderInfo: null,
 };
 
 export const interfaceInitialState: InterfaceState = {

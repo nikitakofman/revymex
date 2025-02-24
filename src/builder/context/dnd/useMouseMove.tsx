@@ -7,11 +7,16 @@ import {
   getCalibrationAdjustedPosition,
   isWithinViewport,
   findIndexWithinParent,
-} from "./utils";
+} from "../utils";
 import { useEffect, useRef } from "react";
-import { EDGE_SIZE, useAutoScroll } from "../hooks/useAutoScroll";
+import {
+  EDGE_SIZE,
+  HORIZONTAL_EDGE_SIZE,
+  useAutoScroll,
+  VERTICAL_EDGE_SIZE,
+} from "../hooks/useAutoScroll";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { createPlaceholder } from "./createPlaceholder";
+import { createPlaceholder } from "../createPlaceholder";
 import { nanoid } from "nanoid";
 
 // Helper to compute the furthest (root) container id for a given parent id.
@@ -191,13 +196,24 @@ export const useMouseMove = () => {
       dragDisp.setDragPositions(finalX, finalY);
     }
 
-    const isNearEdge =
-      e.clientX <= containerRect.left + EDGE_SIZE ||
-      e.clientX >= containerRect.right - EDGE_SIZE ||
-      e.clientY <= containerRect.top + EDGE_SIZE ||
-      e.clientY >= containerRect.bottom - EDGE_SIZE;
+    // In useMouseMove.tsx
+    const isNearEdge = (
+      clientX: number,
+      clientY: number,
+      containerRect: DOMRect
+    ) => {
+      const isNearHorizontalEdge =
+        clientX <= containerRect.left + HORIZONTAL_EDGE_SIZE ||
+        clientX >= containerRect.right - HORIZONTAL_EDGE_SIZE;
 
-    if (isNearEdge) {
+      const isNearVerticalEdge =
+        clientY <= containerRect.top + VERTICAL_EDGE_SIZE ||
+        clientY >= containerRect.bottom - VERTICAL_EDGE_SIZE;
+
+      return isNearHorizontalEdge || isNearVerticalEdge;
+    };
+
+    if (isNearEdge(e.clientX, e.clientY, containerRect)) {
       if (!isAutoScrollingRef.current) {
         startAutoScroll(e.clientX, e.clientY, containerRef.current);
         isAutoScrollingRef.current = true;

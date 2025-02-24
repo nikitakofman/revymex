@@ -1,7 +1,7 @@
 import React from "react";
 import LayoutTool from "@/builder/registry/tools/LayoutTool";
 import { ImageSettings } from "@/builder/registry/tools/ImageSettingsTool";
-import { ToolbarDivider } from "@/builder/registry/tools/_components/test-ui";
+import { ToolbarDivider } from "@/builder/registry/tools/_components/ToolbarAtoms";
 import DimensionsTool from "@/builder/registry/tools/DimensionsTool";
 import { BackgroundTool } from "@/builder/registry/tools/BackgroundTool";
 import SpacingTool from "@/builder/registry/tools/SpacingTool";
