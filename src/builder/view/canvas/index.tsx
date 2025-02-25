@@ -19,6 +19,9 @@ import SelectionBox from "@/builder/context/canvasHelpers/SelectionBox";
 import { useKeyboardDrag } from "@/builder/context/hooks/useKeyboardDrag";
 import FrameCreator from "@/builder/context/canvasHelpers/FrameCreator";
 import { useImageDrop } from "@/builder/context/hooks/useImageDrop";
+import InterfaceMenu from "../toolbars/interfaceToolbar/interfaceMenu";
+import TextCreator from "@/builder/context/canvasHelpers/TextCreator";
+import "react-tooltip/dist/react-tooltip.css"; // Import this once, preferably in your main index.js file
 
 const Canvas = () => {
   const {
@@ -30,6 +33,7 @@ const Canvas = () => {
     nodeDisp,
     transform,
     isFrameModeActive,
+    isTextModeActive,
     interfaceDisp,
   } = useBuilder();
 
@@ -92,6 +96,7 @@ const Canvas = () => {
       <div className="fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)]">
         <ViewportDevTools />
         <InterfaceToolbar />
+        <InterfaceMenu />
         <ToolbarDragPreview />
         <div
           ref={containerRef}
@@ -110,8 +115,11 @@ const Canvas = () => {
           <SnapGuides />
           {/* <DebugSnapGrid /> */}
           <StyleUpdateHelper />
-          {!isFrameModeActive && !dragState.isDragging && <SelectionBox />}
+          {!isFrameModeActive && !isTextModeActive && !dragState.isDragging && (
+            <SelectionBox />
+          )}
           <FrameCreator />
+          <TextCreator />
           {!isMovingCanvas && <ArrowConnectors />}
 
           <div

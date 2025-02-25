@@ -127,6 +127,7 @@ export const useMouseUp = () => {
             width: dropWidth,
             height: dropHeight,
             gap: "0px",
+            color: "black",
           } as Node["style"],
         };
 
@@ -170,6 +171,7 @@ export const useMouseUp = () => {
             justifyContent: "center",
             alignItems: "center",
             gap: "0px",
+            color: "black",
           } as Node["style"],
         };
 

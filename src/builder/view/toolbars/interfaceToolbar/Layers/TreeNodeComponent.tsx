@@ -771,7 +771,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          `group flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius-sm)] transition-colors duration-150`,
+          `group flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius-md)] transition-colors duration-150`,
           "cursor-pointer",
           node.isViewport && "cursor-default", // Change cursor for viewports
           !isSelected && " hover:bg-[var(--bg-hover)]",

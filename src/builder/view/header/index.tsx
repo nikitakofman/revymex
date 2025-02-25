@@ -1,80 +1,56 @@
 import React from "react";
-import {
-  Layers,
-  Database,
-  Play,
-  Upload,
-  Share2,
-  Plus,
-  Cog,
-  Settings,
-} from "lucide-react";
+import { Frame, Play, Settings, Type } from "lucide-react";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
 import { useBuilder } from "@/builder/context/builderState";
 import { PreviewModal } from "../preview/PreviewRenderer";
 import Image from "next/image";
 import RevymeIcon from "./revyme-icon";
+import { Tooltip } from "react-tooltip";
 
 const Header = () => {
-  const { interfaceState, interfaceDisp, nodeState } = useBuilder();
-
-  const handleInsertClick = () => {
-    if (interfaceState.isInsertOpen) {
-      // If Insert is open, just close it (will default back to Layers)
-      interfaceDisp.toggleInsert();
-    } else {
-      // If Insert is closed, close other panels and open Insert
-      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
-      interfaceDisp.toggleInsert();
-    }
-  };
-
-  const handleCmsClick = () => {
-    if (interfaceState.isCmsOpen) {
-      // If CMS is open, just close it (will default back to Layers)
-      interfaceDisp.toggleCms();
-    } else {
-      // If CMS is closed, close other panels and open CMS
-      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
-      interfaceDisp.toggleCms();
-    }
-  };
+  const {
+    interfaceState,
+    interfaceDisp,
+    nodeState,
+    isFrameModeActive,
+    isTextModeActive,
+  } = useBuilder();
 
   return (
-    <div className="h-14 bg-[var(--bg-surface)] border-b border-[var(--border-light)] fixed w-full z-[9999] flex items-center justify-between px-3">
+    <div className="h-[52px] bg-[var(--bg-surface)] border-b border-[var(--border-light)] fixed w-full z-[9999] flex items-center justify-between px-3">
       <div className="flex items-center gap-4 px-2">
         <RevymeIcon />
 
         <LineSeparator orientation="vertical" height="26px" />
 
         <Button
-          leftIcon={<Plus size={32} />}
+          leftIcon={<Frame size={32} />}
           size="sm"
           className={
-            interfaceState.isInsertOpen
+            isFrameModeActive
               ? "bg-[var(--accent)]  text-white"
               : "hover:text-black dark:hover:text-white"
           }
-          variant="primary"
-          onClick={handleInsertClick}
-        >
-          Insert
-        </Button>
-
-        {/* <Button
-          leftIcon={<Layers size={20} />}
+          // variant="secondary"
+          data-tooltip-id="header-tooltip"
+          data-tooltip-content="Draw Frame"
+          data-tooltip-place="bottom"
+        />
+        <Button
+          leftIcon={<Type size={32} />}
           size="sm"
-          variant="ghost"
-          onClick={() => interfaceDisp.toggleLayers()}
           className={
-            !interfaceState.isInsertOpen && !interfaceState.isCmsOpen
-              ? "bg-[var(--accent)]"
-              : ""
+            isTextModeActive
+              ? "bg-[var(--accent)]  text-white"
+              : "hover:text-black dark:hover:text-white"
           }
-        >
-          <span className="ml-1.5">Layers</span>
-        </Button> */}
+          data-tooltip-id="header-tooltip"
+          data-tooltip-content="Draw Text"
+          data-tooltip-place="bottom"
+        />
+
+        {/*
 
         <Button
           leftIcon={<Layers size={20} />}
@@ -93,7 +69,7 @@ const Header = () => {
           onClick={handleCmsClick}
         >
           <span className="ml-1.5">CMS</span>
-        </Button>
+        </Button> */}
       </div>
 
       <div className="flex items-center gap-3">
@@ -129,6 +105,21 @@ const Header = () => {
         isOpen={interfaceState.isPreviewOpen}
         onClose={() => interfaceDisp.togglePreview()}
         nodes={nodeState.nodes}
+      />
+
+      <Tooltip
+        id="header-tooltip"
+        delayShow={500} // 500ms delay before showing$
+        opacity={1}
+        style={{
+          backgroundColor: "var(--accent)",
+          padding: "6px 10px",
+          borderRadius: "4px",
+          fontSize: "12px",
+          opacity: "1",
+          fontWeight: "500",
+          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+        }}
       />
     </div>
   );

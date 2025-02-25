@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { computeFrameDropIndicator, findIndexWithinParent } from "../utils";
+import { computeFrameDropIndicator } from "../utils";
 
 interface DrawingBoxState {
   startX: number;
@@ -19,83 +19,32 @@ const preventSelectStyle = {
   msUserSelect: "none",
 } as const;
 
-export const FrameCreator: React.FC = () => {
-  const { containerRef, nodeDisp, transform, nodeState } = useBuilder();
+export const TextCreator: React.FC = () => {
+  const {
+    containerRef,
+    nodeDisp,
+    transform,
+    nodeState,
+    setNodeStyle,
+    isTextModeActive,
+    setIsTextModeActive,
+  } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
-  const { isFrameModeActive, setIsFrameModeActive } = useBuilder();
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
 
-  const handleMediaToFrameTransformation = (
-    mediaNode: Node,
-    droppedNode: Node,
-    position: string
-  ) => {
-    if (position !== "inside") return false;
-
-    const frameNode: Node = {
-      ...mediaNode,
-      type: "frame",
-      style: {
-        ...mediaNode.style,
-        // Set the appropriate background property based on type
-        ...(mediaNode.type === "video"
-          ? {
-              backgroundVideo: mediaNode.style.src,
-            }
-          : { backgroundImage: mediaNode.style.src }),
-        src: undefined,
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-    };
-
-    // First replace the media with a frame
-    nodeDisp.replaceNode(mediaNode.id, frameNode);
-
-    // Then add the dropped node as a child
-    const childNode = {
-      ...droppedNode,
-      sharedId: nanoid(),
-      style: {
-        ...droppedNode.style,
-        position: "relative",
-        zIndex: "",
-        transform: "",
-        left: "",
-        top: "",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-      parentId: frameNode.id,
-      inViewport: frameNode.inViewport || false,
-    };
-
-    nodeDisp.addNode(
-      childNode,
-      frameNode.id,
-      "inside",
-      frameNode.inViewport || false
-    );
-
-    return true;
-  };
-
-  // Handle F key press
+  // Handle T key press to activate text creation mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "f" && !e.repeat) {
-        setIsFrameModeActive(true);
+      if (e.key.toLowerCase() === "t" && !e.repeat) {
+        setIsTextModeActive(true);
         document.body.style.cursor = "crosshair";
         Object.assign(document.body.style, preventSelectStyle);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "f") {
-        setIsFrameModeActive(false);
+      if (e.key.toLowerCase() === "t") {
+        setIsTextModeActive(false);
         document.body.style.cursor = "default";
         document.body.style.userSelect = "";
         document.body.style.WebkitUserSelect = "";
@@ -110,7 +59,7 @@ export const FrameCreator: React.FC = () => {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      // Cleanup styles if component unmounts while frame mode is active
+      // Cleanup styles if component unmounts while text mode is active
       document.body.style.userSelect = "";
       document.body.style.WebkitUserSelect = "";
       document.body.style.MozUserSelect = "";
@@ -140,9 +89,8 @@ export const FrameCreator: React.FC = () => {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      if (!isFrameModeActive) return;
+      if (!isTextModeActive) return;
 
-      const target = e.target as HTMLElement;
       targetFrameRef.current = findTargetFrame(e);
 
       const rect = canvas.getBoundingClientRect();
@@ -186,57 +134,23 @@ export const FrameCreator: React.FC = () => {
         const canvasX = (left - transform.x) / transform.scale;
         const canvasY = (top - transform.y) / transform.scale;
 
-        // Check if we're drawing over a media element
+        // Check if we're inside a frame
         const targetFrame = targetFrameRef.current;
-        const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-        let mediaElement = null;
 
-        for (const el of elementsUnder) {
-          const mediaEl = el.closest(
-            '[data-node-type="image"], [data-node-type="video"]'
-          );
-          if (mediaEl) {
-            const mediaId = mediaEl.getAttribute("data-node-id");
-            if (mediaId) {
-              const mediaNode = nodeState.nodes.find((n) => n.id === mediaId);
-              if (mediaNode) {
-                mediaElement = { node: mediaNode, element: mediaEl };
-                break;
-              }
-            }
-          }
-        }
+        // Calculate font size based on height (using about 70% of height as a reasonable font size)
+        const scaledHeight = height / transform.scale;
+        const calculatedFontSize = Math.max(
+          12,
+          Math.min(200, Math.floor(scaledHeight * 0.7))
+        );
 
-        if (mediaElement) {
-          // We're drawing over a media element - transform it to a frame
-          const newFrame: Node = {
-            id: nanoid(),
-            type: "frame",
-            style: {
-              position: "relative",
-              width: `${width / transform.scale}px`,
-              height: `${height / transform.scale}px`,
-              backgroundColor: "#97cffc",
-              flex: "0 0 auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            },
-            inViewport: mediaElement.node.inViewport,
-          };
+        // Create text with font size in a span element instead of on the paragraph
+        const defaultText = `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`;
 
-          // Use the existing handleMediaToFrameTransformation
-          const transformed = handleMediaToFrameTransformation(
-            mediaElement.node,
-            newFrame,
-            "inside"
-          );
+        let newNodeId: string;
 
-          if (transformed) {
-            nodeDisp.syncViewports();
-          }
-        } else if (targetFrame) {
-          // Drawing over a frame - insert as child
+        if (targetFrame) {
+          // Drawing over a frame - insert text as child
           const frameChildren = nodeState.nodes
             .filter((n) => n.parentId === targetFrame.id)
             .map((node) => {
@@ -250,21 +164,20 @@ export const FrameCreator: React.FC = () => {
                 item !== null
             );
 
-          const newFrame: Node = {
+          const newText: Node = {
             id: nanoid(),
-            type: "frame",
+            type: "text",
             style: {
               position: "relative",
-              width: `${width / transform.scale}px`,
-              height: `${height / transform.scale}px`,
-              backgroundColor: "#97cffc",
+              width: `auto`,
+              height: `auto`,
               flex: "0 0 auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              text: defaultText,
             },
             inViewport: true,
           };
+
+          newNodeId = newText.id;
 
           const dropIndicator = computeFrameDropIndicator(
             targetFrame.element,
@@ -275,36 +188,46 @@ export const FrameCreator: React.FC = () => {
 
           if (dropIndicator?.dropInfo) {
             nodeDisp.addNode(
-              newFrame,
+              newText,
               dropIndicator.dropInfo.targetId,
               dropIndicator.dropInfo.position,
               true
             );
           } else {
-            nodeDisp.addNode(newFrame, targetFrame.id, "inside", true);
+            nodeDisp.addNode(newText, targetFrame.id, "inside", true);
           }
         } else {
-          // Drawing on canvas - create absolute positioned frame
-          const newFrame: Node = {
+          // Drawing on canvas - create absolute positioned text
+          const newText: Node = {
             id: nanoid(),
-            type: "frame",
+            type: "text",
             style: {
               position: "absolute",
               left: `${canvasX}px`,
               top: `${canvasY}px`,
               width: `${width / transform.scale}px`,
               height: `${height / transform.scale}px`,
-              backgroundColor: "#97cffc",
-
-              flex: "0 0 auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              text: defaultText,
             },
             inViewport: false,
           };
 
-          nodeDisp.addNode(newFrame, null, null, false);
+          newNodeId = newText.id;
+          nodeDisp.addNode(newText, null, null, false);
+        }
+
+        // Additional text styling options based on dimensions
+        if (width / transform.scale > 500) {
+          // For wider text boxes, center align text
+          setTimeout(() => {
+            setNodeStyle(
+              {
+                text: `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`,
+              },
+              [newNodeId],
+              true
+            );
+          }, 0);
         }
       }
 
@@ -313,7 +236,7 @@ export const FrameCreator: React.FC = () => {
       // Reset state
       setBox(null);
       targetFrameRef.current = null;
-      setIsFrameModeActive(false);
+      setIsTextModeActive(false);
       document.body.style.cursor = "default";
       document.body.style.userSelect = "";
       document.body.style.WebkitUserSelect = "";
@@ -333,7 +256,7 @@ export const FrameCreator: React.FC = () => {
   }, [
     containerRef,
     box?.isDrawing,
-    isFrameModeActive,
+    isTextModeActive,
     transform,
     nodeDisp,
     nodeState.nodes,
@@ -348,7 +271,7 @@ export const FrameCreator: React.FC = () => {
 
   return (
     <div
-      className="absolute pointer-events-none border border-blue-500 bg-blue-500/10"
+      className="absolute pointer-events-none border border-green-500 bg-green-500/10"
       style={{
         left,
         top,
@@ -361,4 +284,4 @@ export const FrameCreator: React.FC = () => {
   );
 };
 
-export default FrameCreator;
+export default TextCreator;

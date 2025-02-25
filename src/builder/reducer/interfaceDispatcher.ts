@@ -5,6 +5,8 @@ export interface InterfaceState {
   isLayersOpen: boolean;
   isCmsOpen: boolean;
   isPreviewOpen: boolean;
+  isPagesOpen: boolean;
+  isComponentsOpen: boolean;
 }
 
 export class InterfaceDispatcher {
@@ -19,6 +21,9 @@ export class InterfaceDispatcher {
         if (draft.isInsertOpen) {
           draft.isLayersOpen = false;
           draft.isCmsOpen = false;
+          draft.isPagesOpen = false;
+          draft.isComponentsOpen = false;
+          draft.isPreviewOpen = false;
         }
       })
     );
@@ -31,6 +36,9 @@ export class InterfaceDispatcher {
         if (draft.isLayersOpen) {
           draft.isInsertOpen = false;
           draft.isCmsOpen = false;
+          draft.isPagesOpen = false;
+          draft.isComponentsOpen = false;
+          draft.isPreviewOpen = false;
         }
       })
     );
@@ -43,6 +51,39 @@ export class InterfaceDispatcher {
         if (draft.isCmsOpen) {
           draft.isInsertOpen = false;
           draft.isLayersOpen = false;
+          draft.isPagesOpen = false;
+          draft.isComponentsOpen = false;
+          draft.isPreviewOpen = false;
+        }
+      })
+    );
+  }
+
+  togglePages() {
+    this.setState(
+      produce((draft) => {
+        draft.isPagesOpen = !draft.isPagesOpen;
+        if (draft.isPagesOpen) {
+          draft.isCmsOpen = false;
+          draft.isInsertOpen = false;
+          draft.isPreviewOpen = false;
+          draft.isLayersOpen = false;
+          draft.isComponentsOpen = false;
+        }
+      })
+    );
+  }
+
+  toggleComponents() {
+    this.setState(
+      produce((draft) => {
+        draft.isComponentsOpen = !draft.isComponentsOpen;
+        if (draft.isComponentsOpen) {
+          draft.isCmsOpen = false;
+          draft.isInsertOpen = false;
+          draft.isPreviewOpen = false;
+          draft.isLayersOpen = false;
+          draft.isPagesOpen = false;
         }
       })
     );
@@ -52,6 +93,13 @@ export class InterfaceDispatcher {
     this.setState(
       produce((draft) => {
         draft.isPreviewOpen = !draft.isPreviewOpen;
+        if (draft.isPreviewOpen) {
+          draft.isCmsOpen = false;
+          draft.isInsertOpen = false;
+          draft.isLayersOpen = false;
+          draft.isComponentsOpen = false;
+          draft.isPagesOpen = false;
+        }
       })
     );
   }

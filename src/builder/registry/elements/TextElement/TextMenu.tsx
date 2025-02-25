@@ -15,8 +15,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ColorPicker } from "../../../elementTools/_components/ColorPicker";
-import { ToolInput } from "../../../elementTools/_components/ToolInput";
+import { ColorPicker } from "../../../tools/_components/ColorPicker";
+import { ToolInput } from "../../../tools/_components/ToolInput";
 import { useBuilder } from "@/builder/context/builderState";
 import { Editor } from "@tiptap/react";
 import { FixedSizeList as List } from "react-window";

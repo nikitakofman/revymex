@@ -12,6 +12,7 @@ export const useConnect = () => {
     isMovingCanvas,
     selectedIdsRef,
     isFrameModeActive,
+    isTextModeActive,
     interfaceDisp,
   } = useBuilder();
   const handleDragStart = useDragStart();
@@ -43,7 +44,7 @@ export const useConnect = () => {
         // Check if click is on a resize handle
         const target = e.target as HTMLElement;
 
-        if (e.button === 2 || isFrameModeActive) {
+        if (e.button === 2 || isFrameModeActive || isTextModeActive) {
           return;
         }
 

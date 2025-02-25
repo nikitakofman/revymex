@@ -371,9 +371,9 @@ export const ViewportDevTools: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
+                  <textarea className="text-xs w-full whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
                     {JSON.stringify(nodeState.nodes, null, 2)}
-                  </pre>
+                  </textarea>
                 </div>
               )}
 

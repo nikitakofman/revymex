@@ -240,4 +240,6 @@ export const interfaceInitialState: InterfaceState = {
   isLayersOpen: false,
   isCmsOpen: false,
   isPreviewOpen: false,
+  isPagesOpen: false,
+  isComponentsOpen: false,
 };

@@ -10,7 +10,7 @@ type LineSeparatorProps = {
 };
 
 const LineSeparator: React.FC<LineSeparatorProps> = ({
-  color = "var(--border-default)",
+  color = "var(--border-light)",
   thickness = 1,
   className = "",
   orientation = "horizontal",

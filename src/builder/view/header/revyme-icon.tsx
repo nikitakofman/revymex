@@ -15,7 +15,7 @@ const RevymeIcon = () => {
     return theme === "dark" ? "/revymeicon.svg" : "/revymeiconblack.svg";
   };
 
-  return <Image src={getLogo()} width={10} height={10} alt="Revyme Logo" />;
+  return <Image src={getLogo()} width={12} height={12} alt="Revyme Logo" />;
 };
 
 export default RevymeIcon;

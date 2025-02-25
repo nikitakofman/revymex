@@ -79,6 +79,8 @@ interface BuilderContextType {
   selectedIdsRef: RefObject<(string | number)[]>;
   isFrameModeActive: boolean;
   setIsFrameModeActive: React.Dispatch<React.SetStateAction<boolean>>;
+  isTextModeActive: boolean;
+  setIsTextModeActive: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface RecordingSession {
@@ -107,6 +109,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [dragState, setDragState] = useState(dragInitialState);
   const [interfaceState, setInterfaceState] = useState(interfaceInitialState);
   const [isFrameModeActive, setIsFrameModeActive] = useState(false);
+  const [isTextModeActive, setIsTextModeActive] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -305,6 +308,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     selectedIdsRef,
     isFrameModeActive,
     setIsFrameModeActive,
+    isTextModeActive,
+    setIsTextModeActive,
   };
 
   return (

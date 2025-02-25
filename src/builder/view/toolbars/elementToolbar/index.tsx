@@ -1,14 +1,14 @@
 import React from "react";
-import LayoutTool from "@/builder/elementTools/LayoutTool";
-import { ToolbarDivider } from "@/builder/elementTools/_components/ToolbarAtoms";
-import DimensionsTool from "@/builder/elementTools/DimensionsTool";
-import SpacingTool from "@/builder/elementTools/SpacingTool";
-import { PositionTool } from "@/builder/elementTools/PositionTool";
+import LayoutTool from "@/builder/tools/LayoutTool";
+import { ToolbarDivider } from "@/builder/tools/_components/ToolbarAtoms";
+import DimensionsTool from "@/builder/tools/DimensionsTool";
+import SpacingTool from "@/builder/tools/SpacingTool";
+import { PositionTool } from "@/builder/tools/PositionTool";
 import { useBuilder } from "@/builder/context/builderState";
-import { BorderTool } from "@/builder/elementTools/BorderTool";
-import { TransformTool } from "@/builder/elementTools/TransformTool";
+import { BorderTool } from "@/builder/tools/BorderTool";
+import { TransformTool } from "@/builder/tools/TransformTool";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { FillTool } from "@/builder/elementTools/FillTool";
+import { FillTool } from "@/builder/tools/FillTool";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
