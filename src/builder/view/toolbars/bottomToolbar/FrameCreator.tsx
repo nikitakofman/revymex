@@ -24,6 +24,9 @@ export const FrameCreator: React.FC = () => {
     isFrameModeActive,
     setIsFrameModeActive,
     dragDisp,
+    isResizing,
+    isRotating,
+    isAdjustingGap,
   } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
@@ -52,7 +55,8 @@ export const FrameCreator: React.FC = () => {
     const handleMouseDown = (e: MouseEvent) => {
       if (!isFrameModeActive) return;
 
-      const target = e.target as HTMLElement;
+      if (isResizing || isRotating || isAdjustingGap) return;
+
       targetFrameRef.current = findTargetFrame(e);
 
       const rect = canvas.getBoundingClientRect();
@@ -275,6 +279,11 @@ export const FrameCreator: React.FC = () => {
     nodeState.nodes,
     setIsFrameModeActive,
     dragDisp,
+    isResizing,
+    isRotating,
+    isAdjustingGap,
+    box?.startX,
+    box?.startY,
   ]);
 
   if (!box?.isDrawing) return null;

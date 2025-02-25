@@ -1,29 +1,23 @@
 import React from "react";
-import { Frame, Play, Settings, Type } from "lucide-react";
+import { Play, Settings } from "lucide-react";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
 import { useBuilder } from "@/builder/context/builderState";
 import { PreviewModal } from "../preview/PreviewRenderer";
-import Image from "next/image";
 import RevymeIcon from "./revyme-icon";
 import { Tooltip } from "react-tooltip";
 
 const Header = () => {
-  const {
-    interfaceState,
-    interfaceDisp,
-    nodeState,
-    isFrameModeActive,
-    isTextModeActive,
-  } = useBuilder();
+  const { interfaceState, interfaceDisp, nodeState } = useBuilder();
 
   return (
-    <div className="h-[52px] bg-[var(--bg-surface)] border-b border-[var(--border-light)] fixed w-full z-[9999] flex items-center justify-between px-3">
+    <div className="h-[52px] header  bg-[var(--bg-surface)] border-b border-[var(--border-light)] fixed w-full z-[9999] flex items-center justify-between px-3">
       <div className="flex items-center gap-4 px-2">
         <RevymeIcon />
 
         <LineSeparator orientation="vertical" height="26px" />
 
+        <p className="text-sm font-bold">onedriverexpress</p>
         {/*
 
         <Button

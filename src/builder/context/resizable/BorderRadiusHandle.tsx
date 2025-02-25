@@ -26,6 +26,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     startRecording,
     stopRecording,
     dragState,
+    setIsAdjustingBorderRadius,
   } = useBuilder();
 
   const startPosRef = useRef<number>(0);
@@ -36,7 +37,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     e.stopPropagation();
 
     const sessionId = startRecording();
-
+    setIsAdjustingBorderRadius(true);
     // Get current radius in pixels - use the primary node as reference
     let currentRadius = 0;
     if (node.style.borderRadius) {
@@ -88,6 +89,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     const handleMouseUp = () => {
       dragDisp.hideStyleHelper();
       stopRecording(sessionId);
+      setIsAdjustingBorderRadius(false);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };

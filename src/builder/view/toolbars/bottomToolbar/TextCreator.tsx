@@ -25,6 +25,9 @@ export const TextCreator: React.FC = () => {
     isTextModeActive,
     setIsTextModeActive,
     dragDisp,
+    isResizing,
+    isRotating,
+    isAdjustingGap,
   } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
@@ -75,13 +78,14 @@ export const TextCreator: React.FC = () => {
           width: 0,
           height: 0,
           unit: "px",
-          fontSize: 0,
         },
       });
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!box?.isDrawing) return;
+
+      if (isResizing || isRotating || isAdjustingGap) return;
 
       const rect = canvas.getBoundingClientRect();
       const newX = e.clientX - rect.left;
@@ -307,6 +311,11 @@ export const TextCreator: React.FC = () => {
     setNodeStyle,
     setIsTextModeActive,
     dragDisp,
+    isResizing,
+    isRotating,
+    isAdjustingGap,
+    box?.startX,
+    box?.startY,
   ]);
 
   if (!box?.isDrawing) return null;
@@ -318,7 +327,7 @@ export const TextCreator: React.FC = () => {
 
   return (
     <div
-      className="absolute pointer-events-none border border-green-500 bg-green-500/10"
+      className="absolute pointer-events-none border border-blue-500 bg-blue-500/10"
       style={{
         left,
         top,

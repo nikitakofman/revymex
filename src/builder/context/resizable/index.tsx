@@ -79,6 +79,7 @@ function getHandlesFromDirection(dir: Direction) {
  * - SHIFT + corner => locks aspect ratio.
  * - SHIFT + direct edge => snaps to multiples of SHIFT_INCREMENT.
  * - No min-size clamp.
+ * - Respects locked nodes: they can be selected but not modified.
  */
 export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   node,
@@ -92,10 +93,12 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     setIsResizing,
     startRecording,
     stopRecording,
+    isMoveCanvasMode,
   } = useBuilder();
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
   const isSelected = dragState.selectedIds.includes(node.id);
+  const isLocked = node.isLocked === true;
 
   // For SHIFT+corner aspect ratio.
   const aspectRatioRef = useRef<AspectRatioState>({
@@ -103,7 +106,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     primaryAxis: null,
   });
 
-  // Store each node’s initial geometry on pointer-down.
+  // Store each node's initial geometry on pointer-down.
   const initialSizesRef = useRef<Record<string, NodeInitial>>({});
 
   const handleResizeStart = useCallback(
@@ -112,6 +115,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       direction: Direction,
       isDirectBorderResize = false
     ) => {
+      // Prevent resize for locked nodes
+      if (isLocked) return;
+
       if (!elementRef.current) return;
 
       e.preventDefault();
@@ -119,14 +125,27 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       const sessionId = startRecording();
 
-      // If multiple nodes are selected, use them; otherwise, just this node.
+      // If multiple nodes are selected, use only unlocked ones
       const selectedNodes =
-        dragState.selectedIds.length > 0 ? dragState.selectedIds : [node.id];
+        dragState.selectedIds.length > 0
+          ? dragState.selectedIds.filter((id) => {
+              const selectedNode =
+                dragState.selectedIds.length > 1
+                  ? document.querySelector(
+                      `[data-node-id="${id}"][data-node-locked="false"]`
+                    )
+                  : document.querySelector(`[data-node-id="${id}"]`);
+              return selectedNode !== null;
+            })
+          : [node.id];
+
+      // If all selected nodes are locked, don't proceed
+      if (selectedNodes.length === 0) return;
 
       // Determine which handles are active based on the resize direction.
       const { xHandle, yHandle } = getHandlesFromDirection(direction);
 
-      // 1) Capture each node’s initial geometry.
+      // 1) Capture each node's initial geometry.
       selectedNodes.forEach((nodeId) => {
         const el = document.querySelector(
           `[data-node-id="${nodeId}"]`
@@ -453,6 +472,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       startRecording,
       stopRecording,
       setIsResizing,
+      isLocked, // Add dependency on isLocked state
     ]
   );
 
@@ -464,14 +484,19 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           ...children.props.style,
           pointerEvents: dragState.isSelectionBoxActive ? "none" : "auto",
         },
+        "data-node-locked": isLocked ? "true" : "false", // Add data attribute for locked state
         children: children.props.children,
       } as React.HTMLAttributes<HTMLElement>)}
-      <VisualHelpers
-        elementRef={elementRef}
-        node={node}
-        isSelected={isSelected}
-        handleResizeStart={handleResizeStart}
-      />
+
+      {/* Only render visual helpers for unlocked nodes */}
+      {!isLocked && !isMoveCanvasMode && (
+        <VisualHelpers
+          elementRef={elementRef}
+          node={node}
+          isSelected={isSelected}
+          handleResizeStart={handleResizeStart}
+        />
+      )}
     </>
   );
 };

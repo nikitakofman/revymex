@@ -65,6 +65,8 @@ interface BuilderContextType {
   setIsAdjustingGap: React.Dispatch<React.SetStateAction<boolean>>;
   isRotating: boolean;
   setIsRotating: React.Dispatch<React.SetStateAction<boolean>>;
+  isAdjustingBorderRadius: boolean;
+  setIsAdjustingBorderRadius: React.Dispatch<React.SetStateAction<boolean>>;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -81,6 +83,8 @@ interface BuilderContextType {
   setIsFrameModeActive: React.Dispatch<React.SetStateAction<boolean>>;
   isTextModeActive: boolean;
   setIsTextModeActive: React.Dispatch<React.SetStateAction<boolean>>;
+  isMoveCanvasMode: boolean;
+  setIsMoveCanvasMode: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface RecordingSession {
@@ -114,13 +118,15 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const elementRef = useRef<HTMLDivElement>(null);
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 0.3 });
+  const [transform, setTransform] = useState({ x: 480, y: 200, scale: 0.3 });
   const [isMovingCanvas, setIsMovingCanvas] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isAdjustingGap, setIsAdjustingGap] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [isAdjustingBorderRadius, setIsAdjustingBorderRadius] = useState(false);
   const dragDimensionsRef = useRef<DragDimensions>({});
   const selectedIdsRef = useRef(null);
+  const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
 
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -310,6 +316,11 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     setIsFrameModeActive,
     isTextModeActive,
     setIsTextModeActive,
+    isAdjustingBorderRadius,
+    setIsAdjustingBorderRadius,
+    isMoveCanvasMode,
+    setIsMoveCanvasMode,
+    setIsMovingCanvas,
   };
 
   return (

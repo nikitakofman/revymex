@@ -1,5 +1,5 @@
 // Canvas.tsx
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import InterfaceToolbar from "../toolbars/leftToolbar";
 import { RenderNodes } from "../../registry/renderNodes";
 import { useBuilder } from "@/builder/context/builderState";
@@ -18,13 +18,17 @@ import SelectionBox from "@/builder/context/canvasHelpers/SelectionBox";
 import { useKeyboardDrag } from "@/builder/context/hooks/useKeyboardDrag";
 import FrameCreator from "../toolbars/bottomToolbar/FrameCreator";
 import { useImageDrop } from "@/builder/context/hooks/useImageDrop";
-import InterfaceMenu from "../toolbars/leftToolbar/interfaceMenu";
+import LeftMenu from "../toolbars/leftToolbar/leftMenu";
 import TextCreator from "../toolbars/bottomToolbar/TextCreator";
 import "react-tooltip/dist/react-tooltip.css";
 import BottomToolbar from "../toolbars/bottomToolbar";
 import { useCursorManager } from "../../context/hooks/useCursorManager";
+import LoadingScreen from "./loading-screen";
+import { useMoveCanvas } from "@/builder/context/hooks/useMoveCanvas";
 
 const Canvas = () => {
+  const [isLoading, setIsLoading] = useState(true);
+
   const {
     containerRef,
     contentRef,
@@ -36,11 +40,16 @@ const Canvas = () => {
     isFrameModeActive,
     isTextModeActive,
     interfaceDisp,
+    isResizing,
+    isRotating,
+    isAdjustingGap,
+    isAdjustingBorderRadius,
   } = useBuilder();
 
   // Use the cursor manager hook
-  const { isDrawingMode } = useCursorManager();
+  const { isDrawingMode, isMoveMode } = useCursorManager();
 
+  useMoveCanvas();
   useKeyboardDrag();
 
   const handleMouseMove = useMouseMove();
@@ -64,6 +73,34 @@ const Canvas = () => {
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  // Loading state detection based on critical refs and a minimum time
+  useEffect(() => {
+    // Minimum loading time for UX purposes
+    const minLoadTime = 800;
+    const minLoadTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, minLoadTime);
+
+    // Set up a reference to track when critical components have mounted
+    if (containerRef.current && contentRef.current) {
+      // Critical refs exist, we can consider the app "loaded"
+      // But still respect the minimum load time
+      const appLoadedTimer = setTimeout(() => {
+        clearTimeout(minLoadTimer);
+        setIsLoading(false);
+      }, 100); // Small buffer to ensure rendering is complete
+
+      return () => {
+        clearTimeout(appLoadedTimer);
+        clearTimeout(minLoadTimer);
+      };
+    }
+
+    return () => {
+      clearTimeout(minLoadTimer);
+    };
+  }, [containerRef.current, contentRef.current]);
+
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (dragState.isSelectionBoxActive) {
       return;
@@ -85,13 +122,18 @@ const Canvas = () => {
     }
   };
 
+  const isAnyResize =
+    !isResizing && !isAdjustingGap && !isRotating && !isAdjustingBorderRadius;
+
   return (
     <>
+      <LoadingScreen isLoading={isLoading} />
+
       <Header />
       <div className="fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)]">
         <ViewportDevTools />
         <InterfaceToolbar />
-        <InterfaceMenu />
+        <LeftMenu />
         <ToolbarDragPreview />
         <div
           ref={containerRef}
@@ -110,9 +152,11 @@ const Canvas = () => {
           <SnapGuides />
           {/* <DebugSnapGrid /> */}
           <StyleUpdateHelper />
-          {!isDrawingMode && !dragState.isDragging && <SelectionBox />}
-          <FrameCreator />
-          <TextCreator />
+          {!isDrawingMode && !isMoveMode && !dragState.isDragging && (
+            <SelectionBox />
+          )}
+          {isAnyResize && <FrameCreator />}
+          {isAnyResize && <TextCreator />}
           {!isMovingCanvas && <ArrowConnectors />}
 
           <div

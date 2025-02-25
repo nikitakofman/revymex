@@ -9,6 +9,7 @@ import { BorderTool } from "@/builder/tools/BorderTool";
 import { TransformTool } from "@/builder/tools/TransformTool";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { FillTool } from "@/builder/tools/FillTool";
+import Button from "@/components/ui/button";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -27,21 +28,55 @@ const getToolTypes = (elements: Node[]) => {
 };
 
 const ElementToolbar = () => {
-  const { dragState, nodeState } = useBuilder();
+  const { dragState, nodeState, setNodeStyle } = useBuilder();
   const selectedElements = nodeState.nodes.filter((node) =>
     dragState.selectedIds.includes(node.id)
   );
 
+  // Check if the primary selected element is hidden
+  const isPrimaryElementHidden = () => {
+    if (dragState.selectedIds.length === 0) return false;
+
+    const primaryElement = nodeState.nodes.find(
+      (node) => node.id === dragState.selectedIds[0]
+    );
+
+    return primaryElement?.style?.display === "none";
+  };
+
+  const isHidden = isPrimaryElementHidden();
   const toolTypes = getToolTypes(selectedElements);
 
   if (dragState.selectedIds.length === 0) {
     return (
-      <div className="w-64 fixed pt-3 right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]" />
+      <div className="w-64 fixed pt-3 right-toolbar right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]" />
+    );
+  }
+
+  // If the element is hidden, show a message instead of the tools
+  if (isHidden) {
+    return (
+      <div className="w-64 fixed right-toolbar scrollbar-hide pt-3 border-l pb-[80px] border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
+        <div className="flex flex-col items-center justify-center h-full px-6 gap-2">
+          <div className="text-[var(--text-primary)] text-center text-xs font-medium mb-2">
+            This element is hidden.
+          </div>
+          <Button
+            onClick={() => {
+              setNodeStyle({ display: "flex" }, undefined, true);
+            }}
+            variant="primary"
+            size="sm"
+          >
+            Unhide
+          </Button>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="w-64 fixed scrollbar-hide pt-3 border-l pb-[80px] border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
+    <div className="w-64 fixed right-toolbar scrollbar-hide pt-3 border-l pb-[80px] border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
       {toolTypes.hasDimensionTools && (
         <>
           <DimensionsTool />

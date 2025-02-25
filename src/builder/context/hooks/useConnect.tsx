@@ -14,11 +14,14 @@ export const useConnect = () => {
     isFrameModeActive,
     isTextModeActive,
     interfaceDisp,
+    isMoveCanvasMode,
   } = useBuilder();
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
+
+  console.log("isMoveCanvasMode", isMoveCanvasMode);
 
   const isNearEdge = (
     e: React.MouseEvent,
@@ -41,6 +44,11 @@ export const useConnect = () => {
   return useCallback(
     (node: Node) => {
       const handleMouseDown = (e: React.MouseEvent) => {
+        // Skip all drag handling if in move canvas mode
+        if (isMoveCanvasMode) {
+          return;
+        }
+
         // Check if click is on a resize handle
         const target = e.target as HTMLElement;
 
@@ -49,8 +57,6 @@ export const useConnect = () => {
         }
 
         interfaceDisp.toggleLayers();
-
-        console.log("mouse down now");
 
         // First check for explicit resize handles
         const resizeHandle = target.closest('[data-resize-handle="true"]');
@@ -71,7 +77,7 @@ export const useConnect = () => {
 
         const isAlreadySelected = dragState.selectedIds.includes(node.id);
 
-        // Rest of your existing handleMouseDown code...
+        // Handle selection for all nodes (including locked ones)
         const parentNode = node.parentId
           ? nodeState.nodes.find((n) => n.id === node.parentId)
           : null;
@@ -85,7 +91,6 @@ export const useConnect = () => {
         } else {
           if (isAlreadySelected && dragState.selectedIds.length > 1) {
             // Don't change the selection - the node is already part of multi-selection
-            // We simply do nothing here to preserve all selected nodes
           } else if (e.shiftKey) {
             // Add to selection with shift key
             dragDisp.addToSelection(node.id);
@@ -95,42 +100,49 @@ export const useConnect = () => {
           }
         }
 
-        mouseMoveHandlerRef.current = (moveEvent: MouseEvent) => {
-          if (mouseDownPosRef.current) {
-            const dx = Math.abs(moveEvent.clientX - mouseDownPosRef.current.x);
-            const dy = Math.abs(moveEvent.clientY - mouseDownPosRef.current.y);
-
-            if (dx > 1 || dy > 1) {
-              if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-              }
-
-              if (mouseMoveHandlerRef.current) {
-                window.removeEventListener(
-                  "mousemove",
-                  mouseMoveHandlerRef.current
-                );
-                mouseMoveHandlerRef.current = null;
-              }
-
-              // Check both resize handle and edges before starting drag
-              const currentTarget = document.elementFromPoint(
-                moveEvent.clientX,
-                moveEvent.clientY
-              ) as HTMLElement;
-              const isResizeHandle = currentTarget?.closest(
-                '[data-resize-handle="true"]'
+        // Only set up the mousemove handler for dragging if the node is not locked
+        if (!node.isLocked) {
+          mouseMoveHandlerRef.current = (moveEvent: MouseEvent) => {
+            if (mouseDownPosRef.current) {
+              const dx = Math.abs(
+                moveEvent.clientX - mouseDownPosRef.current.x
               );
-              const isEdge = currentTarget && isNearEdge(e, currentTarget);
+              const dy = Math.abs(
+                moveEvent.clientY - mouseDownPosRef.current.y
+              );
 
-              if (!isResizeHandle && !isEdge) {
-                handleDragStart(e, undefined, node);
+              if (dx > 1 || dy > 1) {
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                }
+
+                if (mouseMoveHandlerRef.current) {
+                  window.removeEventListener(
+                    "mousemove",
+                    mouseMoveHandlerRef.current
+                  );
+                  mouseMoveHandlerRef.current = null;
+                }
+
+                // Check both resize handle and edges before starting drag
+                const currentTarget = document.elementFromPoint(
+                  moveEvent.clientX,
+                  moveEvent.clientY
+                ) as HTMLElement;
+                const isResizeHandle = currentTarget?.closest(
+                  '[data-resize-handle="true"]'
+                );
+                const isEdge = currentTarget && isNearEdge(e, currentTarget);
+
+                if (!isResizeHandle && !isEdge) {
+                  handleDragStart(e, undefined, node);
+                }
               }
             }
-          }
-        };
+          };
 
-        window.addEventListener("mousemove", mouseMoveHandlerRef.current);
+          window.addEventListener("mousemove", mouseMoveHandlerRef.current);
+        }
       };
 
       // Rest of your existing component code...

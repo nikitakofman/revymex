@@ -19,7 +19,7 @@ export interface Node {
     isVideoBackground?: boolean;
     backgroundVideo?: string;
   };
-  isHidden?: boolean;
+  isLocked?: boolean;
   sharedId?: string;
   independentStyles?: {
     [styleProperty: string]: boolean;
@@ -417,30 +417,6 @@ export class NodeDispatcher {
     );
   }
 
-  toggleNodeVisibility(nodeId: string | number) {
-    this.setState((prev) =>
-      produce(prev, (draft) => {
-        const node = draft.nodes.find((n) => n.id === nodeId);
-        if (node) {
-          // Toggle the isHidden property
-          node.isHidden = !node.isHidden;
-
-          // If this node has a sharedId, update all other nodes with the same sharedId
-          if (node.sharedId) {
-            draft.nodes.forEach((otherNode) => {
-              if (
-                otherNode.id !== nodeId &&
-                otherNode.sharedId === node.sharedId
-              ) {
-                otherNode.isHidden = node.isHidden;
-              }
-            });
-          }
-        }
-      })
-    );
-  }
-
   setCustomName(nodeId: string | number, customName: string) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -583,6 +559,27 @@ export class NodeDispatcher {
             id: nodeId,
           };
         }
+      })
+    );
+  }
+
+  toggleNodeLock(nodeIds: (string | number)[]) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // Find all nodes that match the nodeIds
+        const nodesToToggle = draft.nodes.filter((n) => nodeIds.includes(n.id));
+
+        if (nodesToToggle.length === 0) return;
+
+        // Check the first node's isLocked state to determine the new state
+        // If any node is unlocked, we'll lock all nodes
+        const anyUnlocked = nodesToToggle.some((node) => !node.isLocked);
+        const newLockState = anyUnlocked;
+
+        // Update each node
+        nodesToToggle.forEach((node) => {
+          node.isLocked = newLockState;
+        });
       })
     );
   }

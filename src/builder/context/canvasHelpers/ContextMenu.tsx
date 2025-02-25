@@ -303,13 +303,19 @@ export const ContextMenu = () => {
       },
       Separator,
       {
-        label: "Lock",
+        label: node?.isLocked ? "Unlock" : "Lock",
         icon: Lock,
         shortcut: "⌘L",
         windowsShortcut: "Ctrl+L",
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
-          // Handle lock
+          // Use the nodesToLock array from before
+          const nodesToLock =
+            dragState.selectedIds.length > 0
+              ? dragState.selectedIds
+              : [dragState.contextMenu?.nodeId].filter(Boolean);
+
+          nodeDisp.toggleNodeLock(nodesToLock);
           dragDisp.hideContextMenu();
         },
       },

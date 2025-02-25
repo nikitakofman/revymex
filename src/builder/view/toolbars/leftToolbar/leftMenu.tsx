@@ -4,7 +4,7 @@ import Button from "@/components/ui/button";
 import { useBuilder } from "@/builder/context/builderState";
 import { Tooltip } from "react-tooltip";
 
-const InterfaceMenu = () => {
+const LeftMenu = () => {
   const { interfaceState, interfaceDisp } = useBuilder();
 
   const handleInsertClick = () => {
@@ -60,7 +60,7 @@ const InterfaceMenu = () => {
   };
 
   return (
-    <div className="left-0 w-[52px] py-4 bg-[var(--bg-surface)] h-full border-r border-[var(--border-light)] fixed z-[9999] items-center justify-between px-5">
+    <div className="left-0 w-[52px] left-menu py-4 bg-[var(--bg-surface)] h-full border-r border-[var(--border-light)] fixed z-[9999] items-center justify-between px-5">
       <div className="flex items-center flex-col gap-2">
         <Button
           leftIcon={<Plus size={32} />}
@@ -145,4 +145,4 @@ const InterfaceMenu = () => {
   );
 };
 
-export default InterfaceMenu;
+export default LeftMenu;

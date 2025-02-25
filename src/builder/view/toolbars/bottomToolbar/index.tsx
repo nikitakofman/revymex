@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   Hand,
   HelpCircle,
@@ -6,31 +6,23 @@ import {
   Keyboard,
   Type,
   Frame,
+  Pencil,
 } from "lucide-react";
 
-import ToggleGroup from "@/components/ui/toggle-group";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
 import { ThemeToggle } from "@/providers/ThemeToggle";
 import { useBuilder } from "@/builder/context/builderState";
 import { Tooltip } from "react-tooltip";
 
-interface BottomToolbarProps {
-  onGrabToggle: (isGrabbing: boolean) => void;
-  isGrabbing?: boolean;
-  onZoomIn?: () => void;
-  onZoomOut?: () => void;
-  onZoomReset?: () => void;
-  onZoomFit?: () => void;
-}
-
-const BottomToolbar = ({ onGrabToggle }: BottomToolbarProps) => {
-  const [mode, setMode] = useState("send");
+const BottomToolbar = () => {
   const {
     isFrameModeActive,
     setIsFrameModeActive,
     isTextModeActive,
     setIsTextModeActive,
+    isMoveCanvasMode,
+    setIsMoveCanvasMode,
   } = useBuilder();
 
   // Handle Frame and Text mode toggles
@@ -39,9 +31,10 @@ const BottomToolbar = ({ onGrabToggle }: BottomToolbarProps) => {
     if (isFrameModeActive) {
       setIsFrameModeActive(false);
     } else {
-      // Turn on frame mode and ensure text mode is off
+      // Turn on frame mode and ensure other modes are off
       setIsFrameModeActive(true);
       setIsTextModeActive(false);
+      setIsMoveCanvasMode(false);
     }
   };
 
@@ -50,15 +43,28 @@ const BottomToolbar = ({ onGrabToggle }: BottomToolbarProps) => {
     if (isTextModeActive) {
       setIsTextModeActive(false);
     } else {
-      // Turn on text mode and ensure frame mode is off
+      // Turn on text mode and ensure other modes are off
       setIsTextModeActive(true);
       setIsFrameModeActive(false);
+      setIsMoveCanvasMode(false);
+    }
+  };
+
+  const handleMoveCanvasClick = () => {
+    // If move canvas mode is already active, turn it off
+    if (isMoveCanvasMode) {
+      setIsMoveCanvasMode(false);
+    } else {
+      // Turn on move canvas mode and ensure other modes are off
+      setIsMoveCanvasMode(true);
+      setIsFrameModeActive(false);
+      setIsTextModeActive(false);
     }
   };
 
   return (
-    <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[9998] flex justify-center">
-      <div className="bg-[var(--bg-surface)] flex items-center p-2 rounded-[var(--radius-md)] border border-[var(--border-light)] shadow-elevation-medium transition-all duration-300 w-auto">
+    <div className="fixed bottom-4 bottom-toolbar left-1/2 transform -translate-x-1/2 z-[9998] flex justify-center">
+      <div className="bg-[var(--bg-surface)] flex items-center p-1.5 rounded-[var(--radius-md)] border border-[var(--border-light)] shadow-elevation-medium transition-all duration-300 w-auto">
         <div className="flex items-center gap-1 transition-all duration-300">
           <Button
             leftIcon={<Frame size={32} />}
@@ -71,7 +77,7 @@ const BottomToolbar = ({ onGrabToggle }: BottomToolbarProps) => {
             }
             variant="ghost"
             data-tooltip-id="bottom-bar-tooltip"
-            data-tooltip-content="Draw Frame"
+            data-tooltip-content="Draw Frame (F)"
             data-tooltip-place="top"
           />
           <Button
@@ -85,7 +91,7 @@ const BottomToolbar = ({ onGrabToggle }: BottomToolbarProps) => {
                 : "hover:text-black dark:hover:text-white"
             }
             data-tooltip-id="bottom-bar-tooltip"
-            data-tooltip-content="Draw Text"
+            data-tooltip-content="Draw Text (T)"
             data-tooltip-place="top"
           />
           <LineSeparator
@@ -94,39 +100,47 @@ const BottomToolbar = ({ onGrabToggle }: BottomToolbarProps) => {
             className="mx-1"
           />
 
-          <ToggleGroup
-            type="icons"
-            options={[
-              { label: <MousePointer2 size={18} />, value: "send" },
-              { label: <Hand size={18} />, value: "hand" },
-            ]}
-            value={mode}
-            onChange={(value) => {
-              setMode(value);
-              onGrabToggle(value === "hand");
-
-              // When switching to pointer or hand mode, turn off both drawing modes
-              if (isFrameModeActive || isTextModeActive) {
-                setIsFrameModeActive(false);
-                setIsTextModeActive(false);
-              }
-            }}
+          <Button
+            leftIcon={<Pencil size={32} />}
+            size="md"
+            variant="ghost"
+            data-tooltip-id="bottom-bar-tooltip"
+            data-tooltip-content="Draw"
+            data-tooltip-place="top"
           />
 
-          <Button size="sm" variant="ghost">
-            <HelpCircle size={18} />
-          </Button>
-          <Button size="sm" variant="ghost">
-            <Keyboard size={18} />
-          </Button>
-          <LineSeparator orientation="vertical" height="26px" />
-          <ThemeToggle />
+          <LineSeparator
+            orientation="vertical"
+            height="26px"
+            className="mx-1"
+          />
+
+          <Button
+            leftIcon={<Hand size={32} />}
+            size="md"
+            variant="ghost"
+            onClick={handleMoveCanvasClick}
+            className={
+              isMoveCanvasMode
+                ? "bg-[var(--accent)] hover:bg-[var(--accent)]  text-white"
+                : "hover:text-black dark:hover:text-white"
+            }
+            data-tooltip-id="bottom-bar-tooltip"
+            data-tooltip-content="Move Canvas (Space)"
+            data-tooltip-place="top"
+          />
+
+          <ThemeToggle
+            data-tooltip-id="bottom-bar-tooltip"
+            data-tooltip-content="Theme"
+            data-tooltip-place="top"
+          />
         </div>
       </div>
 
       <Tooltip
         id="bottom-bar-tooltip"
-        delayShow={500} // 500ms delay before showing$
+        delayShow={500}
         opacity={1}
         style={{
           backgroundColor: "var(--accent)",

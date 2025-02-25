@@ -41,7 +41,7 @@ export const SelectionBox: React.FC = () => {
       };
 
       const selectableElements = nodeState.nodes
-        .filter((node) => !node.isViewport)
+        .filter((node) => !node.isViewport && !node.isLocked) // Filter out locked nodes
         .map((node) => {
           const element = document.querySelector(`[data-node-id="${node.id}"]`);
           return { node, element };
