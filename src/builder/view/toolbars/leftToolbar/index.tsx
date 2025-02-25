@@ -10,7 +10,7 @@ const InterfaceToolbar = () => {
   const { interfaceState } = useBuilder();
 
   return (
-    <div className="w-64 fixed pl-1 ml-[44px] z-50 h-screen bg-[var(--bg-toolbar)] border-r border-[var(--border-light)]">
+    <div className="w-64 fixed ml-[52px] z-50 h-screen bg-[var(--bg-toolbar)] border-r border-[var(--border-light)]">
       {interfaceState.isInsertOpen ? (
         <InsertPanel />
       ) : interfaceState.isCmsOpen ? (

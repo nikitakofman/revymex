@@ -60,7 +60,7 @@ const InterfaceMenu = () => {
   };
 
   return (
-    <div className="left-0 w-[49px] py-4 bg-[var(--bg-surface)] h-full border-r border-[var(--border-light)] fixed z-[9999] items-center justify-between px-5">
+    <div className="left-0 w-[52px] py-4 bg-[var(--bg-surface)] h-full border-r border-[var(--border-light)] fixed z-[9999] items-center justify-between px-5">
       <div className="flex items-center flex-col gap-2">
         <Button
           leftIcon={<Plus size={32} />}

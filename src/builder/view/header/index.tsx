@@ -24,32 +24,6 @@ const Header = () => {
 
         <LineSeparator orientation="vertical" height="26px" />
 
-        <Button
-          leftIcon={<Frame size={32} />}
-          size="sm"
-          className={
-            isFrameModeActive
-              ? "bg-[var(--accent)]  text-white"
-              : "hover:text-black dark:hover:text-white"
-          }
-          // variant="secondary"
-          data-tooltip-id="header-tooltip"
-          data-tooltip-content="Draw Frame"
-          data-tooltip-place="bottom"
-        />
-        <Button
-          leftIcon={<Type size={32} />}
-          size="sm"
-          className={
-            isTextModeActive
-              ? "bg-[var(--accent)]  text-white"
-              : "hover:text-black dark:hover:text-white"
-          }
-          data-tooltip-id="header-tooltip"
-          data-tooltip-content="Draw Text"
-          data-tooltip-place="bottom"
-        />
-
         {/*
 
         <Button

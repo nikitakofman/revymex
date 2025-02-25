@@ -13,16 +13,16 @@ import { ToolbarDragPreview } from "@/builder/context/canvasHelpers/toolbarDragP
 import { StyleUpdateHelper } from "@/builder/context/canvasHelpers/StyleUpdateHelper";
 import { ArrowConnectors } from "../../context/canvasHelpers/ArrowConnectors";
 import { ContextMenu } from "@/builder/context/canvasHelpers/ContextMenu";
+import ViewportBar from "../toolbars/bottomToolbar";
 import Header from "../header";
 import SelectionBox from "@/builder/context/canvasHelpers/SelectionBox";
 import { useKeyboardDrag } from "@/builder/context/hooks/useKeyboardDrag";
-import FrameCreator from "../toolbars/bottomToolbar/FrameCreator";
+import FrameCreator from "@/builder/context/canvasHelpers/FrameCreator";
 import { useImageDrop } from "@/builder/context/hooks/useImageDrop";
 import InterfaceMenu from "../toolbars/leftToolbar/interfaceMenu";
-import TextCreator from "../toolbars/bottomToolbar/TextCreator";
-import "react-tooltip/dist/react-tooltip.css";
+import TextCreator from "@/builder/context/canvasHelpers/TextCreator";
+import "react-tooltip/dist/react-tooltip.css"; // Import this once, preferably in your main index.js file
 import BottomToolbar from "../toolbars/bottomToolbar";
-import { useCursorManager } from "../../context/hooks/useCursorManager";
 
 const Canvas = () => {
   const {
@@ -37,9 +37,6 @@ const Canvas = () => {
     isTextModeActive,
     interfaceDisp,
   } = useBuilder();
-
-  // Use the cursor manager hook
-  const { isDrawingMode } = useCursorManager();
 
   useKeyboardDrag();
 
@@ -64,6 +61,14 @@ const Canvas = () => {
     };
   }, [handleMouseMove, handleMouseUp]);
 
+  useEffect(() => {
+    if (dragState.isDragging) {
+      document.body.style.userSelect = "none";
+    } else {
+      document.body.style.userSelect = "";
+    }
+  }, [dragState.isDragging]);
+
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (dragState.isSelectionBoxActive) {
       return;
@@ -72,6 +77,7 @@ const Canvas = () => {
     if (e.target === containerRef.current || e.target === contentRef.current) {
       console.log("clicked on canvas");
       dragDisp.clearSelection();
+
       interfaceDisp.toggleLayers();
     }
   };
@@ -110,7 +116,9 @@ const Canvas = () => {
           <SnapGuides />
           {/* <DebugSnapGrid /> */}
           <StyleUpdateHelper />
-          {!isDrawingMode && !dragState.isDragging && <SelectionBox />}
+          {!isFrameModeActive && !isTextModeActive && !dragState.isDragging && (
+            <SelectionBox />
+          )}
           <FrameCreator />
           <TextCreator />
           {!isMovingCanvas && <ArrowConnectors />}

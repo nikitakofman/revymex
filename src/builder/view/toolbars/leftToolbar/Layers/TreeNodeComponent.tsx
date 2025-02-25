@@ -19,11 +19,11 @@ import {
 import {
   getElementIcon,
   DND_HOVER_TIMEOUT,
-  handleMediaToFrameTransformation,
   isChildOfDragged,
   firstLetterUpperCase,
   getNodeViewport,
 } from "./utils";
+import { handleMediaToFrameTransformation } from "@/builder/context/utils";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;

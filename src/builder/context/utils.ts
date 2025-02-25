@@ -1,7 +1,12 @@
 import { DragState, SnapGuideLine } from "@/builder/reducer/dragDispatcher";
-import { Node, NodeState } from "@/builder/reducer/nodeDispatcher";
+import {
+  Node,
+  NodeDispatcher,
+  NodeState,
+} from "@/builder/reducer/nodeDispatcher";
 import { LineIndicatorState } from "./builderState";
 import { HTMLAttributes } from "react";
+import { nanoid } from "nanoid";
 
 export interface Transform {
   x: number;
@@ -1332,4 +1337,70 @@ export const convertToNewUnit = (
   }
 
   return valueInPixels;
+};
+
+// Helper function to transform image/video to frame
+export const handleMediaToFrameTransformation = (
+  mediaNode: Node,
+  droppedNode?: Node,
+  nodeDisp?: NodeDispatcher,
+  position: string = "inside"
+) => {
+  if (position !== "inside") return false;
+
+  // Create frame node from media node
+  const frameNode: Node = {
+    ...mediaNode,
+    type: "frame",
+    style: {
+      ...mediaNode.style,
+      // Set the appropriate background property based on type
+      ...(mediaNode.type === "video"
+        ? {
+            backgroundVideo: mediaNode.style.src,
+          }
+        : { backgroundImage: mediaNode.style.src }),
+      src: undefined,
+      position: "relative",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+  };
+
+  // If we have a node dispatcher, perform the transformation
+  if (nodeDisp) {
+    // First replace the media with a frame
+    nodeDisp.replaceNode(mediaNode.id, frameNode);
+
+    // If we have a dropped node, add it as a child
+    if (droppedNode) {
+      const childNode = {
+        ...droppedNode,
+        sharedId: nanoid(),
+        style: {
+          ...droppedNode.style,
+          position: "relative",
+          zIndex: "",
+          transform: "",
+          left: "",
+          top: "",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        parentId: frameNode.id,
+        inViewport: frameNode.inViewport || false,
+      };
+
+      nodeDisp.addNode(
+        childNode,
+        frameNode.id,
+        "inside",
+        frameNode.inViewport || false
+      );
+    }
+  }
+
+  return true;
 };

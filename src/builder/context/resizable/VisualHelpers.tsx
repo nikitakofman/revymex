@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, RefObject } from "react";
+import React, { useState, useLayoutEffect, RefObject, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "@/builder/context/builderState";
 import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
@@ -45,8 +45,8 @@ export const VisualHelpers = ({
 }) => {
   // State for individual element's bounding rectangle
   const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  const [localComputedStyle, setLocalComputedStyle] =
-    useState<CSSStyleDeclaration | null>(null);
+  // Use ref instead of state for computedStyle to avoid re-renders
+  const computedStyleRef = useRef<CSSStyleDeclaration | null>(null);
   // State for group (multi-selection) bounds
   const [groupBoundsState, setGroupBoundsState] = useState<{
     left: number;
@@ -74,7 +74,7 @@ export const VisualHelpers = ({
   const isMultiSelection = dragState.selectedIds.length > 1;
   const isPrimarySelected = isSelected && dragState.selectedIds[0] === node.id;
 
-  // --- Individual Element Calculation (Same as Original) ---
+  // --- Individual Element Calculation (Modified to use ref instead of state) ---
   useLayoutEffect(() => {
     if (!elementRef.current || !contentRef.current) return;
     const updateRect = () => {
@@ -83,16 +83,19 @@ export const VisualHelpers = ({
       if (!element || !content) return;
       const elementRect = element.getBoundingClientRect();
       const contentRect = content.getBoundingClientRect();
-      const computedStyle = window.getComputedStyle(element);
-      setLocalComputedStyle(computedStyle);
-      const width = parseFloat(computedStyle.width);
-      const height = parseFloat(computedStyle.height);
+
+      // Store in ref instead of state to avoid re-renders
+      computedStyleRef.current = window.getComputedStyle(element);
+
+      const width = parseFloat(computedStyleRef.current.width);
+      const height = parseFloat(computedStyleRef.current.height);
       const centerX =
         (elementRect.left - contentRect.left + elementRect.width / 2) /
         transform.scale;
       const centerY =
         (elementRect.top - contentRect.top + elementRect.height / 2) /
         transform.scale;
+
       setRect({
         top: centerY - height / 2,
         left: centerX - width / 2,
@@ -195,6 +198,9 @@ export const VisualHelpers = ({
     transformOrigin: "center center",
   };
 
+  // Get the current computed style display value from the ref
+  const currentDisplayStyle = computedStyleRef.current?.display;
+
   return createPortal(
     <>
       <div className="pointer-events-none" style={helperStyles}>
@@ -274,7 +280,7 @@ export const VisualHelpers = ({
                 )}
 
                 {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) &&
-                  localComputedStyle?.display !== "grid" && (
+                  currentDisplayStyle !== "grid" && (
                     <GapHandles
                       node={node}
                       isSelected={isSelected}

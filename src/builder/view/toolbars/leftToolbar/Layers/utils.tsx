@@ -5,6 +5,7 @@ import {
   NodeState,
 } from "@/builder/reducer/nodeDispatcher";
 import { Frame, Box, Type, ImageIcon } from "lucide-react";
+import { nanoid } from "nanoid";
 
 // Constants for DnD
 export const DND_HOVER_TIMEOUT = 500; // ms until a hover opens a collapsed node
@@ -128,10 +129,13 @@ export const getElementIcon = (type: string, isSelected: boolean) => {
 // Helper function to transform image/video to frame
 export const handleMediaToFrameTransformation = (
   mediaNode: Node,
-  droppedNode: Node,
-  nodeDisp: NodeDispatcher
+  droppedNode?: Node,
+  nodeDisp?: NodeDispatcher,
+  position: string = "inside"
 ) => {
-  // Create a frame from the media node
+  if (position !== "inside") return false;
+
+  // Create frame node from media node
   const frameNode: Node = {
     ...mediaNode,
     type: "frame",
@@ -151,10 +155,40 @@ export const handleMediaToFrameTransformation = (
     },
   };
 
-  // First replace the media with a frame (without moving the dropped node yet)
-  nodeDisp.replaceNode(mediaNode.id, frameNode);
+  // If we have a node dispatcher, perform the transformation
+  if (nodeDisp) {
+    // First replace the media with a frame
+    nodeDisp.replaceNode(mediaNode.id, frameNode);
 
-  // Important: We *don't* add the node as a child here - we let the normal drop flow handle that
+    // If we have a dropped node, add it as a child
+    if (droppedNode) {
+      const childNode = {
+        ...droppedNode,
+        sharedId: nanoid(),
+        style: {
+          ...droppedNode.style,
+          position: "relative",
+          zIndex: "",
+          transform: "",
+          left: "",
+          top: "",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        parentId: frameNode.id,
+        inViewport: frameNode.inViewport || false,
+      };
+
+      nodeDisp.addNode(
+        childNode,
+        frameNode.id,
+        "inside",
+        frameNode.inViewport || false
+      );
+    }
+  }
+
   return true;
 };
 

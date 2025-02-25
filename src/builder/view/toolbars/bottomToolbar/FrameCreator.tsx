@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { computeFrameDropIndicator } from "../utils";
+import {
+  computeFrameDropIndicator,
+  handleMediaToFrameTransformation,
+} from "@/builder/context/utils";
 
 interface DrawingBoxState {
   startX: number;
@@ -12,60 +15,18 @@ interface DrawingBoxState {
   isDrawing: boolean;
 }
 
-const preventSelectStyle = {
-  userSelect: "none",
-  WebkitUserSelect: "none",
-  MozUserSelect: "none",
-  msUserSelect: "none",
-} as const;
-
-export const TextCreator: React.FC = () => {
+export const FrameCreator: React.FC = () => {
   const {
     containerRef,
     nodeDisp,
     transform,
     nodeState,
-    setNodeStyle,
-    isTextModeActive,
-    setIsTextModeActive,
+    isFrameModeActive,
+    setIsFrameModeActive,
+    dragDisp,
   } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
-
-  // Handle T key press to activate text creation mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "t" && !e.repeat) {
-        setIsTextModeActive(true);
-        document.body.style.cursor = "crosshair";
-        Object.assign(document.body.style, preventSelectStyle);
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "t") {
-        setIsTextModeActive(false);
-        document.body.style.cursor = "default";
-        document.body.style.userSelect = "";
-        document.body.style.WebkitUserSelect = "";
-        document.body.style.MozUserSelect = "";
-        document.body.style.msUserSelect = "";
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      // Cleanup styles if component unmounts while text mode is active
-      document.body.style.userSelect = "";
-      document.body.style.WebkitUserSelect = "";
-      document.body.style.MozUserSelect = "";
-      document.body.style.msUserSelect = "";
-    };
-  }, []);
 
   useEffect(() => {
     const canvas = containerRef.current;
@@ -89,8 +50,9 @@ export const TextCreator: React.FC = () => {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      if (!isTextModeActive) return;
+      if (!isFrameModeActive) return;
 
+      const target = e.target as HTMLElement;
       targetFrameRef.current = findTargetFrame(e);
 
       const rect = canvas.getBoundingClientRect();
@@ -100,6 +62,17 @@ export const TextCreator: React.FC = () => {
         currentX: e.clientX - rect.left,
         currentY: e.clientY - rect.top,
         isDrawing: true,
+      });
+
+      // Initialize style helper
+      dragDisp.updateStyleHelper({
+        type: "dimensions",
+        position: { x: e.clientX, y: e.clientY },
+        dimensions: {
+          width: 0,
+          height: 0,
+          unit: "px",
+        },
       });
     };
 
@@ -115,6 +88,21 @@ export const TextCreator: React.FC = () => {
         currentX: newX,
         currentY: newY,
       }));
+
+      // Calculate real dimensions in pixels
+      const width = Math.abs(newX - box.startX) / transform.scale;
+      const height = Math.abs(newY - box.startY) / transform.scale;
+
+      // Update style helper with current dimensions
+      dragDisp.updateStyleHelper({
+        type: "dimensions",
+        position: { x: e.clientX, y: e.clientY },
+        dimensions: {
+          width,
+          height,
+          unit: "px",
+        },
+      });
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -134,23 +122,58 @@ export const TextCreator: React.FC = () => {
         const canvasX = (left - transform.x) / transform.scale;
         const canvasY = (top - transform.y) / transform.scale;
 
-        // Check if we're inside a frame
+        // Check if we're drawing over a media element
         const targetFrame = targetFrameRef.current;
+        const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
+        let mediaElement = null;
 
-        // Calculate font size based on height (using about 70% of height as a reasonable font size)
-        const scaledHeight = height / transform.scale;
-        const calculatedFontSize = Math.max(
-          12,
-          Math.min(200, Math.floor(scaledHeight * 0.7))
-        );
+        for (const el of elementsUnder) {
+          const mediaEl = el.closest(
+            '[data-node-type="image"], [data-node-type="video"]'
+          );
+          if (mediaEl) {
+            const mediaId = mediaEl.getAttribute("data-node-id");
+            if (mediaId) {
+              const mediaNode = nodeState.nodes.find((n) => n.id === mediaId);
+              if (mediaNode) {
+                mediaElement = { node: mediaNode, element: mediaEl };
+                break;
+              }
+            }
+          }
+        }
 
-        // Create text with font size in a span element instead of on the paragraph
-        const defaultText = `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`;
+        if (mediaElement) {
+          // We're drawing over a media element - transform it to a frame
+          const newFrame: Node = {
+            id: nanoid(),
+            type: "frame",
+            style: {
+              position: "relative",
+              width: `${width / transform.scale}px`,
+              height: `${height / transform.scale}px`,
+              backgroundColor: "#97cffc",
+              flex: "0 0 auto",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            },
+            inViewport: mediaElement.node.inViewport,
+          };
 
-        let newNodeId: string;
+          // Use the centralized transformation utility
+          const transformed = handleMediaToFrameTransformation(
+            mediaElement.node,
+            newFrame,
+            nodeDisp,
+            "inside"
+          );
 
-        if (targetFrame) {
-          // Drawing over a frame - insert text as child
+          if (transformed) {
+            nodeDisp.syncViewports();
+          }
+        } else if (targetFrame) {
+          // Drawing over a frame - insert as child
           const frameChildren = nodeState.nodes
             .filter((n) => n.parentId === targetFrame.id)
             .map((node) => {
@@ -164,20 +187,21 @@ export const TextCreator: React.FC = () => {
                 item !== null
             );
 
-          const newText: Node = {
+          const newFrame: Node = {
             id: nanoid(),
-            type: "text",
+            type: "frame",
             style: {
               position: "relative",
-              width: `auto`,
-              height: `auto`,
+              width: `${width / transform.scale}px`,
+              height: `${height / transform.scale}px`,
+              backgroundColor: "#97cffc",
               flex: "0 0 auto",
-              text: defaultText,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             },
             inViewport: true,
           };
-
-          newNodeId = newText.id;
 
           const dropIndicator = computeFrameDropIndicator(
             targetFrame.element,
@@ -188,60 +212,47 @@ export const TextCreator: React.FC = () => {
 
           if (dropIndicator?.dropInfo) {
             nodeDisp.addNode(
-              newText,
+              newFrame,
               dropIndicator.dropInfo.targetId,
               dropIndicator.dropInfo.position,
               true
             );
           } else {
-            nodeDisp.addNode(newText, targetFrame.id, "inside", true);
+            nodeDisp.addNode(newFrame, targetFrame.id, "inside", true);
           }
         } else {
-          // Drawing on canvas - create absolute positioned text
-          const newText: Node = {
+          // Drawing on canvas - create absolute positioned frame
+          const newFrame: Node = {
             id: nanoid(),
-            type: "text",
+            type: "frame",
             style: {
               position: "absolute",
               left: `${canvasX}px`,
               top: `${canvasY}px`,
               width: `${width / transform.scale}px`,
               height: `${height / transform.scale}px`,
-              text: defaultText,
+              backgroundColor: "#97cffc",
+              flex: "0 0 auto",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             },
             inViewport: false,
           };
 
-          newNodeId = newText.id;
-          nodeDisp.addNode(newText, null, null, false);
-        }
-
-        // Additional text styling options based on dimensions
-        if (width / transform.scale > 500) {
-          // For wider text boxes, center align text
-          setTimeout(() => {
-            setNodeStyle(
-              {
-                text: `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`,
-              },
-              [newNodeId],
-              true
-            );
-          }, 0);
+          nodeDisp.addNode(newFrame, null, null, false);
         }
       }
 
       nodeDisp.syncViewports();
 
+      // Hide the style helper
+      dragDisp.hideStyleHelper();
+
       // Reset state
       setBox(null);
       targetFrameRef.current = null;
-      setIsTextModeActive(false);
-      document.body.style.cursor = "default";
-      document.body.style.userSelect = "";
-      document.body.style.WebkitUserSelect = "";
-      document.body.style.MozUserSelect = "";
-      document.body.style.msUserSelect = "";
+      setIsFrameModeActive(false);
     };
 
     canvas.addEventListener("mousedown", handleMouseDown);
@@ -252,14 +263,18 @@ export const TextCreator: React.FC = () => {
       canvas.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      // Make sure to hide the style helper when unmounting
+      dragDisp.hideStyleHelper();
     };
   }, [
     containerRef,
     box?.isDrawing,
-    isTextModeActive,
+    isFrameModeActive,
     transform,
     nodeDisp,
     nodeState.nodes,
+    setIsFrameModeActive,
+    dragDisp,
   ]);
 
   if (!box?.isDrawing) return null;
@@ -271,7 +286,7 @@ export const TextCreator: React.FC = () => {
 
   return (
     <div
-      className="absolute pointer-events-none border border-green-500 bg-green-500/10"
+      className="absolute pointer-events-none border border-blue-500 bg-blue-500/10"
       style={{
         left,
         top,
@@ -284,4 +299,4 @@ export const TextCreator: React.FC = () => {
   );
 };
 
-export default TextCreator;
+export default FrameCreator;

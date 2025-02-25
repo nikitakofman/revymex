@@ -8,6 +8,7 @@ import { useRef } from "react";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useAutoScroll } from "../hooks/useAutoScroll";
+import { handleMediaToFrameTransformation } from "@/builder/view/toolbars/leftToolbar/Layers/utils";
 
 export const useMouseUp = () => {
   const {
@@ -24,61 +25,6 @@ export const useMouseUp = () => {
 
   const originalIndexRef = useRef<number | null>(null);
   const { stopAutoScroll } = useAutoScroll();
-
-  const handleMediaToFrameTransformation = (
-    mediaNode: Node,
-    droppedNode: Node,
-    position: string
-  ) => {
-    if (position !== "inside") return false;
-
-    const frameNode: Node = {
-      ...mediaNode,
-      type: "frame",
-      style: {
-        ...mediaNode.style,
-        // Set the appropriate background property based on type
-        ...(mediaNode.type === "video"
-          ? {
-              backgroundVideo: mediaNode.style.src,
-            }
-          : { backgroundImage: mediaNode.style.src }),
-        src: undefined,
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-    };
-
-    // First replace the media with a frame
-    nodeDisp.replaceNode(mediaNode.id, frameNode);
-
-    // Then add the dropped node as a child
-    const childNode = {
-      ...droppedNode,
-      sharedId: nanoid(),
-      style: {
-        ...droppedNode.style,
-        position: "relative",
-        zIndex: "",
-        transform: "",
-        left: "",
-        top: "",
-      },
-      parentId: frameNode.id,
-      inViewport: frameNode.inViewport || false,
-    };
-
-    nodeDisp.addNode(
-      childNode,
-      frameNode.id,
-      "inside",
-      frameNode.inViewport || false
-    );
-
-    return true;
-  };
 
   return () => {
     if (!dragState.isDragging || !dragState.draggedNode) {
@@ -134,6 +80,7 @@ export const useMouseUp = () => {
         const transformed = handleMediaToFrameTransformation(
           targetNode,
           newNode,
+          nodeDisp,
           position
         );
 
