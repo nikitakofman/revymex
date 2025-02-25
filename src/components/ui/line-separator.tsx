@@ -6,6 +6,7 @@ type LineSeparatorProps = {
   className?: string;
   orientation?: "horizontal" | "vertical";
   height?: string; // for vertical separator
+  visible?: boolean;
 };
 
 const LineSeparator: React.FC<LineSeparatorProps> = ({
@@ -14,11 +15,14 @@ const LineSeparator: React.FC<LineSeparatorProps> = ({
   className = "",
   orientation = "horizontal",
   height = "100%", // default height for vertical separator
+  visible = true,
 }) => {
   return (
     <div
-      className={`${orientation === "horizontal" && "w-full border-t"}
-        ${orientation === "vertical" && "h-full border-l"}
+      className={`${
+        orientation === "horizontal" && `w-full ${visible && "border-t"}`
+      }
+        ${orientation === "vertical" && `h-full ${visible && "border-l"}`}
        ${className}`}
       style={{
         ...(orientation === "horizontal" && {

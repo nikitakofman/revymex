@@ -55,6 +55,7 @@ export const useKeyboardDrag = () => {
           .map((node) => node.id);
 
         dragDisp.clearSelection();
+
         dragDisp.setSelectedIds(selectableNodeIds);
       }
     };

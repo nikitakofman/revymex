@@ -43,7 +43,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // Size variations
     const sizeStyles = {
       xs: "h-6 px-2 text-xs",
-      sm: "h-8 px-3 text-sm",
+      sm: "h-7 px-2.5 text-sm",
       md: "h-10 px-4 text-base",
       lg: "h-12 px-6 text-lg",
     };

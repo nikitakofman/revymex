@@ -35,7 +35,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   } = useBuilder();
   const initialMouseAngleRef = useRef<number>(0);
   const initialRotationRef = useRef<number>(0);
-  const initialRotationsRef = useRef<Map<string, number>>(new Map());
+  const initialRotationsRef = useRef<Map<string | number, number>>(new Map());
 
   const getElementCenter = () => {
     if (isGroupSelection && groupBounds) {

@@ -1,11 +1,10 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useBuilder } from "@/builder/context/builderState";
-import { findIndexWithinParent } from "../utils";
+import { calculateAndUpdateDimensions, findIndexWithinParent } from "../utils";
 import { nanoid } from "nanoid";
-import { convertToNewUnit } from "@/builder/registry/tools/_components/ToolInput";
+import { convertToNewUnit } from "@/builder/elementTools/_components/ToolInput";
 import { parse } from "path";
-import { createPlaceholder } from "../createPlaceholder";
-import { calculateAndUpdateDimensions } from "./calculateAndUpdateDimensions";
+import { createPlaceholder } from "./createPlaceholder";
 
 export const useDragStart = () => {
   const {

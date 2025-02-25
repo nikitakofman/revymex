@@ -1,12 +1,7 @@
 import { DragState, SnapGuideLine } from "@/builder/reducer/dragDispatcher";
-import {
-  Node,
-  NodeDispatcher,
-  NodeState,
-} from "@/builder/reducer/nodeDispatcher";
+import { Node, NodeState } from "@/builder/reducer/nodeDispatcher";
 import { LineIndicatorState } from "./builderState";
 import { HTMLAttributes } from "react";
-import { createPlaceholder } from "./createPlaceholder";
 
 export interface Transform {
   x: number;
@@ -1034,41 +1029,6 @@ export const handleFrameDropInteraction = (
   }
 };
 
-// dragViewportUtils.ts
-export const handleViewportTransition = (
-  isOverViewportArea: boolean,
-  hasLeftViewportRef: { current: boolean },
-  originalViewportDataRef: any,
-  dragState: DragState,
-  nodeState: { nodes: Node[] },
-  dragDisp: any,
-  nodeDisp: NodeDispatcher,
-  transform: Transform,
-  setNodeStyle: Function
-) => {
-  if (
-    isOverViewportArea &&
-    hasLeftViewportRef.current &&
-    originalViewportDataRef.current &&
-    !dragState.placeholderInfo
-  ) {
-    const placeholderInfo = handlePlaceholderRecreation({
-      draggedNode: dragState.draggedNode.node,
-      originalData: originalViewportDataRef.current,
-      dragState,
-      nodeState,
-      nodeDisp,
-      transform,
-      setNodeStyle,
-    });
-
-    if (placeholderInfo) {
-      dragDisp.setPlaceholderInfo(placeholderInfo);
-      hasLeftViewportRef.current = false;
-    }
-  }
-};
-
 type NodePosition = {
   id: string | number;
   rect: DOMRect;
@@ -1192,3 +1152,184 @@ export function sortDraggedNodesByVisualPosition(
     return aRect[sortKey] - bRect[sortKey];
   });
 }
+
+interface CalculateDimensionsParams {
+  node: Node;
+  element: HTMLElement;
+  transform: { scale: number };
+  setNodeStyle: (
+    styles: React.CSSProperties & { src?: string } & { text?: string },
+    nodeIds?: (string | number)[],
+    sync?: boolean
+  ) => void;
+}
+
+interface DimensionResult {
+  finalWidth: string | number | undefined;
+  finalHeight: string | number | undefined;
+}
+
+export const calculateAndUpdateDimensions = ({
+  node,
+  element,
+  transform,
+  setNodeStyle,
+}: CalculateDimensionsParams): DimensionResult => {
+  const style = element.style;
+  const isWidthPercent = style.width?.includes("%");
+  const isHeightPercent = style.height?.includes("%");
+  const isWidthAuto = style.width === "auto";
+  const isHeightAuto = style.height === "auto";
+  const isFillMode = style.flex === "1 0 0px";
+
+  let finalWidth = node.style.width;
+  let finalHeight = node.style.height;
+
+  // Handle fill mode
+  if (isFillMode) {
+    const rect = element.getBoundingClientRect();
+
+    console.log("fill mode true");
+
+    finalWidth = `${Math.round(rect.width / transform.scale)}px`;
+    finalHeight = `${Math.round(rect.height / transform.scale)}px`;
+
+    console.log("setting conversion fill for node type", node.id, node.type);
+
+    console.log("finalWidth", finalWidth);
+    console.log("finalHeight", finalHeight);
+
+    setNodeStyle(
+      {
+        width: finalWidth,
+        height: finalHeight,
+        flex: "0 0 auto",
+      },
+      [node.id]
+    );
+  } else {
+    // Handle width calculations
+    if (isWidthPercent || isWidthAuto) {
+      const widthInPx = convertToNewUnit(
+        parseFloat(style.width),
+        isWidthPercent ? "%" : "auto",
+        "px",
+        "width",
+        element
+      );
+      finalWidth = `${widthInPx}px`;
+      setNodeStyle(
+        {
+          width: finalWidth,
+        },
+        [node.id]
+      );
+    }
+
+    // Handle height calculations
+    if (isHeightPercent || isHeightAuto) {
+      const heightInPx = convertToNewUnit(
+        parseFloat(style.height),
+        isHeightPercent ? "%" : "auto",
+        "px",
+        "height",
+        element
+      );
+      finalHeight = `${heightInPx}px`;
+      setNodeStyle(
+        {
+          height: finalHeight,
+        },
+        [node.id]
+      );
+    }
+  }
+
+  return { finalWidth, finalHeight };
+};
+
+export const convertToNewUnit = (
+  value: number,
+  oldUnit: string,
+  newUnit: string,
+  propertyName: string,
+  element: HTMLElement
+): number => {
+  if (oldUnit === newUnit) return value;
+
+  const computedStyle = window.getComputedStyle(element);
+  const parentElement = element.parentElement;
+
+  if (newUnit === "fill") {
+    return 1;
+  }
+
+  if (oldUnit === "fill") {
+    const computedValue = parseFloat(computedStyle[propertyName as any]);
+    return convertToNewUnit(
+      computedValue,
+      "px",
+      newUnit,
+      propertyName,
+      element
+    );
+  }
+
+  if (oldUnit === "auto") {
+    const computedValue = parseFloat(computedStyle[propertyName as any]);
+    return convertToNewUnit(
+      computedValue,
+      "px",
+      newUnit,
+      propertyName,
+      element
+    );
+  }
+
+  let valueInPixels = value;
+  if (oldUnit === "%") {
+    if (propertyName.includes("width")) {
+      const parentWidth = parentElement ? parentElement.clientWidth : 0;
+      valueInPixels = (value * parentWidth) / 100;
+    } else if (propertyName.includes("height")) {
+      const parentHeight = parentElement ? parentElement.clientHeight : 0;
+      valueInPixels = (value * parentHeight) / 100;
+    }
+  } else if (oldUnit === "em") {
+    const fontSizeInPx = parseFloat(computedStyle.fontSize);
+    valueInPixels = value * fontSizeInPx;
+  } else if (oldUnit === "rem") {
+    const rootFontSize = parseFloat(
+      getComputedStyle(document.documentElement).fontSize
+    );
+    valueInPixels = value * rootFontSize;
+  } else if (oldUnit === "vw") {
+    valueInPixels = (value * window.innerWidth) / 100;
+  } else if (oldUnit === "vh") {
+    valueInPixels = (value * window.innerHeight) / 100;
+  }
+
+  if (newUnit === "%") {
+    if (propertyName.includes("width")) {
+      const parentWidth = parentElement ? parentElement.clientWidth : 0;
+      return parentWidth ? (valueInPixels / parentWidth) * 100 : 0;
+    } else if (propertyName.includes("height")) {
+      const parentHeight = parentElement ? parentElement.clientHeight : 0;
+      return parentHeight ? (valueInPixels / parentHeight) * 100 : 0;
+    }
+  } else if (newUnit === "em") {
+    const fontSizeInPx = parseFloat(computedStyle.fontSize);
+    return valueInPixels / fontSizeInPx;
+  } else if (newUnit === "rem") {
+    const rootFontSize = parseFloat(
+      getComputedStyle(document.documentElement).fontSize
+    );
+    return valueInPixels / rootFontSize;
+  } else if (newUnit === "vw") {
+    return (valueInPixels / window.innerWidth) * 100;
+  } else if (newUnit === "vh") {
+    return (valueInPixels / window.innerHeight) * 100;
+  }
+
+  return valueInPixels;
+};

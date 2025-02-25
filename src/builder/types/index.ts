@@ -28,3 +28,10 @@ export const currentDragInfo = {
   isViewport: false,
   inViewport: false,
 };
+
+// Define the Transform interface here if not already defined elsewhere
+export interface Transform {
+  x: number;
+  y: number;
+  scale: number;
+}

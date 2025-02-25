@@ -211,6 +211,7 @@ export const useConnect = () => {
         // If node is not selected and not holding shift, select only this node
         if (!isNodeSelected && !e.shiftKey) {
           dragDisp.clearSelection();
+
           dragDisp.selectNode(targetNodeId);
         }
         // If node is not selected and holding shift, add to selection

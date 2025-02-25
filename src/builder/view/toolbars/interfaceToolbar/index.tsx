@@ -1,17 +1,14 @@
 import React from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import InsertPanel from "./InsertPanel";
-import LayersPanel from "./LayersPanel";
 import CmsPanel from "./CmsPanel";
 import Layers from "./Layers";
 
-const Toolbar = () => {
+const InterfaceTools = () => {
   const { interfaceState } = useBuilder();
 
-  // Always render the toolbar
   return (
-    <div className="w-64 fixed z-50 h-screen bg-[#111111]">
-      {/* Show Insert or CMS panels if they're open, otherwise show Layers */}
+    <div className="w-64 fixed z-50 h-screen bg-[var(--bg-toolbar)] border-r border-[var(--border-light)]">
       {interfaceState.isInsertOpen ? (
         <InsertPanel />
       ) : interfaceState.isCmsOpen ? (
@@ -23,4 +20,4 @@ const Toolbar = () => {
   );
 };
 
-export default Toolbar;
+export default InterfaceTools;

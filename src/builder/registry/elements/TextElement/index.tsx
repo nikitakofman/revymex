@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, CSSProperties } from "react";
-import { ResizableWrapper } from "@/builder/context/dnd/resizable";
+import { ResizableWrapper } from "@/builder/context/resizable";
 import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
 import { useBuilder } from "@/builder/context/builderState";

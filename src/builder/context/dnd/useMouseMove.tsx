@@ -16,8 +16,7 @@ import {
   VERTICAL_EDGE_SIZE,
 } from "../hooks/useAutoScroll";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { createPlaceholder } from "../createPlaceholder";
-import { nanoid } from "nanoid";
+import { createPlaceholder } from "./createPlaceholder";
 
 // Helper to compute the furthest (root) container id for a given parent id.
 const getRootContainerId = (

@@ -587,10 +587,6 @@ export class NodeDispatcher {
     );
   }
 
-  /**
-   * Sync from a given viewport to all the others, including desktop.
-   * BFS from that viewport, replicate to other frames, but skip removing the viewport node itself.
-   */
   syncFromViewport(sourceViewportId: string | number) {
     this.setState((prev) =>
       produce(prev, (draft) => {

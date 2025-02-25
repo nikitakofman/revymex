@@ -1,7 +1,7 @@
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronDown } from "lucide-react";
-import { Label } from "./Label";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
+import { Label } from "./ToolbarAtoms";
 
 interface ToolSelectProps {
   label: string;

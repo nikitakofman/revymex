@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
-import { ToolSelect } from "./ToolbarAtoms";
-import { Label } from "./Label";
+import { Label } from "./ToolbarAtoms";
+import { ToolSelect } from "./ToolSelect";
 
 interface CustomToolInputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {

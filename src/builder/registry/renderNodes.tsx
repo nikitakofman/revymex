@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useBuilder } from "../context/builderState";
 import { Node } from "../reducer/nodeDispatcher";
-import { Frame } from "./elements/Frame";
+import { Frame } from "./elements/FrameElement";
 import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
-import DraggedNode, { VirtualReference } from "./DraggedNode";
+import DraggedNode, {
+  VirtualReference,
+} from "../context/canvasHelpers/DraggedNode";
 import { getFilteredNodes } from "../context/utils";
 import { VideoElement } from "./elements/VideoElement";
 

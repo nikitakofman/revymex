@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --bg-canvas: #fafbfc;
+    --bg-canvas: #eeeeee;
     --bg-surface: #ffffff;
     --bg-toolbar: #f8f9fa;
     --bg-panel: #ffffff;
@@ -74,8 +74,8 @@
 
     --accent-secondary: #9a66ff;
 
-    --border-light: #334155;
-    --border-default: #475569;
+    --border-light: #1f2326;
+    --border-default: #414243;
     --border-focus: #3b82f6;
 
     --success: #10b981;
@@ -107,12 +107,19 @@
 @layer components {
   .element-box {
     @apply aspect-square flex items-center justify-center 
-             bg-[#1A1A1A] hover:bg-[#2A2A2A] 
-             text-gray-300 hover:text-white
-             border border-[#333333] rounded-xl
-              ease-in-out
-             cursor-pointer shadow-lg hover:shadow-xl
-             capitalize text-sm font-medium;
+          
+           cursor-pointer capitalize text-sm font-medium
+           rounded-xl;
+    background-color: var(--control-bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--control-border);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .element-box:hover {
+    background-color: var(--control-bg-hover);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-lg);
   }
 
   .element-box-large {
@@ -120,7 +127,9 @@
   }
 
   .element-box-selected {
-    @apply element-box bg-[#2A2A2A] text-white;
+    background-color: var(--control-bg-active);
+    color: var(--text-primary);
+    border-color: var(--border-focus);
   }
 }
 

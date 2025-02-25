@@ -1,5 +1,5 @@
 import { useBuilder } from "@/builder/context/builderState";
-import { ResizableWrapper } from "@/builder/context/dnd/resizable";
+import { ResizableWrapper } from "@/builder/context/resizable";
 import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
 import React from "react";

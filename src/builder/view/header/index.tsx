@@ -1,11 +1,23 @@
 import React from "react";
-import { Layers, Database, Play, Upload, Share2, Plus } from "lucide-react";
+import {
+  Layers,
+  Database,
+  Play,
+  Upload,
+  Share2,
+  Plus,
+  Cog,
+  Settings,
+} from "lucide-react";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
 import { useBuilder } from "@/builder/context/builderState";
+import { PreviewModal } from "../preview/PreviewRenderer";
+import Image from "next/image";
+import RevymeIcon from "./revyme-icon";
 
 const Header = () => {
-  const { interfaceState, interfaceDisp } = useBuilder();
+  const { interfaceState, interfaceDisp, nodeState } = useBuilder();
 
   const handleInsertClick = () => {
     if (interfaceState.isInsertOpen) {
@@ -30,24 +42,31 @@ const Header = () => {
   };
 
   return (
-    <div className="h-12 bg-[var(--bg-surface)] border-b border-[var(--border-light)] fixed w-full z-[9999] flex items-center justify-between px-3">
-      <div className="flex items-center gap-2">
+    <div className="h-14 bg-[var(--bg-surface)] border-b border-[var(--border-light)] fixed w-full z-[9999] flex items-center justify-between px-3">
+      <div className="flex items-center gap-4 px-2">
+        <RevymeIcon />
+
+        <LineSeparator orientation="vertical" height="26px" />
+
         <Button
-          leftIcon={<Plus size={20} />}
+          leftIcon={<Plus size={32} />}
           size="sm"
-          className={interfaceState.isInsertOpen ? "bg-[var(--accent)]" : ""}
-          variant="ghost"
+          className={
+            interfaceState.isInsertOpen
+              ? "bg-[var(--accent)]  text-white"
+              : "hover:text-black dark:hover:text-white"
+          }
+          variant="primary"
           onClick={handleInsertClick}
         >
           Insert
         </Button>
 
-        <LineSeparator orientation="vertical" height="26px" />
-
         {/* <Button
           leftIcon={<Layers size={20} />}
           size="sm"
           variant="ghost"
+          onClick={() => interfaceDisp.toggleLayers()}
           className={
             !interfaceState.isInsertOpen && !interfaceState.isCmsOpen
               ? "bg-[var(--accent)]"
@@ -56,6 +75,15 @@ const Header = () => {
         >
           <span className="ml-1.5">Layers</span>
         </Button> */}
+
+        <Button
+          leftIcon={<Layers size={20} />}
+          size="sm"
+          variant="ghost"
+          onClick={() => interfaceDisp.toggleLayers()}
+        >
+          <span className="ml-1.5">Pages</span>
+        </Button>
 
         <Button
           leftIcon={<Database size={20} />}
@@ -68,29 +96,40 @@ const Header = () => {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <Button
+          leftIcon={<Settings size={20} />}
+          size="sm"
+          variant="primary"
+        ></Button>
+
+        {/* <LineSeparator orientation="vertical" height="26px" /> */}
         <Button
           leftIcon={<Play size={20} />}
           size="sm"
-          variant="ghost"
+          variant="primary"
           className={interfaceState.isPreviewOpen ? "bg-[var(--accent)]" : ""}
           onClick={() => interfaceDisp.togglePreview()}
-        >
-          <span className="ml-1.5">Preview</span>
+        ></Button>
+
+        {/* <LineSeparator orientation="vertical" height="26px" /> */}
+
+        <Button size="sm" variant="secondary">
+          Export
         </Button>
 
-        <LineSeparator orientation="vertical" height="26px" />
+        {/* <LineSeparator orientation="vertical" height="26px" /> */}
 
-        <Button leftIcon={<Share2 size={20} />} size="sm" variant="ghost">
-          <span className="ml-1.5">Export</span>
-        </Button>
-
-        <LineSeparator orientation="vertical" height="26px" />
-
-        <Button leftIcon={<Upload size={20} />} size="sm" variant="ghost">
-          <span className="ml-1.5">Publish</span>
+        <Button size="sm" variant="primary">
+          Publish
         </Button>
       </div>
+
+      <PreviewModal
+        isOpen={interfaceState.isPreviewOpen}
+        onClose={() => interfaceDisp.togglePreview()}
+        nodes={nodeState.nodes}
+      />
     </div>
   );
 };

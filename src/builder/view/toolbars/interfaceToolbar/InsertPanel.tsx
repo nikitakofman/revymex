@@ -1,12 +1,12 @@
 import React from "react";
-import { elementRegistry } from "../../registry";
+import { elementRegistry } from "../../../registry";
 import { useDragStart } from "@/builder/context/dnd/useDragStart";
 
 const InsertPanel = () => {
   const handleDragStart = useDragStart();
 
   return (
-    <div className="p-4">
+    <div className="p-4 bg-[var(--bg-toolbar)]">
       <div className="grid grid-cols-2 gap-4">
         {elementRegistry.map((element, index) => (
           <div

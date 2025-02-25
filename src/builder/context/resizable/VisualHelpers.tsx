@@ -1,7 +1,7 @@
 import React, { useState, useLayoutEffect, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "@/builder/context/builderState";
-import { ConnectionHandle } from "../ConnectionHandle";
+import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
 import { ResizeHandles } from "./ResizeHandles";
 import { GapHandles } from "./GapHandles";
 import { GripHandles } from "./GripHandles";
@@ -197,7 +197,6 @@ export const VisualHelpers = ({
 
   return createPortal(
     <>
-      {/* Individual Element Helpers */}
       <div className="pointer-events-none" style={helperStyles}>
         {showHelpers && !isSelected && isHovered && (
           <div
@@ -254,32 +253,26 @@ export const VisualHelpers = ({
               }}
             />
 
-            {/* Show resize handles for individual or primary selection */}
             <ResizeHandles
               node={node}
               handleResizeStart={handleResizeStart}
               isGroupSelection={isMultiSelection}
             />
 
-            {/* Show individual element controls if not multi-selection */}
             {!isMultiSelection && (
               <>
-                {/* Rotate handle for single selection */}
                 {!node.id.includes("viewport") && (
                   <RotateHandle node={node} elementRef={elementRef} />
                 )}
 
-                {/* Border radius handle for single selection */}
                 {!node.id.includes("viewport") && (
                   <BorderRadiusHandle node={node} elementRef={elementRef} />
                 )}
 
-                {/* Grip handles for individual elements only */}
                 {!node.id.includes("viewport") && (
                   <GripHandles node={node} elementRef={elementRef} />
                 )}
 
-                {/* Gap handles when applicable */}
                 {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) &&
                   localComputedStyle?.display !== "grid" && (
                     <GapHandles
@@ -289,7 +282,6 @@ export const VisualHelpers = ({
                     />
                   )}
 
-                {/* Connection handle for individual elements */}
                 <ConnectionHandle node={node} transform={transform} />
               </>
             )}
@@ -297,7 +289,6 @@ export const VisualHelpers = ({
         )}
       </div>
 
-      {/* Group (Multi-Selection) Border and Controls */}
       {isMultiSelection &&
         groupBoundsState &&
         !isMovingCanvas &&
@@ -325,10 +316,8 @@ export const VisualHelpers = ({
               }}
             />
 
-            {/* Only render these controls on the primary selected node */}
             {isPrimarySelected && (
               <>
-                {/* Resize handles for the group */}
                 <ResizeHandles
                   node={node}
                   handleResizeStart={handleResizeStart}
@@ -336,7 +325,6 @@ export const VisualHelpers = ({
                   isGroupSelection={true}
                 />
 
-                {/* Add Rotate handle for group */}
                 <RotateHandle
                   node={node}
                   elementRef={elementRef}
@@ -344,7 +332,6 @@ export const VisualHelpers = ({
                   isGroupSelection={true}
                 />
 
-                {/* Add Border Radius handle for group */}
                 <BorderRadiusHandle
                   node={node}
                   elementRef={elementRef}

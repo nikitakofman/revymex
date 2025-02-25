@@ -1,5 +1,5 @@
 import React from "react";
-import { Label } from "./Label";
+import { Label } from "./ToolbarAtoms";
 
 interface PlaceholderToolInputProps {
   value: string | number;

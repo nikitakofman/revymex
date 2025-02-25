@@ -10,8 +10,14 @@ interface SelectionBoxState {
 }
 
 export const SelectionBox: React.FC = () => {
-  const { containerRef, dragDisp, nodeState, transform, dragState } =
-    useBuilder();
+  const {
+    containerRef,
+    dragDisp,
+    nodeState,
+    transform,
+    dragState,
+    interfaceDisp,
+  } = useBuilder();
   const [box, setBox] = useState<SelectionBoxState | null>(null);
 
   const updateSelection = useCallback(
@@ -118,6 +124,7 @@ export const SelectionBox: React.FC = () => {
       });
 
       dragDisp.clearSelection();
+      interfaceDisp.toggleLayers();
     };
 
     const handleMouseMove = (e: MouseEvent) => {

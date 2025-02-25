@@ -208,7 +208,7 @@ export const ViewportDevTools: React.FC = () => {
 
   return createPortal(
     <>
-      <div className="fixed resize top-14 right-[280px] flex gap-2 z-[9999] p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+      <div className="fixed resize top-14 scale-75 right-[190px] flex gap-2  p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
         {dragState.dynamicModeNodeId && (
           <button
             className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
@@ -265,22 +265,7 @@ export const ViewportDevTools: React.FC = () => {
         >
           Show Tree
         </button>
-        <button
-          className="p-2 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        >
-          {theme === "dark" ? (
-            <Sun className="w-4 h-4" />
-          ) : (
-            <Moon className="w-4 h-4" />
-          )}
-        </button>
-        <button
-          className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
-          onClick={() => setShowPreview(true)}
-        >
-          <PlayCircle className="w-4 h-4" />
-        </button>
+
         <button
           className={`px-3 py-1 rounded-[var(--radius-sm)] ${
             dragState.selectedIds.length > 0

@@ -1,9 +1,9 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
-import { Label } from "./Label";
-import { debounce } from "lodash";
+
 import { ToolSelect } from "./ToolSelect";
+import { Label } from "./ToolbarAtoms";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -68,92 +68,6 @@ const updateFillStyles = (
   }
 
   setNodeStyle(styles, undefined, true);
-};
-
-export const convertToNewUnit = (
-  value: number,
-  oldUnit: string,
-  newUnit: string,
-  propertyName: string,
-  element: HTMLElement
-): number => {
-  if (oldUnit === newUnit) return value;
-
-  const computedStyle = window.getComputedStyle(element);
-  const parentElement = element.parentElement;
-
-  if (newUnit === "fill") {
-    return 1;
-  }
-
-  if (oldUnit === "fill") {
-    const computedValue = parseFloat(computedStyle[propertyName as any]);
-    return convertToNewUnit(
-      computedValue,
-      "px",
-      newUnit,
-      propertyName,
-      element
-    );
-  }
-
-  if (oldUnit === "auto") {
-    const computedValue = parseFloat(computedStyle[propertyName as any]);
-    return convertToNewUnit(
-      computedValue,
-      "px",
-      newUnit,
-      propertyName,
-      element
-    );
-  }
-
-  let valueInPixels = value;
-  if (oldUnit === "%") {
-    if (propertyName.includes("width")) {
-      const parentWidth = parentElement ? parentElement.clientWidth : 0;
-      valueInPixels = (value * parentWidth) / 100;
-    } else if (propertyName.includes("height")) {
-      const parentHeight = parentElement ? parentElement.clientHeight : 0;
-      valueInPixels = (value * parentHeight) / 100;
-    }
-  } else if (oldUnit === "em") {
-    const fontSizeInPx = parseFloat(computedStyle.fontSize);
-    valueInPixels = value * fontSizeInPx;
-  } else if (oldUnit === "rem") {
-    const rootFontSize = parseFloat(
-      getComputedStyle(document.documentElement).fontSize
-    );
-    valueInPixels = value * rootFontSize;
-  } else if (oldUnit === "vw") {
-    valueInPixels = (value * window.innerWidth) / 100;
-  } else if (oldUnit === "vh") {
-    valueInPixels = (value * window.innerHeight) / 100;
-  }
-
-  if (newUnit === "%") {
-    if (propertyName.includes("width")) {
-      const parentWidth = parentElement ? parentElement.clientWidth : 0;
-      return parentWidth ? (valueInPixels / parentWidth) * 100 : 0;
-    } else if (propertyName.includes("height")) {
-      const parentHeight = parentElement ? parentElement.clientHeight : 0;
-      return parentHeight ? (valueInPixels / parentHeight) * 100 : 0;
-    }
-  } else if (newUnit === "em") {
-    const fontSizeInPx = parseFloat(computedStyle.fontSize);
-    return valueInPixels / fontSizeInPx;
-  } else if (newUnit === "rem") {
-    const rootFontSize = parseFloat(
-      getComputedStyle(document.documentElement).fontSize
-    );
-    return valueInPixels / rootFontSize;
-  } else if (newUnit === "vw") {
-    return (valueInPixels / window.innerWidth) * 100;
-  } else if (newUnit === "vh") {
-    return (valueInPixels / window.innerHeight) * 100;
-  }
-
-  return valueInPixels;
 };
 
 export function ToolInput({

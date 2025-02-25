@@ -1,18 +1,14 @@
 import React from "react";
-import LayoutTool from "@/builder/registry/tools/LayoutTool";
-import { ImageSettings } from "@/builder/registry/tools/ImageSettingsTool";
-import { ToolbarDivider } from "@/builder/registry/tools/_components/ToolbarAtoms";
-import DimensionsTool from "@/builder/registry/tools/DimensionsTool";
-import { BackgroundTool } from "@/builder/registry/tools/BackgroundTool";
-import SpacingTool from "@/builder/registry/tools/SpacingTool";
-import { EffectsTool, OverflowTool } from "@/builder/registry/tools/allTools";
-import { PositionTool } from "@/builder/registry/tools/PositionTool";
+import LayoutTool from "@/builder/elementTools/LayoutTool";
+import { ToolbarDivider } from "@/builder/elementTools/_components/ToolbarAtoms";
+import DimensionsTool from "@/builder/elementTools/DimensionsTool";
+import SpacingTool from "@/builder/elementTools/SpacingTool";
+import { PositionTool } from "@/builder/elementTools/PositionTool";
 import { useBuilder } from "@/builder/context/builderState";
-import { BorderTool } from "@/builder/registry/tools/BorderTool";
-import { TransformTool } from "@/builder/registry/tools/TransformTool";
-import { TypographyTool } from "@/builder/registry/tools/TypographyTool";
+import { BorderTool } from "@/builder/elementTools/BorderTool";
+import { TransformTool } from "@/builder/elementTools/TransformTool";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { FillTool } from "@/builder/registry/tools/FillTool";
+import { FillTool } from "@/builder/elementTools/FillTool";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -25,14 +21,12 @@ const getToolTypes = (elements: Node[]) => {
     hasLayoutTools: elements.every((el) => ["frame", "root"].includes(el.type)),
     hasSpacingTools: elements.every((el) => el.type !== "text"),
     hasTransformTools: elements.every((el) => el.type !== "root"),
-    hasTypographyTools: elements.every((el) => ["text"].includes(el.type)),
-    // hasImageTools: elements.every((el) => el.type === "image"),
     hasOverflowTools: elements.every((el) => ["frame"].includes(el.type)),
     hasEffectsTools: elements.every((el) => !["text"].includes(el.type)),
   };
 };
 
-const RightToolbar = () => {
+const ElementToolbar = () => {
   const { dragState, nodeState } = useBuilder();
   const selectedElements = nodeState.nodes.filter((node) =>
     dragState.selectedIds.includes(node.id)
@@ -47,7 +41,7 @@ const RightToolbar = () => {
   }
 
   return (
-    <div className="w-64 fixed pt-3 border-l border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
+    <div className="w-64 fixed scrollbar-hide pt-3 border-l pb-[80px] border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
       {toolTypes.hasDimensionTools && (
         <>
           <DimensionsTool />
@@ -65,13 +59,6 @@ const RightToolbar = () => {
       {toolTypes.hasBackgroundTools && (
         <>
           <FillTool />
-          <ToolbarDivider />
-        </>
-      )}
-
-      {toolTypes.hasImageTools && (
-        <>
-          <ImageSettings />
           <ToolbarDivider />
         </>
       )}
@@ -100,31 +87,11 @@ const RightToolbar = () => {
       {toolTypes.hasTransformTools && (
         <>
           <TransformTool />
-          <ToolbarDivider />
-        </>
-      )}
-
-      {toolTypes.hasTypographyTools && (
-        <>
-          <TypographyTool />
-          <ToolbarDivider />
-        </>
-      )}
-
-      {toolTypes.hasOverflowTools && (
-        <>
-          <OverflowTool />
-          <ToolbarDivider />
-        </>
-      )}
-
-      {toolTypes.hasEffectsTools && (
-        <>
-          <EffectsTool />
+          {/* <ToolbarDivider /> */}
         </>
       )}
     </div>
   );
 };
 
-export default RightToolbar;
+export default ElementToolbar;

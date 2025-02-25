@@ -567,7 +567,6 @@ export const FillTool = () => {
       );
     }
 
-    // Frame or element with children (showing all fill options)
     return (
       <div className="space-y-4">
         <ToolbarSegmentedControl

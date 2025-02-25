@@ -1,7 +1,7 @@
 import React from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Direction, getHandleCursor } from "../utils";
-import { useBuilder } from "../../builderState";
+import { useBuilder } from "../builderState";
 
 interface GroupBounds {
   top: number;
@@ -139,78 +139,6 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
           bottom: 0,
           width: borderSize,
           transform: "translateX(-50%)",
-        };
-      default:
-        return baseStyles;
-    }
-  };
-
-  const getGroupHandleStyles = (direction: Direction): React.CSSProperties => {
-    const handleSize = 8 / transform.scale;
-    const baseStyles = {
-      position: "absolute",
-      width: `${handleSize}px`,
-      height: `${handleSize}px`,
-      zIndex: 1000,
-      pointerEvents: "all",
-    } as React.CSSProperties;
-
-    switch (direction) {
-      case "topLeft":
-        return {
-          ...baseStyles,
-          top: 0,
-          left: 0,
-          transform: `translate(-50%, -50%)`,
-        };
-      case "topRight":
-        return {
-          ...baseStyles,
-          top: 0,
-          right: 0,
-          transform: `translate(50%, -50%)`,
-        };
-      case "bottomRight":
-        return {
-          ...baseStyles,
-          bottom: 0,
-          right: 0,
-          transform: `translate(50%, 50%)`,
-        };
-      case "bottomLeft":
-        return {
-          ...baseStyles,
-          bottom: 0,
-          left: 0,
-          transform: `translate(-50%, 50%)`,
-        };
-      case "top":
-        return {
-          ...baseStyles,
-          top: 0,
-          left: "50%",
-          transform: `translate(-50%, -50%)`,
-        };
-      case "right":
-        return {
-          ...baseStyles,
-          top: "50%",
-          right: 0,
-          transform: `translate(50%, -50%)`,
-        };
-      case "bottom":
-        return {
-          ...baseStyles,
-          bottom: 0,
-          left: "50%",
-          transform: `translate(-50%, 50%)`,
-        };
-      case "left":
-        return {
-          ...baseStyles,
-          top: "50%",
-          left: 0,
-          transform: `translate(-50%, -50%)`,
         };
       default:
         return baseStyles;

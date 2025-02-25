@@ -1,9 +1,9 @@
 import { useCallback, useState, useLayoutEffect, RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "../../builderState";
+import { useBuilder } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
-import { useDragStart } from "../dragHandlers/useDragStart";
+import { useDragStart } from "../dnd/useDragStart";
 
 export const GripHandles = ({
   node,
@@ -136,6 +136,7 @@ export const GripHandles = ({
       }}
       onMouseDown={(e) => {
         dragDisp.clearSelection();
+
         dragDisp.addToSelection(targetNode.id);
         startGripDrag(e, targetNode);
       }}

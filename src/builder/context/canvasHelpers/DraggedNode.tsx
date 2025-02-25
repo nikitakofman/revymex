@@ -8,14 +8,10 @@ import React, {
   cloneElement,
 } from "react";
 import { createPortal } from "react-dom";
-import { Node } from "../reducer/nodeDispatcher";
-import { useBuilder } from "../context/builderState";
-import {
-  useSnapGrid,
-  SnapGrid,
-  SnapResult,
-} from "../context/canvasHelpers/SnapGrid";
-import { getFilteredNodes, parseRotation } from "../context/utils";
+import { Node } from "../../reducer/nodeDispatcher";
+import { useBuilder } from "../builderState";
+import { useSnapGrid, SnapResult } from "./SnapGrid";
+import { getFilteredNodes, parseRotation } from "../utils";
 
 interface Transform {
   x: number;
