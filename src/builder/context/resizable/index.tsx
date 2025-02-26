@@ -489,7 +489,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       } as React.HTMLAttributes<HTMLElement>)}
 
       {/* Only render visual helpers for unlocked nodes */}
-      {!isLocked && !isMoveCanvasMode && (
+      {!isMoveCanvasMode && (
         <VisualHelpers
           elementRef={elementRef}
           node={node}

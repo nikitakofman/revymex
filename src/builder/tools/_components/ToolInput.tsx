@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown } from "lucide-react";
 
 import { ToolSelect } from "./ToolSelect";
 import { Label } from "./ToolbarAtoms";
+import { convertToNewUnit } from "@/builder/context/utils";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;

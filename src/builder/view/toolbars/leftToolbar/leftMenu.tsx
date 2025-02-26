@@ -1,5 +1,5 @@
 import React from "react";
-import { Database, Plus, File, Component, Globe } from "lucide-react";
+import { Database, Plus, File, Component, Globe, Palette } from "lucide-react";
 import Button from "@/components/ui/button";
 import { useBuilder } from "@/builder/context/builderState";
 import { Tooltip } from "react-tooltip";
@@ -67,7 +67,7 @@ const LeftMenu = () => {
           size="md"
           className={
             interfaceState.isInsertOpen
-              ? "bg-[var(--accent)] text-white"
+              ? "bg-[var(--accent-hover)] text-white"
               : "hover:text-black dark:hover:text-white"
           }
           variant="primary"
@@ -82,7 +82,7 @@ const LeftMenu = () => {
           variant="ghost"
           className={`${
             interfaceState.isComponentsOpen &&
-            "bg-[var(--button-secondary-hover)]"
+            "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
           onClick={handleComponentsClick}
           data-tooltip-id="interface-tooltip"
@@ -90,11 +90,25 @@ const LeftMenu = () => {
           data-tooltip-place="right"
         />
         <Button
+          leftIcon={<Palette size={20} />}
+          size="md"
+          variant="ghost"
+          className={`${
+            interfaceState.isComponentsOpen &&
+            "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
+          }`}
+          onClick={handleComponentsClick}
+          data-tooltip-id="interface-tooltip"
+          data-tooltip-content="UI Kits"
+          data-tooltip-place="right"
+        />
+        <Button
           leftIcon={<File size={20} />}
           size="md"
           variant="ghost"
           className={`${
-            interfaceState.isPagesOpen && "bg-[var(--button-secondary-hover)]"
+            interfaceState.isPagesOpen &&
+            "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
           onClick={handlePagesClick}
           data-tooltip-id="interface-tooltip"
@@ -106,7 +120,9 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={
-            interfaceState.isCmsOpen ? "bg-[var(--button-secondary-hover)]" : ""
+            interfaceState.isCmsOpen
+              ? "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
+              : ""
           }
           onClick={handleCmsClick}
           data-tooltip-id="interface-tooltip"
@@ -118,7 +134,9 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={
-            interfaceState.isCmsOpen ? "bg-[var(--button-secondary-hover)]" : ""
+            interfaceState.isCmsOpen
+              ? "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
+              : ""
           }
           onClick={handleCmsClick}
           data-tooltip-id="interface-tooltip"

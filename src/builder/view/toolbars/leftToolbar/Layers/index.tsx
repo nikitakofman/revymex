@@ -3,6 +3,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { buildTreeFromNodes, findOrCreateCanvasPosition } from "./utils";
 import TreeNodeComponent from "./TreeNodeComponent";
 import { TreeNodeWithChildren } from "@/builder/types";
+import { Label, ToolbarLabel } from "@/builder/tools/_components/ToolbarAtoms";
 
 const Layers: React.FC = () => {
   const {
@@ -108,7 +109,10 @@ const Layers: React.FC = () => {
       onDragOver={handlePanelDragOver}
       onDrop={handlePanelDrop}
     >
-      <div className="p-2.5 mt-1.5 mb-6 space-y-2">
+      <div className="p-2.5 mt-1 mb-6 space-y-2">
+        <ToolbarLabel>
+          <span className="ml-2">Layers</span>
+        </ToolbarLabel>
         {treeData.map((node) => (
           <TreeNodeComponent
             key={node.id}

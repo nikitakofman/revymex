@@ -12,7 +12,7 @@
     --bg-active: #e2e8f0;
 
     --text-primary: #1e293b;
-    --text-secondary: #64748b;
+    --text-secondary: #18191c;
     --text-disabled: #94a3b8;
 
     --accent: #3b82f6;
@@ -82,10 +82,10 @@
     --warning: #f59e0b;
     --error: #ef4444;
 
-    --control-bg: #1e293b;
+    --control-bg: #25272c;
     --control-bg-hover: #334155;
-    --control-bg-active: #475569;
-    --control-border: #334155;
+    --control-bg-active: #45464b;
+    --control-border: #292929;
     --control-border-hover: #475569;
 
     --button-primary-bg: #3b82f6;
@@ -93,7 +93,7 @@
     --button-secondary-bg: #334155;
     --button-secondary-hover: #475569;
 
-    --grid-line: rgba(71, 85, 105, 0.4);
+    --grid-line: rgba(50, 50, 50, 0.8);
     --grid-line-accent: rgba(59, 130, 246, 0.4);
     --selection: rgba(59, 130, 246, 0.2);
     --drop-target: rgba(59, 130, 246, 0.3);

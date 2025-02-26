@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, RefObject, useRef } from "react";
+import React, { useState, useLayoutEffect, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "@/builder/context/builderState";
 import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
@@ -45,8 +45,8 @@ export const VisualHelpers = ({
 }) => {
   // State for individual element's bounding rectangle
   const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  // Use ref instead of state for computedStyle to avoid re-renders
-  const computedStyleRef = useRef<CSSStyleDeclaration | null>(null);
+  const [localComputedStyle, setLocalComputedStyle] =
+    useState<CSSStyleDeclaration | null>(null);
   // State for group (multi-selection) bounds
   const [groupBoundsState, setGroupBoundsState] = useState<{
     left: number;
@@ -54,6 +54,8 @@ export const VisualHelpers = ({
     width: number;
     height: number;
   } | null>(null);
+
+  const isLocked = node.isLocked === true;
 
   const {
     contentRef,
@@ -74,7 +76,7 @@ export const VisualHelpers = ({
   const isMultiSelection = dragState.selectedIds.length > 1;
   const isPrimarySelected = isSelected && dragState.selectedIds[0] === node.id;
 
-  // --- Individual Element Calculation (Modified to use ref instead of state) ---
+  // --- Individual Element Calculation (Same as Original) ---
   useLayoutEffect(() => {
     if (!elementRef.current || !contentRef.current) return;
     const updateRect = () => {
@@ -83,19 +85,16 @@ export const VisualHelpers = ({
       if (!element || !content) return;
       const elementRect = element.getBoundingClientRect();
       const contentRect = content.getBoundingClientRect();
-
-      // Store in ref instead of state to avoid re-renders
-      computedStyleRef.current = window.getComputedStyle(element);
-
-      const width = parseFloat(computedStyleRef.current.width);
-      const height = parseFloat(computedStyleRef.current.height);
+      const computedStyle = window.getComputedStyle(element);
+      setLocalComputedStyle(computedStyle);
+      const width = parseFloat(computedStyle.width);
+      const height = parseFloat(computedStyle.height);
       const centerX =
         (elementRect.left - contentRect.left + elementRect.width / 2) /
         transform.scale;
       const centerY =
         (elementRect.top - contentRect.top + elementRect.height / 2) /
         transform.scale;
-
       setRect({
         top: centerY - height / 2,
         left: centerX - width / 2,
@@ -198,11 +197,9 @@ export const VisualHelpers = ({
     transformOrigin: "center center",
   };
 
-  // Get the current computed style display value from the ref
-  const currentDisplayStyle = computedStyleRef.current?.display;
-
   return createPortal(
     <>
+      {/* Individual Element Helpers */}
       <div className="pointer-events-none" style={helperStyles}>
         {showHelpers && !isSelected && isHovered && (
           <div
@@ -259,28 +256,36 @@ export const VisualHelpers = ({
               }}
             />
 
-            <ResizeHandles
-              node={node}
-              handleResizeStart={handleResizeStart}
-              isGroupSelection={isMultiSelection}
-            />
+            {/* Show resize handles for individual or primary selection */}
+            {!isLocked && (
+              <ResizeHandles
+                node={node}
+                handleResizeStart={handleResizeStart}
+                isGroupSelection={isMultiSelection}
+              />
+            )}
 
-            {!isMultiSelection && (
+            {/* Show individual element controls if not multi-selection */}
+            {!isMultiSelection && !isLocked && (
               <>
+                {/* Rotate handle for single selection */}
                 {!node.id.includes("viewport") && (
                   <RotateHandle node={node} elementRef={elementRef} />
                 )}
 
+                {/* Border radius handle for single selection */}
                 {!node.id.includes("viewport") && (
                   <BorderRadiusHandle node={node} elementRef={elementRef} />
                 )}
 
+                {/* Grip handles for individual elements only */}
                 {!node.id.includes("viewport") && (
                   <GripHandles node={node} elementRef={elementRef} />
                 )}
 
+                {/* Gap handles when applicable */}
                 {(!node.isDynamic || dragState.dynamicModeNodeId === node.id) &&
-                  currentDisplayStyle !== "grid" && (
+                  localComputedStyle?.display !== "grid" && (
                     <GapHandles
                       node={node}
                       isSelected={isSelected}
@@ -288,6 +293,7 @@ export const VisualHelpers = ({
                     />
                   )}
 
+                {/* Connection handle for individual elements */}
                 <ConnectionHandle node={node} transform={transform} />
               </>
             )}
@@ -295,6 +301,7 @@ export const VisualHelpers = ({
         )}
       </div>
 
+      {/* Group (Multi-Selection) Border and Controls */}
       {isMultiSelection &&
         groupBoundsState &&
         !isMovingCanvas &&
@@ -322,8 +329,10 @@ export const VisualHelpers = ({
               }}
             />
 
-            {isPrimarySelected && (
+            {/* Only render these controls on the primary selected node */}
+            {!isLocked && isPrimarySelected && (
               <>
+                {/* Resize handles for the group */}
                 <ResizeHandles
                   node={node}
                   handleResizeStart={handleResizeStart}
@@ -331,6 +340,7 @@ export const VisualHelpers = ({
                   isGroupSelection={true}
                 />
 
+                {/* Add Rotate handle for group */}
                 <RotateHandle
                   node={node}
                   elementRef={elementRef}
@@ -338,6 +348,7 @@ export const VisualHelpers = ({
                   isGroupSelection={true}
                 />
 
+                {/* Add Border Radius handle for group */}
                 <BorderRadiusHandle
                   node={node}
                   elementRef={elementRef}

@@ -9,6 +9,8 @@ import {
   Smartphone,
   Eye,
   EyeOff,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { cn } from "@/providers/cn";
 import {
@@ -758,6 +760,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
   };
 
+  const handleToggleLock = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // First select the node if it's not already selected
+    if (!isSelected) {
+      dragDisp.selectNode(node.id);
+    }
+
+    // Toggle the lock state for this node
+    nodeDisp.toggleNodeLock([node.id]);
+  };
+
   return (
     <li className="relative select-none list-none">
       <div
@@ -895,6 +909,27 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
           </span>
         )}
 
+        {node.isLocked && (
+          <button
+            onClick={handleToggleLock}
+            className={cn(
+              "w-3.5 h-3.5 flex items-center justify-center mr-1",
+              !node.isLocked
+                ? "opacity-0 group-hover:opacity-100"
+                : "opacity-100",
+              "transition-opacity",
+              "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+              isSelected && "text-white"
+            )}
+            title={node.isLocked ? "Unlock element" : "Lock element"}
+          >
+            {node.isLocked ? (
+              <Lock className="w-3.5 h-3.5" />
+            ) : (
+              <Unlock className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
         {/* Hide visibility toggle for viewports */}
         {!node.isViewport && (
           <button
