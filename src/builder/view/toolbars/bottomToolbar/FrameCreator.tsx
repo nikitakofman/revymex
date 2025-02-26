@@ -126,6 +126,54 @@ export const FrameCreator: React.FC = () => {
         const canvasX = (left - transform.x) / transform.scale;
         const canvasY = (top - transform.y) / transform.scale;
 
+        // Define box for element detection
+        const boxRect = {
+          left: canvasX,
+          top: canvasY,
+          right: canvasX + width / transform.scale,
+          bottom: canvasY + height / transform.scale,
+        };
+
+        // Find elements that will be encapsulated
+        const allElements = nodeState.nodes.filter(
+          (node) => node.type !== "placeholder" && !node.isViewport
+        );
+
+        const containedElements = [];
+
+        for (const node of allElements) {
+          const element = document.querySelector(
+            `[data-node-id="${node.id}"]`
+          ) as HTMLElement;
+          if (!element) continue;
+
+          // Get element bounds in canvas coordinates
+          const elRect = element.getBoundingClientRect();
+          const elCanvasX =
+            (elRect.left - rect.left - transform.x) / transform.scale;
+          const elCanvasY =
+            (elRect.top - rect.top - transform.y) / transform.scale;
+          const elCanvasRight = elCanvasX + elRect.width / transform.scale;
+          const elCanvasBottom = elCanvasY + elRect.height / transform.scale;
+
+          // Check if element is completely inside box
+          const isContained =
+            elCanvasX >= boxRect.left &&
+            elCanvasY >= boxRect.top &&
+            elCanvasRight <= boxRect.right &&
+            elCanvasBottom <= boxRect.bottom;
+
+          if (isContained) {
+            containedElements.push({
+              node,
+              absolutePosition: {
+                left: elCanvasX,
+                top: elCanvasY,
+              },
+            });
+          }
+        }
+
         // Check if we're drawing over a media element
         const targetFrame = targetFrameRef.current;
         const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
@@ -174,6 +222,32 @@ export const FrameCreator: React.FC = () => {
           );
 
           if (transformed) {
+            // Process other contained elements if any (except the media element)
+            if (containedElements.length > 0) {
+              const newFrameNode = nodeState.nodes.find(
+                (n) => n.id === newFrame.id
+              );
+              if (newFrameNode) {
+                for (const item of containedElements) {
+                  // Skip the media element itself
+                  if (item.node.id === mediaElement.node.id) continue;
+
+                  // Update position to be centered in the frame
+                  nodeDisp.updateNodeStyle([item.node.id], {
+                    position: "relative",
+                    left: "",
+                    top: "",
+                  });
+
+                  // Then make it a child of the frame
+                  nodeDisp.moveNode(item.node.id, true, {
+                    targetId: newFrame.id,
+                    position: "inside",
+                  });
+                }
+              }
+            }
+
             nodeDisp.syncViewports();
           }
         } else if (targetFrame) {
@@ -214,6 +288,8 @@ export const FrameCreator: React.FC = () => {
             e.clientY
           );
 
+          let newFrameId = newFrame.id;
+
           if (dropIndicator?.dropInfo) {
             nodeDisp.addNode(
               newFrame,
@@ -224,10 +300,29 @@ export const FrameCreator: React.FC = () => {
           } else {
             nodeDisp.addNode(newFrame, targetFrame.id, "inside", true);
           }
+
+          // Process contained elements if any
+          if (containedElements.length > 0) {
+            for (const item of containedElements) {
+              // Update position to be centered in the frame
+              nodeDisp.updateNodeStyle([item.node.id], {
+                position: "relative",
+                left: "",
+                top: "",
+              });
+
+              // Then make it a child of the frame
+              nodeDisp.moveNode(item.node.id, true, {
+                targetId: newFrameId,
+                position: "inside",
+              });
+            }
+          }
         } else {
           // Drawing on canvas - create absolute positioned frame
+          const newFrameId = nanoid();
           const newFrame: Node = {
-            id: nanoid(),
+            id: newFrameId,
             type: "frame",
             style: {
               position: "absolute",
@@ -245,6 +340,24 @@ export const FrameCreator: React.FC = () => {
           };
 
           nodeDisp.addNode(newFrame, null, null, false);
+
+          // Process contained elements if any
+          if (containedElements.length > 0) {
+            for (const item of containedElements) {
+              // Update position to be centered in the frame
+              nodeDisp.updateNodeStyle([item.node.id], {
+                position: "relative",
+                left: "",
+                top: "",
+              });
+
+              // Then make it a child of the frame
+              nodeDisp.moveNode(item.node.id, true, {
+                targetId: newFrameId,
+                position: "inside",
+              });
+            }
+          }
         }
       }
 
@@ -257,6 +370,8 @@ export const FrameCreator: React.FC = () => {
       setBox(null);
       targetFrameRef.current = null;
       setIsFrameModeActive(false);
+
+      window.dispatchEvent(new Event("resize"));
     };
 
     canvas.addEventListener("mousedown", handleMouseDown);

@@ -10,8 +10,8 @@ import {
 } from "../utils";
 import { useEffect, useRef } from "react";
 import {
-  EDGE_SIZE,
-  HORIZONTAL_EDGE_SIZE,
+  LEFT_EDGE_SIZE,
+  RIGHT_EDGE_SIZE,
   useAutoScroll,
   VERTICAL_EDGE_SIZE,
 } from "../hooks/useAutoScroll";
@@ -201,9 +201,10 @@ export const useMouseMove = () => {
       clientY: number,
       containerRect: DOMRect
     ) => {
-      const isNearHorizontalEdge =
-        clientX <= containerRect.left + HORIZONTAL_EDGE_SIZE ||
-        clientX >= containerRect.right - HORIZONTAL_EDGE_SIZE;
+      const isNearLeftEdge = clientX <= containerRect.left + LEFT_EDGE_SIZE;
+      const isNearRightEdge = clientX >= containerRect.right - RIGHT_EDGE_SIZE;
+
+      const isNearHorizontalEdge = isNearLeftEdge || isNearRightEdge;
 
       const isNearVerticalEdge =
         clientY <= containerRect.top + VERTICAL_EDGE_SIZE ||

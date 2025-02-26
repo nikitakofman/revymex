@@ -62,7 +62,8 @@ const MenuItemComponent = ({
 };
 
 export const ContextMenu = () => {
-  const { dragState, dragDisp, nodeState, nodeDisp } = useBuilder();
+  const { dragState, dragDisp, nodeState, nodeDisp, setNodeStyle } =
+    useBuilder();
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
   const isWindows = navigator.platform.includes("Win");
@@ -322,12 +323,19 @@ export const ContextMenu = () => {
       {
         label: "Hide",
         icon: Eye,
-        shortcut: "⌘H",
+        shortcut: "⌘I",
         windowsShortcut: "Ctrl+H",
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           // Handle hide
           dragDisp.hideContextMenu();
+          setNodeStyle(
+            {
+              display: "none",
+            },
+            undefined,
+            true
+          );
         },
       },
       {

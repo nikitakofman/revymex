@@ -8,7 +8,7 @@ import { useRef } from "react";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useAutoScroll } from "../hooks/useAutoScroll";
-import { handleMediaToFrameTransformation } from "@/builder/view/toolbars/leftToolbar/Layers/utils";
+import { handleMediaToFrameTransformation } from "../utils";
 
 export const useMouseUp = () => {
   const {

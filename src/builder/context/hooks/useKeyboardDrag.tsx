@@ -10,6 +10,7 @@ export const useKeyboardDrag = () => {
     nodeDisp,
     isMoveCanvasMode,
     setIsMoveCanvasMode,
+    setNodeStyle,
   } = useBuilder();
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
@@ -62,11 +63,29 @@ export const useKeyboardDrag = () => {
         handlePaste();
       }
 
+      // Lock element
       if (e.key.toLowerCase() === "l" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
 
         if (dragState.selectedIds.length > 0) {
           nodeDisp.toggleNodeLock(dragState.selectedIds);
+        }
+      }
+
+      // Hide element (display none)
+
+      if (e.key.toLowerCase() === "i" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+
+        console.log("HINDING");
+        if (dragState.selectedIds.length > 0) {
+          setNodeStyle(
+            {
+              display: "none",
+            },
+            undefined,
+            true
+          );
         }
       }
 

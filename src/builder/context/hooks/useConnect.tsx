@@ -21,8 +21,6 @@ export const useConnect = () => {
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
 
-  console.log("isMoveCanvasMode", isMoveCanvasMode);
-
   const isNearEdge = (
     e: React.MouseEvent,
     element: HTMLElement,

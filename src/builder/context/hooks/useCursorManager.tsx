@@ -48,9 +48,6 @@ export const useCursorManager = () => {
         // When in move canvas mode but not actively moving
         document.body.style.cursor = isMovingCanvas ? "grabbing" : "grab";
         Object.assign(document.body.style, preventSelectStyle);
-      } else if (dragState.isDragging) {
-        document.body.style.cursor = "move";
-        Object.assign(document.body.style, preventSelectStyle);
       } else {
         // Default cursor
         document.body.style.cursor = "default";
