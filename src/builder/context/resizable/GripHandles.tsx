@@ -4,6 +4,7 @@ import { useBuilder } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
 import { useDragStart } from "../dnd/useDragStart";
+import { hasSkewTransform } from "../utils";
 
 export const GripHandles = ({
   node,
@@ -185,7 +186,10 @@ export const GripHandles = ({
 
   return (
     <>
-      {(node.style.rotate === "0deg" || node.style.rotate === undefined) &&
+      {(node.style.rotate === "0deg" ||
+        node.style.rotate === undefined ||
+        !node.style.transform) &&
+        !hasSkewTransform(node.style.transform) &&
         renderGripHandle(node, false, isColumn)}
 
       {parentNode &&

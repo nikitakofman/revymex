@@ -1,6 +1,7 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
 import { convertToNewUnit } from "@/builder/context/utils";
+import { parseSkew } from "@/builder/context/utils"; // Assuming parseSkew is here
 
 interface CreatePlaceholderParams {
   node: Node;
@@ -60,6 +61,23 @@ export const createPlaceholder = ({
     }
   }
 
+  // Extract skew values from the node's transform style
+  let transformValue = "";
+
+  if (node.style.transform) {
+    // Extract skew values
+    const skewValues = parseSkew(node.style.transform);
+
+    // Only add skew transformations if they exist
+    if (skewValues.skewX !== 0 || skewValues.skewY !== 0) {
+      const skewXValue =
+        skewValues.skewX !== 0 ? `skewX(${skewValues.skewX}deg) ` : "";
+      const skewYValue =
+        skewValues.skewY !== 0 ? `skewY(${skewValues.skewY}deg)` : "";
+      transformValue = `${skewXValue}${skewYValue}`.trim();
+    }
+  }
+
   return {
     id: nanoid(),
     type: "placeholder",
@@ -71,6 +89,7 @@ export const createPlaceholder = ({
       flex: "0 0 auto",
       rotate: node.style.rotate,
       borderRadius: node.style.borderRadius,
+      transform: transformValue || undefined, // Only add if there are skew values
     },
     inViewport: true,
     parentId: node.parentId,

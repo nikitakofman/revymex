@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 
 import { ToolSelect } from "./ToolSelect";
 import { Label } from "./ToolbarAtoms";
@@ -16,6 +17,10 @@ interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   onUnitChange?: (unit: string) => void;
   customValue?: string | number;
   onCustomChange?: (value: string | number, unit?: string) => void;
+  showSlider?: boolean;
+  sliderMin?: number;
+  sliderMax?: number;
+  sliderStep?: number;
 }
 
 const getParentLayoutMode = (
@@ -24,11 +29,7 @@ const getParentLayoutMode = (
   const parent = element.parentElement;
   if (!parent) return null;
 
-  // Log the actual inline style and data attributes
-
   const parentStyle = window.getComputedStyle(parent);
-
-  // Log all flex-related computed styles
 
   if (parentStyle.display === "grid") return "grid";
   if (parentStyle.display === "flex") {
@@ -71,6 +72,54 @@ const updateFillStyles = (
   setNodeStyle(styles, undefined, true);
 };
 
+// Function to parse box-shadow value
+const parseBoxShadow = (shadowString) => {
+  if (!shadowString || shadowString === "none") {
+    return {
+      offsetX: 0,
+      offsetY: 4,
+      blur: 8,
+      spread: 0,
+      color: "rgba(0, 0, 0, 0.2)",
+      inset: false,
+    };
+  }
+
+  // Check for inset
+  const inset = shadowString.includes("inset");
+
+  // Extract values with regex
+  const pattern =
+    /(?:inset\s+)?(-?\d+)(?:px)?\s+(-?\d+)(?:px)?\s+(-?\d+)(?:px)?\s+(-?\d+)(?:px)?\s+(rgba?\([^)]+\)|#[0-9A-Fa-f]+|[a-z]+)/;
+  const match = shadowString.match(pattern);
+
+  if (match) {
+    return {
+      offsetX: parseInt(match[1], 10),
+      offsetY: parseInt(match[2], 10),
+      blur: parseInt(match[3], 10),
+      spread: parseInt(match[4], 10),
+      color: match[5],
+      inset: inset,
+    };
+  }
+
+  return {
+    offsetX: 0,
+    offsetY: 4,
+    blur: 8,
+    spread: 0,
+    color: "rgba(0, 0, 0, 0.2)",
+    inset: false,
+  };
+};
+
+// Function to create box-shadow string
+const createBoxShadow = (shadowParts) => {
+  const insetText = shadowParts.inset ? "inset " : "";
+  return `${insetText}${shadowParts.offsetX}px ${shadowParts.offsetY}px ${shadowParts.blur}px ${shadowParts.spread}px ${shadowParts.color}`;
+};
+
 export function ToolInput({
   step = 1,
   value,
@@ -83,6 +132,10 @@ export function ToolInput({
   type,
   customValue,
   onCustomChange,
+  showSlider = false,
+  sliderMin = 0,
+  sliderMax = 100,
+  sliderStep = 1,
   ...props
 }: ToolInputProps) {
   const { setNodeStyle, dragState, nodeState, startRecording, stopRecording } =
@@ -107,6 +160,10 @@ export function ToolInput({
   const isGridInput = label === "Columns" || label === "Rows";
   const isCustomMode = typeof onCustomChange !== "undefined";
 
+  // Check if this is a box-shadow property
+  const isBoxShadowProp = props.name?.startsWith("boxShadow.");
+  const boxShadowPart = isBoxShadowProp ? props.name?.split(".")[1] : null;
+
   const hasParent = useCallback(() => {
     if (!dragState.selectedIds.length) return false;
     const selectedNode = nodeState.nodes.find(
@@ -126,6 +183,56 @@ export function ToolInput({
     if (isCustomMode) return null;
     if (!dragState.selectedIds.length) return null;
 
+    // Handle boxShadow properties specially
+    if (isBoxShadowProp) {
+      const computedValues = dragState.selectedIds
+        .map((id) => {
+          const element = document.querySelector(
+            `[data-node-id="${id}"]`
+          ) as HTMLElement;
+          if (!element) return null;
+
+          const computedStyle = window.getComputedStyle(element);
+          const boxShadow = computedStyle.boxShadow;
+
+          // Parse the box-shadow
+          const shadowParts = parseBoxShadow(boxShadow);
+
+          // Return the specific part we're looking for
+          if (boxShadowPart === "offsetX")
+            return { value: shadowParts.offsetX, unit: "px" };
+          if (boxShadowPart === "offsetY")
+            return { value: shadowParts.offsetY, unit: "px" };
+          if (boxShadowPart === "blur")
+            return { value: shadowParts.blur, unit: "px" };
+          if (boxShadowPart === "spread")
+            return { value: shadowParts.spread, unit: "px" };
+          if (boxShadowPart === "color") return { value: shadowParts.color };
+          if (boxShadowPart === "inset")
+            return { value: shadowParts.inset ? 1 : 0 };
+
+          return null;
+        })
+        .filter((v): v is NonNullable<typeof v> => v !== null);
+
+      if (computedValues.length === 0) return null;
+
+      const firstValue = computedValues[0];
+      const allSameValue = computedValues.every(
+        (v) => v.value === firstValue.value
+      );
+      const allSameUnit = computedValues.every(
+        (v) => !v.unit || !firstValue.unit || v.unit === firstValue.unit
+      );
+
+      if (!allSameValue || !allSameUnit) {
+        return { mixed: true, unit: allSameUnit ? firstValue.unit : null };
+      }
+
+      return firstValue;
+    }
+
+    // Regular property handling (non-boxShadow)
     const computedValues = dragState.selectedIds
       .map((id) => {
         const element = document.querySelector(
@@ -207,7 +314,15 @@ export function ToolInput({
     }
 
     return firstValue;
-  }, [dragState.selectedIds, props.name, label, isGridInput, isCustomMode]);
+  }, [
+    dragState.selectedIds,
+    props.name,
+    label,
+    isGridInput,
+    isCustomMode,
+    isBoxShadowProp,
+    boxShadowPart,
+  ]);
 
   useEffect(() => {
     if (!isCustomMode && !isDraggingRef.current && !isInternalUpdate.current) {
@@ -224,11 +339,19 @@ export function ToolInput({
       if ("mixed" in computed) {
         setIsMixed(true);
       } else {
-        const newValue = Math.round(computed.value).toString();
+        // For regular numeric values
+        let newValue = computed.value;
+        if (typeof newValue === "number") {
+          newValue = Math.round(newValue).toString();
+        } else {
+          newValue = String(newValue);
+        }
         setIsMixed(false);
         setLocalValue(newValue);
-        setLocalUnit(computed.unit);
-        currentValueRef.current = computed.value;
+        if (computed.unit) {
+          setLocalUnit(computed.unit);
+        }
+        currentValueRef.current = Number(computed.value);
       }
     }
   }, [
@@ -252,6 +375,40 @@ export function ToolInput({
     return step;
   };
 
+  // Special handling for box-shadow updates
+  const updateBoxShadow = (newValue) => {
+    if (!dragState.selectedIds.length) return;
+
+    // Get the current box-shadow
+    const element = document.querySelector(
+      `[data-node-id="${dragState.selectedIds[0]}"]`
+    ) as HTMLElement;
+
+    if (!element) return;
+
+    const computedStyle = window.getComputedStyle(element);
+    const currentShadow = computedStyle.boxShadow;
+
+    // Parse the current shadow
+    const shadowParts = parseBoxShadow(currentShadow);
+
+    // Update the specific part
+    if (boxShadowPart === "offsetX")
+      shadowParts.offsetX = parseInt(newValue, 10);
+    if (boxShadowPart === "offsetY")
+      shadowParts.offsetY = parseInt(newValue, 10);
+    if (boxShadowPart === "blur") shadowParts.blur = parseInt(newValue, 10);
+    if (boxShadowPart === "spread") shadowParts.spread = parseInt(newValue, 10);
+    if (boxShadowPart === "color") shadowParts.color = newValue;
+    if (boxShadowPart === "inset") shadowParts.inset = Boolean(newValue);
+
+    // Create the new shadow string
+    const newShadow = createBoxShadow(shadowParts);
+
+    // Apply the new shadow
+    setNodeStyle({ boxShadow: newShadow }, undefined, true);
+  };
+
   const updateValue = (
     increment: boolean,
     multiplier: number = 1,
@@ -272,6 +429,12 @@ export function ToolInput({
 
     if (isCustomMode) {
       onCustomChange?.(newValue, localUnit);
+      return;
+    }
+
+    // Handle box-shadow specially
+    if (isBoxShadowProp) {
+      updateBoxShadow(newValue);
       return;
     }
 
@@ -373,6 +536,12 @@ export function ToolInput({
       return;
     }
 
+    // Handle box-shadow specially
+    if (isBoxShadowProp) {
+      updateBoxShadow(clampedValue);
+      return;
+    }
+
     if (localUnit === "fill") {
       const element = document.querySelector(
         `[data-node-id="${dragState.selectedIds[0]}"]`
@@ -384,6 +553,54 @@ export function ToolInput({
       setNodeStyle(
         {
           [props.name || ""]: `${clampedValue}${localUnit}`,
+        },
+        undefined,
+        true
+      );
+    }
+  };
+
+  const handleSliderChange = (newValue: number[]) => {
+    const sliderValue = newValue[0];
+
+    isInternalUpdate.current = true;
+    setLocalValue(sliderValue.toString());
+    currentValueRef.current = sliderValue;
+    isInternalUpdate.current = false;
+
+    if (isCustomMode) {
+      onCustomChange?.(sliderValue, localUnit);
+      return;
+    }
+
+    // Handle box-shadow specially
+    if (isBoxShadowProp) {
+      updateBoxShadow(sliderValue);
+      return;
+    }
+
+    if (isGridInput) {
+      const property =
+        label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
+      setNodeStyle(
+        {
+          display: "grid",
+          [property]: `repeat(${Math.round(sliderValue)}, 1fr)`,
+        },
+        undefined,
+        true
+      );
+    } else if (localUnit === "fill") {
+      const element = document.querySelector(
+        `[data-node-id="${dragState.selectedIds[0]}"]`
+      ) as HTMLElement;
+      if (element) {
+        updateFillStyles(element, props.name || "", setNodeStyle);
+      }
+    } else {
+      setNodeStyle(
+        {
+          [props.name || ""]: `${sliderValue}${localUnit}`,
         },
         undefined,
         true
@@ -454,13 +671,35 @@ export function ToolInput({
     setIsFocused(false);
   };
 
+  // Convert the string value to a number for the slider
+  const sliderValue = isMixed
+    ? [(sliderMin + sliderMax) / 2]
+    : [Number(localValue)];
+
   return (
     <div
       className="flex items-center justify-between gap-2"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      {label && <Label>{label}</Label>}
+      <div className="flex items-center  justify-between gap-2 flex-1">
+        {label && <Label>{label}</Label>}
+
+        {/* shadcn Slider component - positioned between label and input */}
+        {showSlider && !isMixed && (
+          <div className="justif mx-1">
+            <Slider
+              value={sliderValue}
+              min={sliderMin}
+              max={sliderMax}
+              step={sliderStep}
+              onValueChange={handleSliderChange}
+              className="w-[60px]"
+            />
+          </div>
+        )}
+      </div>
+
       <div className="flex gap-2">
         <div className="relative group">
           {isMixed && !isCustomMode ? (

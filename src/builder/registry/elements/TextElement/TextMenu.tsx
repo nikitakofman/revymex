@@ -144,10 +144,10 @@ const TextMenu = ({
           transform: "translateX(-50%)",
           zIndex: 50,
         }}
-        className="flex text-toolbar items-center gap-1 p-1 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
+        className="flex text-toolbar items-center gap-3 p-1 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-0.5 px-1 border-r border-[var(--border-light)]">
+        <div className="flex items-center gap-2 px-1 border-r border-[var(--border-light)]">
           <div className="relative" ref={fontPickerRef}>
             <button
               onMouseDown={(e) => {
@@ -165,7 +165,7 @@ const TextMenu = ({
                   editor.getAttributes("textStyle").fontFamily || "inherit",
               }}
             >
-              <span>
+              <span className="text-xs">
                 {editor.getAttributes("textStyle").fontFamily || "Font"}
               </span>
               <ChevronDown size={14} />

@@ -51,7 +51,9 @@ interface BuilderContextType {
     React.SetStateAction<{ x: number; y: number; scale: number }>
   >;
   setNodeStyle: (
-    styles: React.CSSProperties & { src?: string } & { text?: string },
+    styles: React.CSSProperties & { src?: string } & { text?: string } & {
+      backgroundImage?: string;
+    } & { backgroundVideo?: string },
     nodeIds?: (string | number)[],
     sync?: boolean
   ) => void;
@@ -85,6 +87,7 @@ interface BuilderContextType {
   setIsTextModeActive: React.Dispatch<React.SetStateAction<boolean>>;
   isMoveCanvasMode: boolean;
   setIsMoveCanvasMode: React.Dispatch<React.SetStateAction<boolean>>;
+  popupRef: RefObject<HTMLDivElement | null>;
 }
 
 export interface RecordingSession {
@@ -126,6 +129,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [isAdjustingBorderRadius, setIsAdjustingBorderRadius] = useState(false);
   const dragDimensionsRef = useRef<DragDimensions>({});
   const selectedIdsRef = useRef(null);
+  const popupRef = useRef(null);
+
   const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
 
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -321,6 +326,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     isMoveCanvasMode,
     setIsMoveCanvasMode,
     setIsMovingCanvas,
+    popupRef,
   };
 
   return (

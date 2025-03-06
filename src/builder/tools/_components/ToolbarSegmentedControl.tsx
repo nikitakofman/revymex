@@ -15,7 +15,9 @@ interface ToolbarSegmentedControlProps {
   isColor?: boolean;
   options: ToolbarSegmentOption[];
   size?: "sm" | "md" | "lg";
-  onChange?: (value: string) => void; // Added onChange prop
+  onChange?: (value: string) => void;
+  className?: string;
+  currentValue?: string; // Added explicit currentValue prop
 }
 
 export function ToolbarSegmentedControl({
@@ -25,29 +27,46 @@ export function ToolbarSegmentedControl({
   isColor = false,
   options,
   size = "md",
-  onChange, // Added to props
+  onChange,
+  className = "",
+  currentValue, // Use this if provided
 }: ToolbarSegmentedControlProps) {
   const { setNodeStyle } = useBuilder();
 
-  const computedStyle = useComputedStyle({
-    property: cssProperty,
-    parseValue,
-    defaultValue,
-    isColor,
-  });
+  // Only use the computed style if currentValue isn't explicitly provided
+  const computedStyle = !currentValue
+    ? useComputedStyle({
+        property: cssProperty,
+        parseValue,
+        defaultValue,
+        isColor,
+      })
+    : null;
 
-  const currentValue = computedStyle.mixed
-    ? "mixed"
-    : (computedStyle.value as string);
+  // If currentValue is provided, use it; otherwise use the computed style
+  const activeValue =
+    currentValue ||
+    (computedStyle?.mixed ? "mixed" : (computedStyle?.value as string));
 
   const handleSegmentClick = (newValue: string) => {
     if (newValue === "mixed") return;
 
-    setNodeStyle({ [cssProperty]: newValue }, undefined, true);
-    onChange?.(newValue); // Call onChange if provided
+    // Only call setNodeStyle if the property is a real CSS property
+    // For custom tracking properties, don't call this
+    if (
+      !cssProperty.includes("fill-type") &&
+      !cssProperty.includes("-custom")
+    ) {
+      setNodeStyle({ [cssProperty]: newValue }, undefined, true);
+    }
+
+    // Always call onChange if provided
+    if (onChange) {
+      onChange(newValue);
+    }
   };
 
-  const finalOptions = computedStyle.mixed
+  const finalOptions = computedStyle?.mixed
     ? [{ value: "mixed", label: "Mixed" }, ...options]
     : options;
 

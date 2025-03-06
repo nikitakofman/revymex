@@ -114,6 +114,11 @@ export const GapHandles = ({
   if (!frameElement) return null;
 
   const computedStyle = window.getComputedStyle(frameElement);
+
+  // Check if flex-wrap is set to "wrap" - if so, don't display handles
+  const flexWrap = computedStyle.flexWrap;
+  if (flexWrap === "wrap") return null;
+
   const isColumn = computedStyle.flexDirection === "column";
 
   const frameChildren = nodeState.nodes

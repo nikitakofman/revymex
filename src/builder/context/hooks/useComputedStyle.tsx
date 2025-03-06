@@ -93,7 +93,13 @@ const batchProcessElements = (
 
       let value = computedStyle[property as any];
 
-      if (
+      // Special handling for specific properties
+      if (property === "backgroundImage" || property === "backgroundVideo") {
+        // For these properties, empty or transparent is significant, don't overwrite with defaults
+        if (!value || value === "none") {
+          return { value: "none" };
+        }
+      } else if (
         !value ||
         value === "none" ||
         value === "rgba(0, 0, 0, 0)" ||
@@ -102,12 +108,23 @@ const batchProcessElements = (
         return null;
       }
 
+      // Special case for background image
+      if (property === "backgroundImage" && value !== "none") {
+        // Don't apply color conversion to URL values
+        if (value.startsWith("url(")) {
+          return { value };
+        }
+      }
+
       if (
         options.isColor ||
         property === "background" ||
         property === "backgroundColor"
       ) {
-        value = extractColor(value);
+        // Only extract color if it's not a URL value
+        if (!value.includes("url(")) {
+          value = extractColor(value);
+        }
       }
 
       let result: StyleValue;

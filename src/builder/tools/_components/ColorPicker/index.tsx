@@ -21,6 +21,8 @@ interface ColorPickerProps {
   onChange?: (color: string) => void;
   usePseudoElement?: boolean;
   pseudoElement?: "::before" | "::after";
+  displayMode?: "trigger" | "direct";
+  containerClassName?: string;
 }
 
 const ColorPreview = ({
@@ -44,6 +46,281 @@ const ColorPreview = ({
   </div>
 );
 
+// Separate ColorPickerContent component that can be used directly or in a popup
+export const ColorPickerContent = ({
+  colorMode,
+  setColorMode,
+  hsv,
+  setHsv,
+  currentValue,
+  handleColorChange,
+  handleSaturationMouseDown,
+  handleHueMouseDown,
+  saturationRef,
+  hueRef,
+  onClose,
+  showHeader = true,
+}) => {
+  const currentRgb = hsvToRgb(hsv);
+  const currentHsl = rgbToHsl(currentRgb);
+
+  return (
+    <div className="bg-[var(--bg-surface)] rounded-lg p-0.5 w-full space-y-3">
+      {showHeader && (
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-medium text-[var(--text-primary)]">
+            Color
+          </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={colorMode}
+              onChange={(e) => setColorMode(e.target.value as ColorMode)}
+              className="h-6 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+            >
+              <option value="hex">HEX</option>
+              <option value="rgb">RGB</option>
+              <option value="hsl">HSL</option>
+              <option value="hsv">HSV</option>
+            </select>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={saturationRef}
+        className="relative w-full h-40 mb-1 cursor-crosshair"
+        style={{
+          backgroundColor: `hsl(${hsv.h}, 100%, 50%)`,
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          handleSaturationMouseDown(e);
+        }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black" />
+        <div
+          className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 border-2 border-white rounded-full shadow-sm"
+          style={{
+            left: `${hsv.s}%`,
+            top: `${100 - hsv.v}%`,
+          }}
+        />
+      </div>
+
+      <div
+        ref={hueRef}
+        className="relative h-4 rounded-md cursor-pointer"
+        style={{
+          background:
+            "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)",
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          handleHueMouseDown(e);
+        }}
+      >
+        <div
+          className="absolute w-2 h-full -translate-x-1/2 border-2 border-white rounded-sm shadow-sm"
+          style={{
+            left: `${(hsv.h / 360) * 100}%`,
+          }}
+        />
+      </div>
+
+      <div className="space-y-2">
+        {colorMode === "hex" && (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={currentValue.toUpperCase()}
+              onChange={(e) => {
+                if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
+                  handleColorChange(e.target.value);
+                }
+              }}
+              className="flex-1 h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+            />
+            <button className="h-8 w-8 flex items-center justify-center bg-[var(--control-bg)] border border-[var(--control-border)] rounded">
+              <Pipette className="w-4 h-4 text-[var(--text-secondary)]" />
+            </button>
+          </div>
+        )}
+
+        {colorMode === "rgb" && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">R</label>
+              <input
+                type="number"
+                min={0}
+                max={255}
+                value={currentRgb.r}
+                onChange={(e) => {
+                  const rgb = { ...currentRgb, r: Number(e.target.value) };
+                  const newHsv = rgbToHsv(rgb);
+                  setHsv(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">G</label>
+              <input
+                type="number"
+                min={0}
+                max={255}
+                value={currentRgb.g}
+                onChange={(e) => {
+                  const rgb = { ...currentRgb, g: Number(e.target.value) };
+                  const newHsv = rgbToHsv(rgb);
+                  setHsv(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">B</label>
+              <input
+                type="number"
+                min={0}
+                max={255}
+                value={currentRgb.b}
+                onChange={(e) => {
+                  const rgb = { ...currentRgb, b: Number(e.target.value) };
+                  const newHsv = rgbToHsv(rgb);
+                  setHsv(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+          </div>
+        )}
+
+        {colorMode === "hsl" && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">H</label>
+              <input
+                type="number"
+                min={0}
+                max={360}
+                value={Math.round(currentHsl.h)}
+                onChange={(e) => {
+                  const hsl = { ...currentHsl, h: Number(e.target.value) };
+                  const rgb = hslToRgb(hsl);
+                  const newHsv = rgbToHsv(rgb);
+                  setHsv(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">S</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(currentHsl.s)}
+                onChange={(e) => {
+                  const hsl = { ...currentHsl, s: Number(e.target.value) };
+                  const rgb = hslToRgb(hsl);
+                  const newHsv = rgbToHsv(rgb);
+                  setHsv(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">L</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(currentHsl.l)}
+                onChange={(e) => {
+                  const hsl = { ...currentHsl, l: Number(e.target.value) };
+                  const rgb = hslToRgb(hsl);
+                  const newHsv = rgbToHsv(rgb);
+                  setHsv(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+          </div>
+        )}
+
+        {colorMode === "hsv" && (
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">H</label>
+              <input
+                type="number"
+                min={0}
+                max={360}
+                value={Math.round(hsv.h)}
+                onChange={(e) => {
+                  const newHsv = { ...hsv, h: Number(e.target.value) };
+                  setHsv(newHsv);
+                  const rgb = hsvToRgb(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">S</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(hsv.s)}
+                onChange={(e) => {
+                  const newHsv = { ...hsv, s: Number(e.target.value) };
+                  setHsv(newHsv);
+                  const rgb = hsvToRgb(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">V</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(hsv.v)}
+                onChange={(e) => {
+                  const newHsv = { ...hsv, v: Number(e.target.value) };
+                  setHsv(newHsv);
+                  const rgb = hsvToRgb(newHsv);
+                  handleColorChange(rgbToHex(rgb));
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const ColorPicker = ({
   name,
   label,
@@ -52,19 +329,29 @@ export const ColorPicker = ({
   onChange: externalOnChange,
   usePseudoElement = false,
   pseudoElement = "::after",
+  displayMode = "trigger", // Default to trigger mode for backward compatibility
+  containerClassName = "",
 }: ColorPickerProps) => {
-  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
+  // Use the shared popupRef from useBuilder
+  const { setNodeStyle, startRecording, stopRecording, popupRef } =
+    useBuilder();
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
   const [hsv, setHsv] = useState({ h: 0, s: 100, v: 100 });
   const [isDraggingHue, setIsDraggingHue] = useState(false);
   const [isDraggingColor, setIsDraggingColor] = useState(false);
 
+  // Store the position of the popup
+  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 });
+
   const sessionIdRef = useRef<string | null>(null);
 
   const pickerRef = useRef<HTMLDivElement>(null);
   const saturationRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
+
+  // Define our own colorPickerPopupRef
+  const colorPickerPopupRef = useRef<HTMLDivElement>(null);
 
   const computedStyle = useComputedStyle({
     property: name || "",
@@ -82,6 +369,59 @@ export const ColorPicker = ({
     const rgb = hexToRgb(currentValue);
     setHsv(rgbToHsv(rgb));
   }, [currentValue]);
+
+  // Function to calculate proper popup position
+  const calculatePopupPosition = () => {
+    if (!pickerRef.current) return;
+
+    // Try to get the active toolbar popup position
+    const toolbarPopupElement = popupRef?.current;
+    const pickerRect = pickerRef.current.getBoundingClientRect();
+
+    let left = pickerRect.left;
+    let top = pickerRect.top - 360; // Default position above the trigger
+
+    // If we have the toolbar popup reference, position relative to it
+    if (toolbarPopupElement) {
+      const toolbarRect = toolbarPopupElement.getBoundingClientRect();
+
+      // Calculate the position to center the color picker above the toolbar popup
+      left = toolbarRect.left + toolbarRect.width / 2 - 132; // 264/2 = 132 (half the width of color picker)
+      top = toolbarRect.top - 370; // Position above the toolbar popup with some margin
+
+      // Make sure the popup doesn't go off screen at the top
+      if (top < 10) {
+        // If there's not enough space at the top, place it below the toolbar popup
+        top = toolbarRect.bottom + 10;
+      }
+
+      // Make sure the popup doesn't go off screen at the left
+      if (left < 10) {
+        left = 10;
+      }
+
+      // Make sure the popup doesn't go off screen at the right
+      const viewportWidth = window.innerWidth;
+      if (left + 264 > viewportWidth - 10) {
+        left = viewportWidth - 274; // 264 + 10 margin
+      }
+    }
+
+    setPopupPosition({ left, top });
+  };
+
+  // Calculate position when opening popup
+  useEffect(() => {
+    if (isOpen) {
+      calculatePopupPosition();
+
+      // Recalculate on window resize
+      window.addEventListener("resize", calculatePopupPosition);
+      return () => {
+        window.removeEventListener("resize", calculatePopupPosition);
+      };
+    }
+  }, [isOpen]);
 
   const handleColorChange = (color: string) => {
     if (externalOnChange) {
@@ -162,12 +502,67 @@ export const ColorPicker = ({
     };
   }, [isDraggingColor, isDraggingHue]);
 
-  const currentRgb = hsvToRgb(hsv);
-  const currentHsl = rgbToHsl(currentRgb);
+  // Click outside handler to close the popup
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        isOpen &&
+        colorPickerPopupRef.current &&
+        !colorPickerPopupRef.current.contains(event.target as Node) &&
+        pickerRef.current &&
+        !pickerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
 
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // In direct mode, render the color picker content directly without a trigger button
+  if (displayMode === "direct") {
+    return (
+      <div className={`${containerClassName}`}>
+        {label && (
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-[var(--text-secondary)]">
+              {label}
+            </span>
+            <ColorPreview color={currentValue} />
+            <span className="text-xs text-[var(--text-secondary)]">
+              {currentValue.toUpperCase()}
+            </span>
+          </div>
+        )}
+
+        <ColorPickerContent
+          colorMode={colorMode}
+          setColorMode={setColorMode}
+          hsv={hsv}
+          setHsv={setHsv}
+          currentValue={currentValue}
+          handleColorChange={handleColorChange}
+          handleSaturationMouseDown={handleSaturationMouseDown}
+          handleHueMouseDown={handleHueMouseDown}
+          saturationRef={saturationRef}
+          hueRef={hueRef}
+          onClose={null}
+          showHeader={false}
+        />
+      </div>
+    );
+  }
+
+  // In trigger mode, show the trigger button that opens the popup
   return (
     <div
-      className="relative"
+      className={`relative ${containerClassName}`}
       ref={pickerRef}
       onMouseDown={(e) => e.preventDefault()}
     >
@@ -178,7 +573,12 @@ export const ColorPicker = ({
           </span>
         )}
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            setIsOpen(!isOpen);
+            if (!isOpen) {
+              setTimeout(calculatePopupPosition, 0);
+            }
+          }}
           className="flex items-center gap-2 h-7 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] hover:border-[var(--control-border-hover)] focus:border-[var(--border-focus)] text-[var(--text-primary)] rounded-[var(--radius-lg)] focus:outline-none transition-colors"
         >
           <ColorPreview color={currentValue} />
@@ -189,283 +589,28 @@ export const ColorPicker = ({
 
       {isOpen && (
         <div
-          className="fixed bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg shadow-lg z-50 p-3 w-64"
+          ref={colorPickerPopupRef}
+          data-is-color-picker="true"
+          className="fixed bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg shadow-lg z-50 w-64"
           style={{
-            left:
-              position === "left" && pickerRef.current
-                ? pickerRef.current.getBoundingClientRect().left - 280
-                : pickerRef.current?.getBoundingClientRect().left || 0,
-            top: pickerRef.current
-              ? pickerRef.current.getBoundingClientRect().top -
-                (position === "left" ? 0 : 8)
-              : 0,
+            left: popupPosition.left,
+            top: popupPosition.top,
           }}
         >
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-sm font-medium text-[var(--text-primary)]">
-              Color
-            </span>
-            <div className="flex items-center gap-2">
-              <select
-                value={colorMode}
-                onChange={(e) => setColorMode(e.target.value as ColorMode)}
-                className="h-6 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-              >
-                <option value="hex">HEX</option>
-                <option value="rgb">RGB</option>
-                <option value="hsl">HSL</option>
-                <option value="hsv">HSV</option>
-              </select>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div
-            ref={saturationRef}
-            className="relative w-full h-40 rounded-lg mb-3 cursor-crosshair"
-            style={{
-              backgroundColor: `hsl(${hsv.h}, 100%, 50%)`,
-            }}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              handleSaturationMouseDown(e);
-            }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-white to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black" />
-            <div
-              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 border-2 border-white rounded-full shadow-sm"
-              style={{
-                left: `${hsv.s}%`,
-                top: `${100 - hsv.v}%`,
-              }}
-            />
-          </div>
-
-          <div
-            ref={hueRef}
-            className="relative h-4 rounded-md mb-3 cursor-pointer"
-            style={{
-              background:
-                "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)",
-            }}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              handleHueMouseDown(e);
-            }}
-          >
-            <div
-              className="absolute w-2 h-full -translate-x-1/2 border-2 border-white rounded-sm shadow-sm"
-              style={{
-                left: `${(hsv.h / 360) * 100}%`,
-              }}
-            />
-          </div>
-
-          <div className="space-y-2">
-            {colorMode === "hex" && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={currentValue.toUpperCase()}
-                  onChange={(e) => {
-                    if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
-                      handleColorChange(e.target.value);
-                    }
-                  }}
-                  className="flex-1 h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                />
-                <button className="h-8 w-8 flex items-center justify-center bg-[var(--control-bg)] border border-[var(--control-border)] rounded">
-                  <Pipette className="w-4 h-4 text-[var(--text-secondary)]" />
-                </button>
-              </div>
-            )}
-
-            {colorMode === "rgb" && (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    R
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={255}
-                    value={currentRgb.r}
-                    onChange={(e) => {
-                      const rgb = { ...currentRgb, r: Number(e.target.value) };
-                      const newHsv = rgbToHsv(rgb);
-                      setHsv(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    G
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={255}
-                    value={currentRgb.g}
-                    onChange={(e) => {
-                      const rgb = { ...currentRgb, g: Number(e.target.value) };
-                      const newHsv = rgbToHsv(rgb);
-                      setHsv(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    B
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={255}
-                    value={currentRgb.b}
-                    onChange={(e) => {
-                      const rgb = { ...currentRgb, b: Number(e.target.value) };
-                      const newHsv = rgbToHsv(rgb);
-                      setHsv(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-              </div>
-            )}
-
-            {colorMode === "hsl" && (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    H
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={360}
-                    value={Math.round(currentHsl.h)}
-                    onChange={(e) => {
-                      const hsl = { ...currentHsl, h: Number(e.target.value) };
-                      const rgb = hslToRgb(hsl);
-                      const newHsv = rgbToHsv(rgb);
-                      setHsv(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    S
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={Math.round(currentHsl.s)}
-                    onChange={(e) => {
-                      const hsl = { ...currentHsl, s: Number(e.target.value) };
-                      const rgb = hslToRgb(hsl);
-                      const newHsv = rgbToHsv(rgb);
-                      setHsv(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    L
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={Math.round(currentHsl.l)}
-                    onChange={(e) => {
-                      const hsl = { ...currentHsl, l: Number(e.target.value) };
-                      const rgb = hslToRgb(hsl);
-                      const newHsv = rgbToHsv(rgb);
-                      setHsv(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-              </div>
-            )}
-
-            {colorMode === "hsv" && (
-              <div className="grid grid-cols-3 gap-2">
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    H
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={360}
-                    value={Math.round(hsv.h)}
-                    onChange={(e) => {
-                      const newHsv = { ...hsv, h: Number(e.target.value) };
-                      setHsv(newHsv);
-                      const rgb = hsvToRgb(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    S
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={Math.round(hsv.s)}
-                    onChange={(e) => {
-                      const newHsv = { ...hsv, s: Number(e.target.value) };
-                      setHsv(newHsv);
-                      const rgb = hsvToRgb(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-xs text-[var(--text-secondary)]">
-                    V
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={Math.round(hsv.v)}
-                    onChange={(e) => {
-                      const newHsv = { ...hsv, v: Number(e.target.value) };
-                      setHsv(newHsv);
-                      const rgb = hsvToRgb(newHsv);
-                      handleColorChange(rgbToHex(rgb));
-                    }}
-                    className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+          <ColorPickerContent
+            colorMode={colorMode}
+            setColorMode={setColorMode}
+            hsv={hsv}
+            setHsv={setHsv}
+            currentValue={currentValue}
+            handleColorChange={handleColorChange}
+            handleSaturationMouseDown={handleSaturationMouseDown}
+            handleHueMouseDown={handleHueMouseDown}
+            saturationRef={saturationRef}
+            hueRef={hueRef}
+            onClose={() => setIsOpen(false)}
+            showHeader={true}
+          />
         </div>
       )}
     </div>

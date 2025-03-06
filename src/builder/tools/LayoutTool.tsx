@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   ArrowRight,
   ArrowDown,
@@ -8,16 +8,24 @@ import {
   AlignHorizontalDistributeCenter,
   Grid2x2,
   FileX,
+  Check,
+  Cross,
 } from "lucide-react";
 
 // Replace these imports with your actual component paths
 import { useBuilder } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 
-import { ToolbarContainer, ToolbarSection } from "./_components/ToolbarAtoms";
+import {
+  Label,
+  ToolbarContainer,
+  ToolbarSection,
+} from "./_components/ToolbarAtoms";
 import { ToolbarSegmentedControl } from "./_components/ToolbarSegmentedControl";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
+import ToolbarButton from "./_components/ToolbarButton";
+import { ToolbarSwitch } from "./_components/ToolbarSwitch";
 
 /** Possible layout modes */
 type LayoutMode = "flex" | "grid";
@@ -32,12 +40,17 @@ type DistributionMode =
 export default function LayoutTool() {
   const { setNodeStyle, nodeState, dragState } = useBuilder();
 
-  // Track which layout mode we're in
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>("flex");
+  // Track which layout mode we're in - fix controlled component issues
+  const [displayValue, setDisplayValue] = useState<LayoutMode>("flex");
+  const [directionValue, setDirectionValue] = useState<"row" | "column">("row");
+  const [justifyValue, setJustifyValue] = useState<string>("flex-start");
 
   // For flex, track distribution (stack / space-between / space-around / space-evenly)
   const [distributionMode, setDistributionMode] =
     useState<DistributionMode>("stack");
+
+  // Track active cell in the 3x3 grid
+  const [activeCell, setActiveCell] = useState({ row: 0, col: 0 });
 
   // For our alignment grid (both flex & grid):
   const alignMap = ["flex-start", "center", "flex-end"] as const;
@@ -75,6 +88,12 @@ export default function LayoutTool() {
     defaultValue: "repeat(3, 1fr)",
   });
 
+  // Also track justifyItems for more accurate grid representation
+  const computedJustifyItems = useComputedStyle({
+    property: "justifyItems",
+    defaultValue: "start",
+  });
+
   // Convert computedDirection to a normal string (row or column)
   const direction = computedDirection.mixed
     ? "row"
@@ -88,17 +107,30 @@ export default function LayoutTool() {
   // Convert alignItems to a normal string
   const alignItems = computedAlign.mixed ? "flex-start" : computedAlign.value;
 
-  // Sync the layoutMode with the actual computed display
-  useEffect(() => {
-    if (computedDisplay.mixed) {
-      setLayoutMode("flex");
-    } else {
-      setLayoutMode(computedDisplay.value === "grid" ? "grid" : "flex");
-    }
-  }, [computedDisplay]);
+  // Convert justifyItems to a normal string
+  const justifyItems = computedJustifyItems.mixed
+    ? "start"
+    : computedJustifyItems.value;
 
-  // Keep distributionMode in sync with computedJustify
+  // Update local state from computed styles
   useEffect(() => {
+    // Update display mode state
+    if (!computedDisplay.mixed) {
+      const displayMode = computedDisplay.value === "grid" ? "grid" : "flex";
+      setDisplayValue(displayMode);
+    }
+
+    // Update direction state
+    if (!computedDirection.mixed) {
+      setDirectionValue(computedDirection.value as "row" | "column");
+    }
+
+    // Update justify state
+    if (!computedJustify.mixed) {
+      setJustifyValue(computedJustify.value as string);
+    }
+
+    // Update distribution mode
     if (justifyContent === "flex-start") {
       setDistributionMode("stack");
     } else if (
@@ -106,9 +138,65 @@ export default function LayoutTool() {
       justifyContent === "space-around" ||
       justifyContent === "space-evenly"
     ) {
-      setDistributionMode(justifyContent);
+      setDistributionMode(justifyContent as DistributionMode);
     }
-  }, [justifyContent]);
+  }, [computedDisplay, computedDirection, computedJustify, justifyContent]);
+
+  // Update active cell based on computed styles
+  const updateActiveCell = useCallback(() => {
+    // Find row index from alignItems
+    let rowIndex = alignMap.indexOf(alignItems as any);
+    if (rowIndex === -1) rowIndex = 0;
+
+    // Find column index for justifyContent or justifyItems
+    let colIndex;
+    if (displayValue === "grid") {
+      colIndex = justifyMap.indexOf(justifyItems as any);
+      if (colIndex === -1) colIndex = 0;
+    } else {
+      if (distributionMode === "stack") {
+        if (directionValue === "row") {
+          colIndex = justifyMap.indexOf(justifyContent as any);
+        } else {
+          // For column direction, justifyContent maps to rows
+          rowIndex = justifyMap.indexOf(justifyContent as any);
+          colIndex = alignMap.indexOf(alignItems as any);
+        }
+      } else {
+        // For distribution modes, we only track alignItems
+        if (directionValue === "row") {
+          colIndex = 0; // Fixed at left column
+        } else {
+          rowIndex = 0; // Fixed at top row
+          colIndex = alignMap.indexOf(alignItems as any);
+        }
+      }
+    }
+
+    if (colIndex === -1) colIndex = 0;
+
+    setActiveCell({ row: rowIndex, col: colIndex });
+  }, [
+    alignItems,
+    justifyContent,
+    justifyItems,
+    displayValue,
+    distributionMode,
+    directionValue,
+  ]);
+
+  // Update active cell when styles change
+  useEffect(() => {
+    updateActiveCell();
+  }, [
+    updateActiveCell,
+    alignItems,
+    justifyContent,
+    justifyItems,
+    displayValue,
+    distributionMode,
+    directionValue,
+  ]);
 
   // -- GRID ALIGNMENT CELLS --
 
@@ -118,7 +206,10 @@ export default function LayoutTool() {
    * For Flex mode, sets `justifyContent` + `alignItems` (depending on distributionMode).
    */
   function handleGridClick(row: number, col: number) {
-    if (layoutMode === "grid") {
+    // Set the active cell immediately for visual feedback
+    setActiveCell({ row, col });
+
+    if (displayValue === "grid") {
       // For grid: set "justifyItems" & "alignItems"
       setNodeStyle(
         {
@@ -140,10 +231,11 @@ export default function LayoutTool() {
         setNodeStyle(
           {
             display: "flex",
-            flexDirection: direction,
+            flexDirection: directionValue,
             justifyContent:
-              direction === "row" ? justifyMap[col] : justifyMap[row],
-            alignItems: direction === "row" ? alignMap[row] : alignMap[col],
+              directionValue === "row" ? justifyMap[col] : justifyMap[row],
+            alignItems:
+              directionValue === "row" ? alignMap[row] : alignMap[col],
           },
           undefined,
           true
@@ -155,9 +247,10 @@ export default function LayoutTool() {
         setNodeStyle(
           {
             display: "flex",
-            flexDirection: direction,
+            flexDirection: directionValue,
             justifyContent: distributionMode,
-            alignItems: direction === "row" ? alignMap[row] : alignMap[col],
+            alignItems:
+              directionValue === "row" ? alignMap[row] : alignMap[col],
           },
           undefined,
           true
@@ -170,37 +263,7 @@ export default function LayoutTool() {
    * Used by the 3x3 grid to see if a cell is "active" based on current alignment/justification
    */
   function getCellActive(row: number, col: number) {
-    if (layoutMode === "grid") {
-      // For grid: compare alignItems + justifyItems
-      // But we only have alignItems from computed styles so far.
-      // If you also track "justifyItems" with a useComputedStyle, you can do:
-      // `justifyItems: computedJustifyItems.value`
-      // For now we only compare alignItems + justifyContent. It's an approximation.
-      return alignMap[row] === alignItems && justifyMap[col] === justifyContent;
-    }
-
-    // For flex:
-    if (distributionMode === "stack") {
-      // E.g. direction: row => justify=col index, align=row index
-      if (direction === "row") {
-        return (
-          alignMap[row] === alignItems && justifyMap[col] === justifyContent
-        );
-      } else {
-        // direction column => justify = row index, align = col index
-        return (
-          alignMap[col] === alignItems && justifyMap[row] === justifyContent
-        );
-      }
-    } else {
-      // distribution is something like "space-between|around|evenly"
-      // We only vary alignItems; justifyContent is the distributionMode
-      if (direction === "row") {
-        return alignMap[row] === alignItems && col === 0; // pick left col as "active"
-      } else {
-        return alignMap[col] === alignItems && row === 0; // pick top row as "active"
-      }
-    }
+    return row === activeCell.row && col === activeCell.col;
   }
 
   // Add this function to handle fill mode updates
@@ -258,102 +321,166 @@ export default function LayoutTool() {
     });
   };
 
+  // Handle direct mode changes manually
+  const handleDisplayChange = (value) => {
+    setDisplayValue(value);
+    setNodeStyle(
+      {
+        display: value,
+      },
+      undefined,
+      true
+    );
+  };
+
+  const handleWrapChange = (value) => {
+    setNodeStyle(
+      {
+        flexWrap: value,
+      },
+      undefined,
+      true
+    );
+  };
+
+  // Handle direction changes manually
+  const handleDirectionChange = (value) => {
+    setDirectionValue(value);
+    setNodeStyle(
+      {
+        flexDirection: value,
+      },
+      undefined,
+      true
+    );
+
+    // Update fill mode children after the direction has been applied
+    requestAnimationFrame(() => {
+      updateFillModeChildren(value as "row" | "column");
+    });
+  };
+
+  // Handle distribution changes manually
+  const handleDistributionChange = (value) => {
+    setJustifyValue(value);
+    if (value === "flex-start") {
+      setDistributionMode("stack");
+    } else {
+      setDistributionMode(value as DistributionMode);
+    }
+
+    setNodeStyle(
+      {
+        justifyContent: value,
+      },
+      undefined,
+      true
+    );
+  };
+
   return (
     <ToolbarContainer>
       <ToolbarSection title="Layout">
         <div className="flex flex-col space-y-3">
           {/* 1) Layout Mode Toggle: Flex vs. Grid */}
-          <ToolbarSegmentedControl
-            cssProperty="display"
-            defaultValue="flex"
-            size="sm"
-            options={[
-              {
-                label: "Flex",
-                value: "flex",
-                icon: <FileX className="w-3.5 h-3.5" />,
-              },
-              {
-                label: "Grid",
-                value: "grid",
-                icon: <Grid2x2 className="w-3.5 h-3.5" />,
-              },
-            ]}
-          />
+          <div className="relative">
+            <ToolbarSegmentedControl
+              cssProperty="display"
+              defaultValue="flex"
+              size="sm"
+              options={[
+                {
+                  label: "Flex",
+                  value: "flex",
+                  icon: <FileX className="w-3.5 h-3.5" />,
+                },
+                {
+                  label: "Grid",
+                  value: "grid",
+                  icon: <Grid2x2 className="w-3.5 h-3.5" />,
+                },
+              ]}
+              onChange={handleDisplayChange}
+              currentValue={displayValue}
+            />
+          </div>
 
           {/* 2) If Flex: show direction + distribution controls */}
-          {layoutMode === "flex" && (
+          {displayValue === "flex" && (
             <>
-              <ToolbarSegmentedControl
-                cssProperty="flexDirection"
-                defaultValue="row"
-                size="sm"
-                options={[
-                  {
-                    label: "Row",
-                    value: "row",
-                    icon: <ArrowRight className="w-3.5 h-3.5" />,
-                  },
-                  {
-                    label: "Column",
-                    value: "column",
-                    icon: <ArrowDown className="w-3.5 h-3.5" />,
-                  },
-                ]}
-                onChange={(newDirection) => {
-                  requestAnimationFrame(() => {
-                    updateFillModeChildren(newDirection as "row" | "column");
-                  });
-                }}
-              />
+              <div className="relative">
+                <ToolbarSegmentedControl
+                  cssProperty="flexDirection"
+                  defaultValue="row"
+                  size="sm"
+                  options={[
+                    {
+                      label: "Row",
+                      value: "row",
+                      icon: <ArrowRight className="w-3.5 h-3.5" />,
+                    },
+                    {
+                      label: "Column",
+                      value: "column",
+                      icon: <ArrowDown className="w-3.5 h-3.5" />,
+                    },
+                  ]}
+                  onChange={handleDirectionChange}
+                  currentValue={directionValue}
+                />
+              </div>
 
-              <ToolbarSegmentedControl
-                cssProperty="justifyContent"
-                defaultValue="flex-start"
-                size="sm"
-                options={[
-                  {
-                    label: "Stack",
-                    value: "flex-start",
-                    icon: <Layers2 className="w-3.5 h-3.5" />,
-                  },
-                  {
-                    value: "space-between",
-                    icon: (
-                      <AlignHorizontalSpaceBetween
-                        className={`${
-                          direction === "column" ? "rotate-90" : ""
-                        } w-3.5 h-3.5`}
-                      />
-                    ),
-                  },
-                  {
-                    value: "space-around",
-                    icon: (
-                      <AlignHorizontalSpaceAround
-                        className={`${
-                          direction === "column" ? "rotate-90" : ""
-                        } w-3.5 h-3.5`}
-                      />
-                    ),
-                  },
-                  {
-                    value: "space-evenly",
-                    icon: (
-                      <AlignHorizontalDistributeCenter
-                        className={`${
-                          direction === "column" ? "rotate-90" : ""
-                        } w-3.5 h-3.5`}
-                      />
-                    ),
-                  },
-                ]}
-              />
+              <div className="relative">
+                <ToolbarSegmentedControl
+                  cssProperty="justifyContent"
+                  defaultValue="flex-start"
+                  size="sm"
+                  options={[
+                    {
+                      label: "Stack",
+                      value: "flex-start",
+                      icon: <Layers2 className="w-3.5 h-3.5" />,
+                    },
+                    {
+                      value: "space-between",
+                      icon: (
+                        <AlignHorizontalSpaceBetween
+                          className={`${
+                            directionValue === "column" ? "rotate-90" : ""
+                          } w-3.5 h-3.5`}
+                        />
+                      ),
+                    },
+                    {
+                      value: "space-around",
+                      icon: (
+                        <AlignHorizontalSpaceAround
+                          className={`${
+                            directionValue === "column" ? "rotate-90" : ""
+                          } w-3.5 h-3.5`}
+                        />
+                      ),
+                    },
+                    {
+                      value: "space-evenly",
+                      icon: (
+                        <AlignHorizontalDistributeCenter
+                          className={`${
+                            directionValue === "column" ? "rotate-90" : ""
+                          } w-3.5 h-3.5`}
+                        />
+                      ),
+                    },
+                  ]}
+                  onChange={handleDistributionChange}
+                  currentValue={justifyValue}
+                />
+              </div>
             </>
           )}
 
           {/* 3) If Grid: show controls for columns/rows */}
-          {layoutMode === "grid" && (
+          {displayValue === "grid" && (
             <>
               <ToolInput
                 type="number"
@@ -375,15 +502,15 @@ export default function LayoutTool() {
           )}
 
           {/* 4) The 3x3 alignment matrix (works for both flex & grid) */}
-          <div className="grid grid-cols-3 gap-2 bg-transparent p-2 justify-items-center rounded-lg">
+          <div className="grid grid-cols-3 gap-2 bg-transparent py-2 px-3 justify-items-center rounded-lg">
             {[0, 1, 2].map((row) => (
               <React.Fragment key={row}>
                 {[0, 1, 2].map((col) => {
                   const isActive = getCellActive(row, col);
 
-                  // For “stack” flex distributions, only the col for justify or row for align is relevant
+                  // For "stack" flex distributions, only the col for justify or row for align is relevant
                   const isDisabled =
-                    layoutMode === "flex" &&
+                    displayValue === "flex" &&
                     distributionMode !== "stack" &&
                     // If distribution is space-between/around/evenly, we typically only allow changing alignItems
                     // We'll let the code below disable anything that doesn't match the single col or row
@@ -396,14 +523,26 @@ export default function LayoutTool() {
                         w-full h-10 rounded-lg
                         flex items-center justify-center
                         transition-colors
-                        ${isDisabled ? "opacity-30" : "hover:bg-blue-300/25"}
-                        ${isActive ? "bg-blue-300/25" : "bg-gray-800"}
+                        
+                        bg-slate-200
+
+                        dark:bg-[var(--control-bg)]
+                        ${
+                          isDisabled
+                            ? "opacity-30"
+                            : "hover:bg-slate-300 dark:hover:bg-slate-600"
+                        }
+                        ${
+                          isActive
+                            ? "bg-slate-300 dark:bg-slate-600"
+                            : "bg-[var(--bg-default)]"
+                        }
                       `}
                       onClick={() => !isDisabled && handleGridClick(row, col)}
                       disabled={isDisabled}
                     >
                       {isActive && (
-                        <div className="w-2.5 h-2.5 bg-blue-500 rounded-full" />
+                        <div className="w-2.5 h-2.5 bg-[var(--accent)] rounded-full" />
                       )}
                     </button>
                   );
@@ -412,18 +551,14 @@ export default function LayoutTool() {
             ))}
           </div>
 
-          {/* 5) Universal controls: Gap, Overflow, etc. */}
-          <ToolInput
-            type="number"
-            name="gap"
-            label="Gap"
-            unit="px"
-            min={0}
-            max={100}
-            step={1}
-            showUnit
-          />
-
+          <div className="w-full flex items-center justify-between">
+            <Label>Wrap</Label>
+            <ToolbarSwitch
+              cssProperty="flexWrap"
+              onValue="wrap"
+              offValue="nowrap"
+            />
+          </div>
           <ToolSelect
             label="Overflow"
             name="overflow"
@@ -432,6 +567,29 @@ export default function LayoutTool() {
               { label: "Visible", value: "visible" },
               // Add more if you like
             ]}
+          />
+          <ToolInput
+            type="number"
+            label="Padding"
+            value="0"
+            min={0}
+            step={1}
+            // unit={paddingUnit}
+            name="padding"
+            // onUnitChange={setPaddingUnit}
+          />
+          <ToolInput
+            type="number"
+            name="gap"
+            label="Gap"
+            unit="px"
+            min={0}
+            max={100}
+            step={1}
+            showSlider
+            sliderMin={0}
+            sliderMax={100}
+            sliderStep={1}
           />
         </div>
       </ToolbarSection>

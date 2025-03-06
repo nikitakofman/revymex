@@ -108,7 +108,7 @@ export const useMouseUp = () => {
             ...draggedNode.style,
             position: "relative",
             zIndex: "",
-            transform: "",
+
             left: "",
             top: "",
             width: dropWidth,
@@ -154,7 +154,7 @@ export const useMouseUp = () => {
               {
                 position: "relative",
                 zIndex: "",
-                transform: "",
+
                 left: "",
                 top: "",
                 ...(info.node.style.flex === "1 0 0px" && {
@@ -184,7 +184,7 @@ export const useMouseUp = () => {
           {
             position: "relative",
             zIndex: "",
-            transform: "",
+
             left: "",
             top: "",
             ...(dragState.originalWidthHeight.isFillMode
@@ -294,7 +294,7 @@ export const useMouseUp = () => {
                 {
                   position: "relative",
                   zIndex: "",
-                  transform: "",
+
                   left: "",
                   top: "",
                   ...(dimensions?.isFillMode && {
@@ -328,7 +328,7 @@ export const useMouseUp = () => {
                 {
                   position: "relative",
                   zIndex: "",
-                  transform: "",
+
                   left: "",
                   top: "",
                   ...(dimensions?.isFillMode && {
@@ -363,7 +363,7 @@ export const useMouseUp = () => {
               {
                 position: "relative",
                 zIndex: "",
-                transform: "",
+
                 left: "",
                 top: "",
                 ...(dimensions?.isFillMode && {
@@ -405,7 +405,7 @@ export const useMouseUp = () => {
           {
             position: "relative",
             zIndex: "",
-            transform: "",
+
             left: "",
             top: "",
             ...(dimensions?.isFillMode && {

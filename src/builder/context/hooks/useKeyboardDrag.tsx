@@ -103,6 +103,14 @@ export const useKeyboardDrag = () => {
 
         dragDisp.setSelectedIds(selectableNodeIds);
       }
+
+      if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        handleCopy();
+        handleDelete();
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {

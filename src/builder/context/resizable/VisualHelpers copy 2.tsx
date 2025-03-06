@@ -16,15 +16,6 @@ import { RotateHandle } from "./RotateHandle";
 import { BorderRadiusHandle } from "./BorderRadiusHandle";
 
 /* -------------------------------------------
-   Rotation parsing helper for node.style.rotate
---------------------------------------------*/
-function parseRotation(rotateStr: string | undefined) {
-  if (!rotateStr) return 0;
-  const match = rotateStr.match(/([-+]?\d+(\.\d+)?)deg/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-/* -------------------------------------------
    2D MATRIX HELPERS
 --------------------------------------------*/
 function degToRad(deg: number) {
@@ -56,7 +47,7 @@ function applyMatrixToPoint(m: number[], x: number, y: number) {
 
 /**
  * Create a 3×3 2D transform matrix, applying:
- *   translate(tx, ty) → translate(cx, cy) → scale → skewX → skewY → rotate → translate(-cx, -cy)
+ *   translate(tx, ty) → translate(cx, cy) → scale → skewX → skewY → translate(-cx, -cy)
  */
 function build2DMatrix({
   tx,
@@ -67,7 +58,6 @@ function build2DMatrix({
   scaleY,
   skewXDeg,
   skewYDeg,
-  rotateDeg = 0,
 }: {
   tx: number;
   ty: number;
@@ -77,7 +67,6 @@ function build2DMatrix({
   scaleY: number;
   skewXDeg: number;
   skewYDeg: number;
-  rotateDeg?: number;
 }) {
   let M = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
@@ -98,15 +87,7 @@ function build2DMatrix({
   const sy = Math.tan(degToRad(skewYDeg));
   M = multiply2D(M, [1, 0, 0, sy, 1, 0, 0, 0, 1]);
 
-  // // 6) Rotate
-  // if (rotateDeg !== 0) {
-  //   const rad = degToRad(rotateDeg);
-  //   const cosTheta = Math.cos(rad);
-  //   const sinTheta = Math.sin(rad);
-  //   M = multiply2D(M, [cosTheta, -sinTheta, 0, sinTheta, cosTheta, 0, 0, 0, 1]);
-  // }
-
-  // 7) Translate back (-cx, -cy)
+  // 6) Translate back (-cx, -cy)
   M = multiply2D(M, [1, 0, -cx, 0, 1, -cy, 0, 0, 1]);
 
   return M;
@@ -118,16 +99,20 @@ function matrixToCss(m: number[]) {
 }
 
 /**
- * Extract scaleX, scaleY, skewX, skewY from a node's .style.transform
- * (we assume separate rotate is in node.style.rotate, so we don't parse rotate(...) here!)
+ * Parse numeric rotation (in deg) from style.rotate if present, else 0
+ */
+function parseRotation(rotate: string | undefined): number {
+  if (!rotate) return 0;
+  const match = rotate.match(/([-\d.]+)deg/);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+/**
+ * Extract scaleX, scaleY, skewX, skewY from a node’s .style.transform (like "scaleX(0.8) skewX(10deg)" etc).
+ * If absent, defaults to (scale=1, skew=0).
  */
 function parseTransformValues(transformStr: string | undefined) {
-  const result = {
-    scaleX: 1,
-    scaleY: 1,
-    skewX: 0,
-    skewY: 0,
-  };
+  const result = { scaleX: 1, scaleY: 1, skewX: 0, skewY: 0 };
   if (!transformStr) return result;
 
   // scaleX(...)
@@ -151,32 +136,46 @@ function parseTransformValues(transformStr: string | undefined) {
 
 /**
  * Recursively compute a final 2D matrix for a node by:
+ *   - Summing up all rotations in the chain (for rotate handle)
  *   - Multiplying all local transforms in the chain (for skew/scale).
- *   - Also parse separate node.style.rotate for each ancestor.
- *   - Pivot each node at its own center (untransformed or rotated? Up to you).
+ *
+ * This returns:
+ *   {
+ *     totalRotationDeg: number,
+ *     fullMatrix: number[]    // final 3x3 matrix from ancestors + self
+ *   }
+ *
+ * For simplicity, we pivot each node at its center for skew/scale.
+ * (Exactly as done in your POC and ResizeHandles.)
  */
 function computeFullMatrixChain(
   node: Node,
   nodes: Node[],
+  // The actual DOM width/height for pivot
   width: number,
   height: number
 ) {
   let totalRotationDeg = 0;
+
+  // We’ll gather transforms from ancestor → ... → self
+  // so we can multiply them in order
   const transformMatrices: number[][] = [];
 
   let current: Node | undefined = node;
-  while (current) {
-    // If each node stores rotate in style.rotate (separate from transform)
-    const rotate = parseRotation(node.style.rotate);
+  let depth = 0;
 
-    // parse scale/skew from transform
+  // We'll “unshift” each parent’s matrix so that the root is first
+  // and the child is last, then multiply in sequence
+  while (current) {
+    // Add rotation
+    totalRotationDeg += parseRotation(current.style.rotate);
+
+    // parse local skew/scale
     const { scaleX, scaleY, skewX, skewY } = parseTransformValues(
       current.style.transform
     );
 
-    totalRotationDeg += rotate;
-
-    // Build local matrix with pivot at the center
+    // Build local matrix with pivot at the center of *this* node:
     const localM = build2DMatrix({
       tx: 0,
       ty: 0,
@@ -186,12 +185,19 @@ function computeFullMatrixChain(
       scaleY,
       skewXDeg: skewX,
       skewYDeg: skewY,
-      rotateDeg: rotate,
     });
+
+    // We'll store it
     transformMatrices.unshift(localM);
 
     if (!current.parentId) break;
     current = nodes.find((n) => n.id === current?.parentId);
+    depth++;
+    // NOTE: If each ancestor might have a *different* width/height pivot,
+    // you would need a more advanced approach (like your POC with each parent's dimension).
+    // But if you keep it simplified to the child’s dimension,
+    // or if your parent doesn't scale child differently, this is enough.
+    // If you do want *each* parent's pivot dimension, you'd track them in a chain.
   }
 
   // Multiply all from root → child in order
@@ -200,11 +206,15 @@ function computeFullMatrixChain(
     M = multiply2D(M, mat);
   }
 
-  return { totalRotationDeg, fullMatrix: M };
+  return {
+    totalRotationDeg,
+    fullMatrix: M,
+  };
 }
 
 /**
- * Get cumulative skew from *ancestor* nodes only, skipping self
+ * Get cumulative skew for an element and its ancestors
+ * For a child element, include only parent skew
  */
 const getCumulativeSkew = (
   node: Node,
@@ -217,16 +227,19 @@ const getCumulativeSkew = (
 
   while (currentNode) {
     if (isFirst) {
-      // skip self
+      // Skip the first node (self) when calculating parent cumulative skew
       isFirst = false;
     } else {
       const skewValues = parseSkew(currentNode.style.transform);
       totalSkewX += skewValues.skewX;
       totalSkewY += skewValues.skewY;
     }
+
     if (!currentNode.parentId) break;
+
     currentNode =
       nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
+    if (!currentNode) break;
   }
 
   return { skewX: totalSkewX, skewY: totalSkewY };
@@ -248,7 +261,7 @@ export const VisualHelpers = ({
   const [localComputedStyle, setLocalComputedStyle] =
     useState<CSSStyleDeclaration | null>(null);
 
-  // For group selection
+  // For group (multi-selection) bounding box
   const [groupBoundsState, setGroupBoundsState] = useState<{
     left: number;
     top: number;
@@ -256,7 +269,7 @@ export const VisualHelpers = ({
     height: number;
   } | null>(null);
 
-  // Final matrix + total rotation for single node
+  // Final matrix + total rotation for this node
   const [fullMatrixCss, setFullMatrixCss] = useState<string>("none");
   const [totalRotationDeg, setTotalRotationDeg] = useState<number>(0);
 
@@ -273,19 +286,22 @@ export const VisualHelpers = ({
   } = useBuilder();
 
   const cumulativeSkew = getCumulativeSkew(node, nodeState);
+
   const isLocked = node.isLocked === true;
 
-  // Show helpers only if not in other drag states
+  // Whether we can show selection or hover
   const isInteractive =
     !isResizing && !isAdjustingGap && !isRotating && !dragState.dragSource;
   const showHelpers = !isMovingCanvas && isInteractive;
 
+  // Are we dealing with multi-selection?
   const isMultiSelection = dragState.selectedIds.length > 1;
   const isPrimarySelected = isSelected && dragState.selectedIds[0] === node.id;
   const isHovered = dragState.hoverNodeId === node.id;
 
   /* ---------------------------------
-     1) Track element's bounding rect
+     1) Track the element’s bounding rect
+        and computed style
   ----------------------------------*/
   useLayoutEffect(() => {
     if (!elementRef.current || !contentRef.current) return;
@@ -296,69 +312,32 @@ export const VisualHelpers = ({
       const elementRect = element.getBoundingClientRect();
       const contentRect = content.getBoundingClientRect();
       const computedStyle = window.getComputedStyle(element);
+      setLocalComputedStyle(computedStyle);
 
-      // update computed style if changed
-      if (
-        !localComputedStyle ||
-        localComputedStyle.width !== computedStyle.width ||
-        localComputedStyle.height !== computedStyle.height ||
-        localComputedStyle.display !== computedStyle.display
-      ) {
-        setLocalComputedStyle(computedStyle);
-      }
+      const width = parseFloat(computedStyle.width);
+      const height = parseFloat(computedStyle.height);
 
-      // 1) read node.style.width/height (if that’s how your system stores them)
-      //    fallback to computed width/height if needed
-      const nodeWidth = parseFloat(node.style.width as string) || 0;
-      const nodeHeight = parseFloat(node.style.height as string) || 0;
-
-      // 2) parse node.style.rotate
-      const rotationDeg = parseRotation(node.style.rotate);
-      const rotationRad = degToRad(rotationDeg);
-
-      // 3) compute the *effective* rotated bounding box
-      const effectiveWidth =
-        Math.abs(nodeWidth * Math.cos(rotationRad)) +
-        Math.abs(nodeHeight * Math.sin(rotationRad));
-      const effectiveHeight =
-        Math.abs(nodeHeight * Math.cos(rotationRad)) +
-        Math.abs(nodeWidth * Math.sin(rotationRad));
-
-      // 4) convert screen coords → "canvas" coords
+      // convert from screen coords to "canvas" coords (account for .scale)
       const scale = transform.scale;
       const offsetX = (elementRect.left - contentRect.left) / scale;
       const offsetY = (elementRect.top - contentRect.top) / scale;
       const boundingWidth = elementRect.width / scale;
       const boundingHeight = elementRect.height / scale;
 
-      // 5) find the center in canvas coords
+      // center approach
       const centerX = offsetX + boundingWidth / 2;
       const centerY = offsetY + boundingHeight / 2;
 
-      // 6) new rect is centered at (centerX, centerY)
-      //    but sized to the “effective” bounding box
-      const newRect = {
-        top: centerY - effectiveHeight / 2,
-        left: centerX - effectiveWidth / 2,
-        width: effectiveWidth,
-        height: effectiveHeight,
-      };
-
-      if (
-        rect.top !== newRect.top ||
-        rect.left !== newRect.left ||
-        rect.width !== newRect.width ||
-        rect.height !== newRect.height
-      ) {
-        setRect(newRect);
-      }
+      setRect({
+        top: centerY - height / 2,
+        left: centerX - width / 2,
+        width,
+        height,
+      });
     };
 
     const elementObserver = new MutationObserver(updateRect);
     const contentObserver = new MutationObserver(updateRect);
-
-    window.addEventListener("resize", updateRect);
-    window.addEventListener("scroll", updateRect, true);
 
     elementObserver.observe(elementRef.current, {
       attributes: true,
@@ -370,6 +349,8 @@ export const VisualHelpers = ({
       attributeFilter: ["style", "class", "transform"],
       subtree: false,
     });
+    window.addEventListener("resize", updateRect);
+    window.addEventListener("scroll", updateRect, true);
 
     updateRect();
 
@@ -383,21 +364,23 @@ export const VisualHelpers = ({
     elementRef,
     contentRef,
     transform.scale,
+    isSelected,
+    dragState.dragSource,
+    isMovingCanvas,
     node.id,
-    node.style.rotate,
-    node.style.width,
-    node.style.height,
-    rect,
-    localComputedStyle,
+    dragState.hoverNodeId,
+    dragDisp,
+    node.style.transform,
   ]);
 
   /* ---------------------------------
-     2) Multi-selection bounding box
+     2) Compute the multi-selection group bounding box
   ----------------------------------*/
   useLayoutEffect(() => {
     let rafId: number;
 
     const updateGroupBounds = () => {
+      // Only if more than 1 element is selected
       if (!contentRef.current || dragState.selectedIds.length <= 1) {
         setGroupBoundsState(null);
         return;
@@ -427,23 +410,12 @@ export const VisualHelpers = ({
       const minTop = Math.min(...rects.map((r) => r.top));
       const maxRight = Math.max(...rects.map((r) => r.right));
       const maxBottom = Math.max(...rects.map((r) => r.bottom));
-
-      const newBounds = {
+      setGroupBoundsState({
         left: minLeft,
         top: minTop,
         width: maxRight - minLeft,
         height: maxBottom - minTop,
-      };
-
-      if (
-        !groupBoundsState ||
-        groupBoundsState.left !== newBounds.left ||
-        groupBoundsState.top !== newBounds.top ||
-        groupBoundsState.width !== newBounds.width ||
-        groupBoundsState.height !== newBounds.height
-      ) {
-        setGroupBoundsState(newBounds);
-      }
+      });
     };
 
     const tick = () => {
@@ -452,42 +424,32 @@ export const VisualHelpers = ({
     };
     tick();
 
-    return () => {
-      cancelAnimationFrame(rafId);
-    };
-  }, [dragState.selectedIds, contentRef, transform.scale, groupBoundsState]);
+    return () => cancelAnimationFrame(rafId);
+  }, [dragState.selectedIds, contentRef, transform.scale]);
 
   /* ---------------------------------
-     3) Compute final matrix (skew/scale + separate rotate)
+     3) Compute the final matrix for
+        the single element’s border alignment
   ----------------------------------*/
   useLayoutEffect(() => {
     if (!isMultiSelection && elementRef.current && rect.width && rect.height) {
-      // separate rotation is in node.style.rotate
-      // scale/skew in node.style.transform
+      // Build full chain matrix for this node
       const { totalRotationDeg, fullMatrix } = computeFullMatrixChain(
         node,
         nodeState.nodes,
         rect.width,
         rect.height
       );
-
       setTotalRotationDeg(totalRotationDeg);
 
       const cssMatrix = matrixToCss(fullMatrix);
       setFullMatrixCss(cssMatrix);
     } else {
+      // for multi-selection, just skip
       setFullMatrixCss("none");
       setTotalRotationDeg(0);
     }
-  }, [
-    isMultiSelection,
-    node,
-    nodeState.nodes,
-    rect.width,
-    rect.height,
-    node.style.rotate,
-    node.style.transform,
-  ]);
+  }, [isMultiSelection, node, nodeState.nodes, rect.width, rect.height]);
 
   // ───────────────────────────────────────────────────
   // RENDER
@@ -495,37 +457,49 @@ export const VisualHelpers = ({
 
   if (!contentRef.current) return null;
 
-  // Outer container absolutely positioned at rect.top/left, size rect.width/height
+  // For single-node helper container:
+  //   We absolutely position an outer <div> at (rect.top, rect.left, rect.width, rect.height)
+  //   Then we have an inner <div> for the border with "inset:0" + the final transform matrix
+  //   so that it lines up exactly around the node’s actual skewed shape.
   const helperContainerStyle: React.CSSProperties = {
     position: "absolute",
     top: rect.top,
     left: rect.left,
     width: rect.width,
     height: rect.height,
+    // For single-element, we do NOT forcibly rotate by “cumulativeRotation”.
+    // The full matrix handles that automatically if isMultiSelection===false.
     pointerEvents: "none",
     zIndex: 2000,
-    rotate: node.style.rotate,
   };
 
   const getBorderStyle = (
     baseColor: string,
     zIndex: number
-  ): React.CSSProperties => ({
-    position: "absolute",
-    inset: 0,
-    transform: !isMultiSelection ? fullMatrixCss : "none",
-    transformOrigin: "0 0",
-    border: `${2 / transform.scale}px solid ${baseColor}`,
-    boxSizing: "border-box",
-    pointerEvents: "none",
-    zIndex,
-  });
+  ): React.CSSProperties => {
+    // We nest a full-size box, then apply the final matrix so it skews/rotates exactly.
+    // transform-origin: 0 0 (so that (0,0) is top-left) or "center" if you prefer
+    // But since we used “build2DMatrix” pivoting at center, we usually keep origin at top-left
+    // and trust the matrix to handle that pivot shift.
+    return {
+      position: "absolute",
+      inset: 0,
+      transform: !isMultiSelection ? fullMatrixCss : "none",
+      transformOrigin: "0 0",
+      border: `${2 / transform.scale}px solid ${baseColor}`,
+      boxSizing: "border-box",
+      pointerEvents: "none",
+      zIndex,
+    };
+  };
 
   return createPortal(
     <>
-      {/* SINGLE-ELEMENT HELPERS */}
+      {/* -------------------------
+          SINGLE ELEMENT Helpers
+      ------------------------- */}
       {!isMultiSelection && (
-        <div className="isthis" style={helperContainerStyle}>
+        <div style={helperContainerStyle}>
           {/* Hover border */}
           {showHelpers && !isSelected && isHovered && (
             <div
@@ -538,7 +512,7 @@ export const VisualHelpers = ({
             />
           )}
 
-          {/* Temp selection (shift-click) */}
+          {/* Temp selection border */}
           {dragState.tempSelectedIds.includes(node.id) && (
             <div
               style={getBorderStyle(
@@ -554,12 +528,14 @@ export const VisualHelpers = ({
           {showHelpers && isSelected && (
             <>
               <div
-                style={getBorderStyle(
-                  node.isDynamic || dragState.dynamicModeNodeId
-                    ? "var(--accent-secondary)"
-                    : "#3b82f6",
-                  1000
-                )}
+                style={{
+                  ...getBorderStyle(
+                    node.isDynamic || dragState.dynamicModeNodeId
+                      ? "var(--accent-secondary)"
+                      : "#3b82f6",
+                    1000
+                  ),
+                }}
               />
               {!isLocked && (
                 <ResizeHandles
@@ -571,7 +547,7 @@ export const VisualHelpers = ({
                 />
               )}
 
-              {/* Single-element extra controls */}
+              {/* Single-element controls if not locked */}
               {!isLocked && (
                 <>
                   {/* Rotate handle if no skew */}
@@ -592,7 +568,7 @@ export const VisualHelpers = ({
                       <GripHandles node={node} elementRef={elementRef} />
                     )}
 
-                  {/* Gap handles if not grid */}
+                  {/* Gap handles (only if not display:grid) */}
                   {(!node.isDynamic ||
                     dragState.dynamicModeNodeId === node.id) &&
                     localComputedStyle?.display !== "grid" && (
@@ -612,7 +588,9 @@ export const VisualHelpers = ({
         </div>
       )}
 
-      {/* MULTI-SELECTION HELPERS */}
+      {/* -------------------------
+          MULTI-SELECTION Helpers
+      ------------------------- */}
       {isMultiSelection && groupBoundsState && showHelpers && (
         <div
           style={{
@@ -625,6 +603,7 @@ export const VisualHelpers = ({
             zIndex: 999,
           }}
         >
+          {/* Group selection border */}
           <div
             style={{
               position: "absolute",
@@ -637,6 +616,7 @@ export const VisualHelpers = ({
             }}
           />
 
+          {/* Group handles only on the *primary* selected node */}
           {!isLocked && isPrimarySelected && (
             <>
               <ResizeHandles

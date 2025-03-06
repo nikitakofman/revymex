@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState, useRef } from "react";
+import React, { useLayoutEffect, useState } from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Direction, getHandleCursor } from "../utils";
 import { useBuilder } from "../builderState";
@@ -23,10 +23,6 @@ interface ResizeHandlesProps {
    * A ref to the actual DOM element that may have skew/scale transforms.
    */
   targetRef?: React.RefObject<HTMLElement>;
-  /**
-   * Cumulative skew values from parent elements
-   */
-  cumulativeSkew?: { skewX: number; skewY: number };
 }
 
 // For storing coordinates of corners
@@ -43,7 +39,7 @@ interface CornerPositions {
 }
 
 /* -------------------------------------------
-   2D MATRIX HELPERS
+   2D MATRIX HELPERS (from your POC)
 --------------------------------------------*/
 function degToRad(deg: number) {
   return (deg * Math.PI) / 180;
@@ -73,84 +69,9 @@ function applyMatrixToPoint(m: number[], x: number, y: number) {
 }
 
 /**
- * Get full transformation chain matrix for any node (including all ancestors)
- */
-function getFullTransformMatrix(
-  node: Node,
-  nodeState: { nodes: Node[] },
-  width: number,
-  height: number
-) {
-  // Start with identity matrix
-  let fullMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-  // Gather the ancestor chain from root to this node
-  const chain: Node[] = [];
-  let current: Node | undefined = node;
-
-  while (current) {
-    chain.unshift(current); // Add to front to get root → ... → node order
-
-    if (!current.parentId) break;
-    current = nodeState.nodes.find((n) => n.id === current!.parentId);
-  }
-
-  // Process each node in the chain and multiply matrices
-  for (const node of chain) {
-    // Extract transform values
-    const skewX = parseSkewValue(node.style.transform, "skewX");
-    const skewY = parseSkewValue(node.style.transform, "skewY");
-    const scaleX = parseScaleValue(node.style.transform, "scaleX");
-    const scaleY = parseScaleValue(node.style.transform, "scaleY");
-
-    // Create local transform matrix for this node
-    const localMatrix = build2DMatrix({
-      tx: 0,
-      ty: 0,
-      cx: width / 2, // Use element's dimensions for pivoting
-      cy: height / 2,
-      scaleX,
-      scaleY,
-      skewXDeg: skewX,
-      skewYDeg: skewY,
-    });
-
-    // Multiply with accumulated matrix
-    fullMatrix = multiply2D(fullMatrix, localMatrix);
-  }
-
-  return fullMatrix;
-}
-
-/**
- * Parse skew values from transform string
- */
-function parseSkewValue(
-  transform: string | undefined,
-  prop: "skewX" | "skewY"
-): number {
-  if (!transform) return 0;
-  const regex = new RegExp(`${prop}\\(([-\\d.]+)deg\\)`);
-  const match = transform.match(regex);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-/**
- * Parse scale values from transform string
- */
-function parseScaleValue(
-  transform: string | undefined,
-  prop: "scaleX" | "scaleY"
-): number {
-  if (!transform) return 1;
-  const regex = new RegExp(`${prop}\\(([-\\d.]+)\\)`);
-  const match = transform.match(regex);
-  return match ? parseFloat(match[1]) : 1;
-}
-
-/**
  * build2DMatrix:
  *  - Applies: translate(tx, ty) → translate(cx, cy) → scaleX, scaleY → skewX, skewY → translate back.
+ *  - Note: This function is taken from your POC. It does not support rotation.
  */
 function build2DMatrix({
   tx,
@@ -198,15 +119,9 @@ function build2DMatrix({
 }
 
 /**
- * Convert matrix to CSS string format
- */
-function matrixToCss(m: number[]) {
-  return `matrix(${m[0]}, ${m[3]}, ${m[1]}, ${m[4]}, ${m[2]}, ${m[5]})`;
-}
-
-/**
  * parseTransformValues:
- * Extracts scaleX, scaleY, skewX, skewY from the transform string.
+ *  Extracts scaleX, scaleY, skewX, skewY from the transform string.
+ *  (Rotation is ignored for the 2D matrix since the POC doesn’t use it.)
  */
 function parseTransformValues(transformString: string | undefined) {
   const result = {
@@ -236,16 +151,6 @@ function parseTransformValues(transformString: string | undefined) {
   return result;
 }
 
-/**
- * Create a CSS transform string from skew values
- */
-function createSkewTransform(skewX: number, skewY: number): string {
-  let transform = "";
-  if (skewX !== 0) transform += `skewX(${skewX}deg) `;
-  if (skewY !== 0) transform += `skewY(${skewY}deg)`;
-  return transform.trim();
-}
-
 /* -------------------------------------------
    RESIZE HANDLES COMPONENT
 --------------------------------------------*/
@@ -255,9 +160,8 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   groupBounds,
   isGroupSelection,
   targetRef,
-  cumulativeSkew,
 }) => {
-  const { dragState, transform, nodeState } = useBuilder();
+  const { dragState, transform } = useBuilder();
   const { scale } = transform;
 
   // Determine if width/height are set to auto
@@ -271,32 +175,34 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   const [cornerPositions, setCornerPositions] =
     useState<CornerPositions | null>(null);
   const [elementSize, setElementSize] = useState({ width: 0, height: 0 });
-  const [fullMatrix, setFullMatrix] = useState<number[] | null>(null);
-  const [matrixCss, setMatrixCss] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     if (isGroupSelection || !targetRef?.current) {
       setCornerPositions(null);
       return;
     }
-
     const el = targetRef.current;
     const style = window.getComputedStyle(el);
     const width = parseFloat(style.width);
     const height = parseFloat(style.height);
-
-    if (width === 0 || height === 0 || isNaN(width) || isNaN(height)) {
-      return; // Skip if dimensions are invalid
-    }
-
     setElementSize({ width, height });
 
-    // Get the full transform matrix for the entire node chain
-    const matrix = getFullTransformMatrix(node, nodeState, width, height);
-    setFullMatrix(matrix);
-    setMatrixCss(matrixToCss(matrix));
+    // Parse the transform string (ignoring any rotation)
+    const transformValues = parseTransformValues(node.style.transform);
 
-    // Calculate corner positions using the matrix transform
+    // Use build2DMatrix (like in your POC) with tx/ty = 0 (element’s own coords)
+    const matrix = build2DMatrix({
+      tx: 0,
+      ty: 0,
+      cx: width / 2,
+      cy: height / 2,
+      scaleX: transformValues.scaleX,
+      scaleY: transformValues.scaleY,
+      skewXDeg: transformValues.skewX,
+      skewYDeg: transformValues.skewY,
+    });
+
+    // Calculate transformed corner positions
     const topLeft = applyMatrixToPoint(matrix, 0, 0);
     const topRight = applyMatrixToPoint(matrix, width, 0);
     const bottomRight = applyMatrixToPoint(matrix, width, height);
@@ -320,8 +226,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
       y: (topLeft.y + bottomLeft.y) / 2,
     };
 
-    // Normalize positions relative to element size
-    // This is critical for proper positioning regardless of nesting level
+    // Normalize positions (so we can use percentage-based positioning)
     const normalizeCoords = (coords: { x: number; y: number }) => ({
       x: coords.x / width,
       y: coords.y / height,
@@ -337,15 +242,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
       bottom: normalizeCoords(bottom),
       left: normalizeCoords(left),
     });
-  }, [
-    targetRef,
-    isGroupSelection,
-    transform,
-    node,
-    nodeState,
-    // Including these dependencies ensures we recalculate when any transform changes
-    node.style.transform,
-  ]);
+  }, [targetRef, isGroupSelection, transform, node.style.transform]);
 
   const handleBorderClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -487,6 +384,58 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
       direction.includes("bottom") ? "50%" : "-50%"
     })`,
   });
+
+  const getSingleElementEdgeStyle = (
+    direction: Direction
+  ): React.CSSProperties => {
+    const borderSize = 4 / scale;
+    const baseStyles: React.CSSProperties = {
+      position: "absolute",
+      pointerEvents: "all",
+      cursor: getHandleCursor(direction),
+      zIndex: 999,
+    };
+    switch (direction) {
+      case "top":
+        return {
+          ...baseStyles,
+          top: 0,
+          left: 0,
+          right: 0,
+          height: borderSize,
+          transform: "translateY(-50%)",
+        };
+      case "right":
+        return {
+          ...baseStyles,
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: borderSize,
+          transform: "translateX(50%)",
+        };
+      case "bottom":
+        return {
+          ...baseStyles,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: borderSize,
+          transform: "translateY(50%)",
+        };
+      case "left":
+        return {
+          ...baseStyles,
+          top: 0,
+          left: 0,
+          bottom: 0,
+          width: borderSize,
+          transform: "translateX(-50%)",
+        };
+      default:
+        return baseStyles;
+    }
+  };
 
   const handleSize = 8 / scale;
 
@@ -726,158 +675,30 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
         })
       ) : null}
 
-      {/* Edge Resize Handles */}
-      {!isWidthAuto && !isHeightAuto ? (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            transform: matrixCss || "none", // Use the same matrix as the border
-            transformOrigin: "0 0",
-          }}
-        >
-          {/* Use a container with the calculated matrix transform */}
-          {["top", "right", "bottom", "left"].map((direction) => {
-            // Skip edges that should be disabled based on auto dimensions
-            if (
-              (isWidthAuto &&
-                (direction === "left" || direction === "right")) ||
-              (isHeightAuto && (direction === "top" || direction === "bottom"))
-            ) {
-              return null;
-            }
-
-            const borderSize = 4 / scale;
-
-            // Create standard edges that will be properly transformed by the parent container
-            return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                style={{
-                  position: "absolute",
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 999,
-                  backgroundColor: "transparent",
-                  pointerEvents: "all",
-                  ...(direction === "top"
-                    ? {
-                        top: 0,
-                        left: "5%",
-                        width: "90%",
-                        height: borderSize,
-                        transform: "translateY(-50%)",
-                      }
-                    : direction === "right"
-                    ? {
-                        top: "5%",
-                        right: 0,
-                        height: "90%",
-                        width: borderSize,
-                        transform: "translateX(50%)",
-                      }
-                    : direction === "bottom"
-                    ? {
-                        bottom: 0,
-                        left: "5%",
-                        width: "90%",
-                        height: borderSize,
-                        transform: "translateY(50%)",
-                      }
-                    : {
-                        top: "5%",
-                        left: 0,
-                        height: "90%",
-                        width: borderSize,
-                        transform: "translateX(-50%)",
-                      }),
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
-            );
-          })}
-        </div>
-      ) : (
-        // Fallback for auto width/height elements - use standard edges without skew
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            transformOrigin: "center center",
-          }}
-        >
-          {["top", "right", "bottom", "left"].map((direction) => {
-            // Skip edges that should be disabled based on auto dimensions
-            if (
-              (isWidthAuto &&
-                (direction === "left" || direction === "right")) ||
-              (isHeightAuto && (direction === "top" || direction === "bottom"))
-            ) {
-              return null;
-            }
-
-            const borderSize = 4 / scale;
-
-            return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                style={{
-                  position: "absolute",
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 999,
-                  backgroundColor: "transparent",
-                  pointerEvents: "all",
-                  ...(direction === "top"
-                    ? {
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: borderSize,
-                        transform: "translateY(-50%)",
-                      }
-                    : direction === "right"
-                    ? {
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        width: borderSize,
-                        transform: "translateX(50%)",
-                      }
-                    : direction === "bottom"
-                    ? {
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: borderSize,
-                        transform: "translateY(50%)",
-                      }
-                    : {
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        width: borderSize,
-                        transform: "translateX(-50%)",
-                      }),
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
-            );
-          })}
-        </div>
-      )}
+      {/* Render edge handles for non-transformed elements */}
+      {!cornerPositions &&
+        ["top", "right", "bottom", "left"].map((direction) => {
+          if (
+            (isWidthAuto && (direction === "left" || direction === "right")) ||
+            (isHeightAuto && (direction === "top" || direction === "bottom"))
+          ) {
+            return null;
+          }
+          return (
+            <div
+              key={direction}
+              data-resize-handle="true"
+              data-direct-resize="true"
+              className="absolute bg-transparent"
+              style={getSingleElementEdgeStyle(direction as Direction)}
+              onClick={handleBorderClick}
+              onMouseDown={handleBorderClick}
+              onPointerDown={(e) =>
+                handlePointerDown(e, direction as Direction)
+              }
+            />
+          );
+        })}
     </>
   );
 };

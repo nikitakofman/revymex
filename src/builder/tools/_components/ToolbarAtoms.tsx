@@ -58,7 +58,7 @@ export const ToolbarButton = ({
     <button
       className={`
         flex items-center text-xs justify-center
-        w-auto px-2 h-8
+        w-full px-2 h-7
         rounded-[var(--radius-lg)]
         transition-colors duration-150
         hover:bg-[var(--control-bg-hover)]

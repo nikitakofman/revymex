@@ -10,6 +10,7 @@ import { TransformTool } from "@/builder/tools/TransformTool";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { FillTool } from "@/builder/tools/FillTool";
 import Button from "@/components/ui/button";
+import StylesTool from "@/builder/tools/StylesTool";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -105,26 +106,24 @@ const ElementToolbar = () => {
         </>
       )}
 
-      {toolTypes.hasBorderTools && (
-        <>
-          <BorderTool />
-          <ToolbarDivider />
-        </>
-      )}
-
-      {toolTypes.hasSpacingTools && (
+      {/* {toolTypes.hasSpacingTools && (
         <>
           <SpacingTool />
           <ToolbarDivider />
         </>
-      )}
+      )} */}
 
-      {toolTypes.hasTransformTools && (
+      <>
+        <StylesTool />
+        <ToolbarDivider />
+      </>
+
+      {/* {toolTypes.hasBorderTools && (
         <>
-          <TransformTool />
-          {/* <ToolbarDivider /> */}
+          <BorderTool />
+          <ToolbarDivider />
         </>
-      )}
+      )} */}
     </div>
   );
 };

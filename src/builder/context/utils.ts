@@ -1404,3 +1404,152 @@ export const handleMediaToFrameTransformation = (
 
   return true;
 };
+/**
+ * Check if a transform string contains any skew transforms
+ */
+
+/**
+ * Combine multiple skew transforms into one
+ * This is for mathematical convenience, not for CSS output
+ */
+export const combineSkews = (
+  skews: Array<{ skewX: number; skewY: number }>
+): { skewX: number; skewY: number } => {
+  return skews.reduce(
+    (acc, curr) => {
+      return {
+        skewX: acc.skewX + curr.skewX,
+        skewY: acc.skewY + curr.skewY,
+      };
+    },
+    { skewX: 0, skewY: 0 }
+  );
+};
+
+/**
+ * Converts degrees to radians
+ */
+export const degToRad = (deg: number): number => {
+  return (deg * Math.PI) / 180;
+};
+
+/**
+ * Get the skew transformation hierarchy
+ * Returns an array of skew transforms from the root to the current node
+ */
+export const getSkewHierarchy = (
+  node: any,
+  nodeState: { nodes: any[] }
+): Array<{ skewX: number; skewY: number }> => {
+  const skewHierarchy: Array<{ skewX: number; skewY: number }> = [];
+  let currentNode = node;
+
+  while (currentNode) {
+    const skewValues = parseSkew(currentNode.style.transform);
+    if (skewValues.skewX !== 0 || skewValues.skewY !== 0) {
+      skewHierarchy.unshift(skewValues); // Add to beginning to maintain order
+    }
+
+    if (!currentNode.parentId) break;
+
+    currentNode =
+      nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
+    if (!currentNode) break;
+  }
+
+  return skewHierarchy;
+};
+
+/**
+ * Create a matrix for skew transformation
+ */
+export const createSkewMatrix = (skewX: number, skewY: number): number[] => {
+  const skewXRad = degToRad(skewX);
+  const skewYRad = degToRad(skewY);
+
+  // Create a 3x3 matrix representing skew transformation
+  // [1, tan(skewX), 0]
+  // [tan(skewY), 1, 0]
+  // [0, 0, 1]
+  return [1, Math.tan(skewXRad), 0, Math.tan(skewYRad), 1, 0, 0, 0, 1];
+};
+
+/**
+ * Multiply two 3x3 matrices
+ */
+export const multiplyMatrices = (a: number[], b: number[]): number[] => {
+  const result = new Array(9).fill(0);
+
+  // Rows of a
+  for (let i = 0; i < 3; i++) {
+    // Columns of b
+    for (let j = 0; j < 3; j++) {
+      // Multiply and sum
+      for (let k = 0; k < 3; k++) {
+        result[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j];
+      }
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Apply a matrix to a point
+ */
+export const applyMatrixToPoint = (
+  matrix: number[],
+  x: number,
+  y: number
+): { x: number; y: number } => {
+  // [x', y', 1] = [x, y, 1] * matrix
+  const resultX = matrix[0] * x + matrix[1] * y + matrix[2];
+  const resultY = matrix[3] * x + matrix[4] * y + matrix[5];
+
+  return { x: resultX, y: resultY };
+};
+
+/**
+ * Create a CSS matrix3d string from a matrix array
+ */
+export const createMatrixString = (matrix: number[]): string => {
+  // Convert 3x3 matrix to 4x4 matrix3d
+  return `matrix3d(
+    ${matrix[0]}, ${matrix[3]}, 0, 0,
+    ${matrix[1]}, ${matrix[4]}, 0, 0,
+    0, 0, 1, 0,
+    ${matrix[2]}, ${matrix[5]}, 0, 1
+  )`;
+};
+
+export const hasSkewTransform = (transform: string | undefined): boolean => {
+  if (!transform) return false;
+  return transform.includes("skewX") || transform.includes("skewY");
+};
+
+/**
+ * Parse skew values from a transform string.
+ */
+export const parseSkew = (
+  transform: string | undefined
+): { skewX: number; skewY: number } => {
+  if (!transform) return { skewX: 0, skewY: 0 };
+
+  const skewXMatch = transform.match(/skewX\(([-\d.]+)deg\)/);
+  const skewYMatch = transform.match(/skewY\(([-\d.]+)deg\)/);
+
+  return {
+    skewX: skewXMatch ? parseFloat(skewXMatch[1]) : 0,
+    skewY: skewYMatch ? parseFloat(skewYMatch[1]) : 0,
+  };
+};
+
+/**
+ * Create a CSS transform string from skew values.
+ */
+export const createSkewTransform = (skewX: number, skewY: number): string => {
+  let transform = "";
+  if (skewX !== 0) transform += `skewX(${skewX}deg) `;
+  if (skewY !== 0) transform += `skewY(${skewY}deg)`;
+  return transform.trim();
+};
