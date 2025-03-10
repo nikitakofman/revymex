@@ -128,8 +128,17 @@ export const TransformPopup = ({ selectedNode, onClose }) => {
   }, [scaleX, scaleY, perspective, translateZ, rotateX, rotateY, skewX, skewY]);
 
   return (
-    <div className="space-y-4 p-1" style={{ height: "340px" }}>
-      <ToolInput type="number" label="Rotate" name="rotate" unit="deg" />
+    <div className="space-y-4 p-1" style={{ height: "380px" }}>
+      <ToolInput
+        type="number"
+        label="Rotate"
+        name="rotate"
+        unit="deg"
+        showSlider
+        sliderMin={0}
+        sliderMax={360}
+        sliderStep={0.1}
+      />
 
       <ToolInput
         type="number"

@@ -207,11 +207,12 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
         width: `${handleSize}px`,
         height: `${handleSize}px`,
         borderRadius: "50%",
-        backgroundColor:
+        backgroundColor: "white",
+        border: `${borderWidth}px solid   ${
           node.isDynamic || node.dynamicParentId
             ? "var(--accent-secondary)"
-            : "var(--accent)",
-        border: `${borderWidth}px solid white`,
+            : "var(--accent)"
+        },`,
         cursor: isRotating ? "grabbing" : "grab",
         zIndex: 1001,
         pointerEvents: "auto",

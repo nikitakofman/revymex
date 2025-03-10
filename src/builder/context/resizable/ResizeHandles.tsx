@@ -426,23 +426,19 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             <div
               key={direction}
               data-resize-handle="true"
-              className={`absolute ${
-                node.isDynamic || dragState.dynamicModeNodeId
-                  ? "bg-[var(--accent-secondary)]"
-                  : "bg-blue-500"
-              } rounded-full`}
+              className={`absolute bg-white rounded-full`}
               style={{
                 position: "absolute",
                 [direction.includes("Left") ? "left" : "right"]: 0,
                 [direction.includes("top") ? "top" : "bottom"]: 0,
                 cursor: getHandleCursor(direction as Direction),
-                zIndex: 1000,
+                zIndex: 8000,
                 width: `${8 / scale}px`,
                 height: `${8 / scale}px`,
                 transform: `translate(${
                   direction.includes("Right") ? "50%" : "-50%"
                 }, ${direction.includes("bottom") ? "50%" : "-50%"})`,
-                border: `${1 / scale}px solid white`,
+                border: `${1 / scale}px solid var(--accent)`,
                 pointerEvents: "all",
               }}
               onClick={handleBorderClick}
@@ -506,11 +502,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                   <div
                     key={direction}
                     data-resize-handle="true"
-                    className={`absolute ${
-                      node.isDynamic || dragState.dynamicModeNodeId
-                        ? "bg-[var(--accent-secondary)]"
-                        : "bg-white"
-                    } rounded-full`}
+                    className={`absolute bg-white rounded-full`}
                     style={{
                       position: "absolute",
                       top: topVal,
@@ -539,11 +531,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                   <div
                     key={direction}
                     data-resize-handle="true"
-                    className={`absolute ${
-                      node.isDynamic || dragState.dynamicModeNodeId
-                        ? "bg-[var(--accent-secondary)]"
-                        : "bg-white"
-                    } rounded-full`}
+                    className={`absolute bg-white rounded-full`}
                     style={{
                       ...getFallbackCornerStyle(direction as Direction),
                       cursor: getHandleCursor(direction as Direction),
@@ -579,11 +567,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                 key={direction}
                 data-resize-handle="true"
                 data-direct-resize="true"
-                className={`absolute ${
-                  node.isDynamic || dragState.dynamicModeNodeId
-                    ? "bg-[var(--accent-secondary)]"
-                    : "bg-white"
-                } rounded-full`}
+                className={`absolute bg-white rounded-full`}
                 style={{
                   position: "absolute",
                   top: `${edge.y * 100}%`,
@@ -613,11 +597,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                 key={direction}
                 data-resize-handle="true"
                 data-direct-resize="true"
-                className={`absolute ${
-                  node.isDynamic || dragState.dynamicModeNodeId
-                    ? "bg-[var(--accent-secondary)]"
-                    : "bg-white"
-                } rounded-full`}
+                className={`absolute bg-white rounded-full`}
                 style={{
                   position: "absolute",
                   [direction]: 0,
@@ -657,11 +637,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                 key={direction}
                 data-resize-handle="true"
                 data-direct-resize="true"
-                className={`absolute ${
-                  node.isDynamic || dragState.dynamicModeNodeId
-                    ? "bg-[var(--accent-secondary)]"
-                    : "bg-white"
-                } rounded-full`}
+                className={`absolute bg-white rounded-full`}
                 style={{
                   position: "absolute",
                   top: `${edge.y * 100}%`,
@@ -691,11 +667,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                 key={direction}
                 data-resize-handle="true"
                 data-direct-resize="true"
-                className={`absolute ${
-                  node.isDynamic || dragState.dynamicModeNodeId
-                    ? "bg-[var(--accent-secondary)]"
-                    : "bg-white"
-                } rounded-full`}
+                className={`absolute bg-white rounded-full`}
                 style={{
                   position: "absolute",
                   [direction]: 0,

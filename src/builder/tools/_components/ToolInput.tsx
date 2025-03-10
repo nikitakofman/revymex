@@ -560,6 +560,55 @@ export function ToolInput({
     }
   };
 
+  // Reset value to sliderMin on double click
+  const handleSliderDoubleClick = () => {
+    const resetValue = sliderMin;
+
+    isInternalUpdate.current = true;
+    setLocalValue(resetValue.toString());
+    currentValueRef.current = resetValue;
+    isInternalUpdate.current = false;
+
+    if (isCustomMode) {
+      onCustomChange?.(resetValue, localUnit);
+      return;
+    }
+
+    // Handle box-shadow specially
+    if (isBoxShadowProp) {
+      updateBoxShadow(resetValue);
+      return;
+    }
+
+    if (isGridInput) {
+      const property =
+        label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
+      setNodeStyle(
+        {
+          display: "grid",
+          [property]: `repeat(${Math.round(resetValue)}, 1fr)`,
+        },
+        undefined,
+        true
+      );
+    } else if (localUnit === "fill") {
+      const element = document.querySelector(
+        `[data-node-id="${dragState.selectedIds[0]}"]`
+      ) as HTMLElement;
+      if (element) {
+        updateFillStyles(element, props.name || "", setNodeStyle);
+      }
+    } else {
+      setNodeStyle(
+        {
+          [props.name || ""]: `${resetValue}${localUnit}`,
+        },
+        undefined,
+        true
+      );
+    }
+  };
+
   const handleSliderChange = (newValue: number[]) => {
     const sliderValue = newValue[0];
 
@@ -695,6 +744,7 @@ export function ToolInput({
               step={sliderStep}
               onValueChange={handleSliderChange}
               className="w-[60px]"
+              onDoubleClick={handleSliderDoubleClick}
             />
           </div>
         )}

@@ -1553,3 +1553,261 @@ export const createSkewTransform = (skewX: number, skewY: number): string => {
   if (skewY !== 0) transform += `skewY(${skewY}deg)`;
   return transform.trim();
 };
+
+/**
+ * Parse all transform values from a node's style.transform string
+ * Includes 3D transforms like perspective, rotateY, rotateZ, scaleY, scaleZ
+ */
+export function parseTransformValues(transformStr: string | undefined) {
+  const result = {
+    scaleX: 1,
+    scaleY: 1,
+    scaleZ: 1,
+    skewX: 0,
+    skewY: 0,
+    rotateX: 0,
+    rotateY: 0,
+    rotateZ: 0,
+    perspective: 0,
+    translateZ: 0,
+  };
+
+  if (!transformStr) return result;
+
+  // Parse scaleX, scaleY, scaleZ
+  const sxMatch = transformStr.match(/scaleX\(([-\d.]+)\)/);
+  if (sxMatch) result.scaleX = parseFloat(sxMatch[1]);
+
+  const syMatch = transformStr.match(/scaleY\(([-\d.]+)\)/);
+  if (syMatch) result.scaleY = parseFloat(syMatch[1]);
+
+  const szMatch = transformStr.match(/scaleZ\(([-\d.]+)\)/);
+  if (szMatch) result.scaleZ = parseFloat(szMatch[1]);
+
+  // Parse skewX, skewY
+  const kxMatch = transformStr.match(/skewX\(([-\d.]+)deg\)/);
+  if (kxMatch) result.skewX = parseFloat(kxMatch[1]);
+
+  const kyMatch = transformStr.match(/skewY\(([-\d.]+)deg\)/);
+  if (kyMatch) result.skewY = parseFloat(kyMatch[1]);
+
+  // Parse rotateX, rotateY, rotateZ
+  const rxMatch = transformStr.match(/rotateX\(([-\d.]+)deg\)/);
+  if (rxMatch) result.rotateX = parseFloat(rxMatch[1]);
+
+  const ryMatch = transformStr.match(/rotateY\(([-\d.]+)deg\)/);
+  if (ryMatch) result.rotateY = parseFloat(ryMatch[1]);
+
+  const rzMatch = transformStr.match(/rotateZ\(([-\d.]+)deg\)/);
+  if (rzMatch) result.rotateZ = parseFloat(rzMatch[1]);
+
+  // Parse perspective
+  const pMatch = transformStr.match(/perspective\(([-\d.]+)px\)/);
+  if (pMatch) result.perspective = parseFloat(pMatch[1]);
+
+  // Parse translateZ
+  const tzMatch = transformStr.match(/translateZ\(([-\d.]+)px\)/);
+  if (tzMatch) result.translateZ = parseFloat(tzMatch[1]);
+
+  return result;
+}
+
+/**
+ * Convert transform values to a CSS transform string
+ */
+export function transformValuesToCSS(
+  values: ReturnType<typeof parseTransformValues>
+): string {
+  const transforms: string[] = [];
+
+  // Add perspective first (if any)
+  if (values.perspective !== 0) {
+    transforms.push(`perspective(${values.perspective}px)`);
+  }
+
+  // Add scales
+  if (values.scaleX !== 1) transforms.push(`scaleX(${values.scaleX})`);
+  if (values.scaleY !== 1) transforms.push(`scaleY(${values.scaleY})`);
+  if (values.scaleZ !== 1) transforms.push(`scaleZ(${values.scaleZ})`);
+
+  // Add rotations
+  if (values.rotateX !== 0) transforms.push(`rotateX(${values.rotateX}deg)`);
+  if (values.rotateY !== 0) transforms.push(`rotateY(${values.rotateY}deg)`);
+  if (values.rotateZ !== 0) transforms.push(`rotateZ(${values.rotateZ}deg)`);
+
+  // Add skews
+  if (values.skewX !== 0) transforms.push(`skewX(${values.skewX}deg)`);
+  if (values.skewY !== 0) transforms.push(`skewY(${values.skewY}deg)`);
+
+  // Add translateZ
+  if (values.translateZ !== 0)
+    transforms.push(`translateZ(${values.translateZ}px)`);
+
+  return transforms.join(" ");
+}
+
+/**
+ * Get cumulative 3D transform properties from node and all ancestors
+ */
+export function getCumulative3DTransforms(
+  node: Node,
+  nodeState: { nodes: Node[] }
+): ReturnType<typeof parseTransformValues> {
+  // Initialize with default values
+  const result = {
+    scaleX: 1,
+    scaleY: 1,
+    scaleZ: 1,
+    skewX: 0,
+    skewY: 0,
+    rotateX: 0,
+    rotateY: 0,
+    rotateZ: 0,
+    perspective: 0,
+    translateZ: 0,
+  };
+
+  let currentNode = node;
+  let isFirst = true;
+
+  // Traverse up the node hierarchy
+  while (currentNode) {
+    // For the first node (self), we might want special handling
+    if (!isFirst) {
+      // For parent nodes, accumulate their transforms
+      const transforms = parseTransformValues(currentNode.style.transform);
+
+      // Accumulate transforms (multiplication for scale, addition for angles)
+      result.scaleX *= transforms.scaleX;
+      result.scaleY *= transforms.scaleY;
+      result.scaleZ *= transforms.scaleZ;
+
+      result.skewX += transforms.skewX;
+      result.skewY += transforms.skewY;
+
+      result.rotateX += transforms.rotateX;
+      result.rotateY += transforms.rotateY;
+      result.rotateZ += transforms.rotateZ;
+
+      // For perspective, we generally want the closest ancestor's value
+      if (transforms.perspective !== 0 && result.perspective === 0) {
+        result.perspective = transforms.perspective;
+      }
+
+      result.translateZ += transforms.translateZ;
+    } else {
+      isFirst = false;
+    }
+
+    // Move up to parent
+    if (!currentNode.parentId) break;
+    currentNode =
+      nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
+    if (!currentNode) break;
+  }
+
+  return result;
+}
+
+/**
+ * Apply 3D transform matrix to a CSS style object
+ */
+export function apply3DTransform(
+  style: React.CSSProperties,
+  transforms: ReturnType<typeof parseTransformValues>
+): React.CSSProperties {
+  return {
+    ...style,
+    transform: transformValuesToCSS(transforms),
+    transformStyle: "preserve-3d", // Important for nested 3D transforms
+  };
+}
+
+/**
+ * Check if a transform string includes any 3D transforms
+ */
+export function has3DTransform(transformStr: string | undefined): boolean {
+  if (!transformStr) return false;
+
+  return /perspective\(|rotateX\(|rotateY\(|rotateZ\(|scaleZ\(|translateZ\(/.test(
+    transformStr
+  );
+}
+
+/**
+ * Create a CSS matrix3d transform string from transform values
+ * This is more complex and would require proper matrix calculations
+ */
+export function createMatrix3dTransform(
+  transforms: ReturnType<typeof parseTransformValues>,
+  width: number,
+  height: number
+): string {
+  // This would require implementing proper 3D matrix calculations
+  // For now, we'll return a simpler approximation using individual transforms
+  return transformValuesToCSS(transforms);
+}
+
+/**
+ * Get cumulative skew for an element and its ancestors
+ * For a child element, include only parent skew
+ */
+export const getCumulativeSkew = (
+  node: Node,
+  nodeState: { nodes: Node[] }
+): { skewX: number; skewY: number } => {
+  let totalSkewX = 0;
+  let totalSkewY = 0;
+  let currentNode = node;
+  let isFirst = true;
+
+  while (currentNode) {
+    if (isFirst) {
+      // Skip the first node (self) when calculating parent cumulative skew
+      isFirst = false;
+    } else {
+      const skewValues = parseSkew(currentNode.style.transform);
+      totalSkewX += skewValues.skewX;
+      totalSkewY += skewValues.skewY;
+    }
+
+    if (!currentNode.parentId) break;
+
+    currentNode =
+      nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
+    if (!currentNode) break;
+  }
+
+  return { skewX: totalSkewX, skewY: totalSkewY };
+};
+
+/**
+ * NEW: Get cumulative rotation from all ancestors
+ */
+export const getCumulativeRotation = (
+  node: Node,
+  nodeState: { nodes: Node[] }
+): number => {
+  let totalRotation = 0;
+  let currentNode = node;
+  let isFirst = true;
+
+  while (currentNode) {
+    if (isFirst) {
+      // For the node itself, include its own rotation
+      totalRotation += parseRotation(currentNode.style.rotate);
+      isFirst = false;
+    } else {
+      // For ancestors, add their rotations to the total
+      totalRotation += parseRotation(currentNode.style.rotate);
+    }
+
+    if (!currentNode.parentId) break;
+
+    currentNode =
+      nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
+    if (!currentNode) break;
+  }
+
+  return totalRotation;
+};

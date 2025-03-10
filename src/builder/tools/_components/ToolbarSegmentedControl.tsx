@@ -18,6 +18,7 @@ interface ToolbarSegmentedControlProps {
   onChange?: (value: string) => void;
   className?: string;
   currentValue?: string; // Added explicit currentValue prop
+  columnLayout?: boolean; // New prop for column layout
 }
 
 export function ToolbarSegmentedControl({
@@ -30,6 +31,8 @@ export function ToolbarSegmentedControl({
   onChange,
   className = "",
   currentValue, // Use this if provided
+  columnLayout = false, // Default to row layout
+  noPadding,
 }: ToolbarSegmentedControlProps) {
   const { setNodeStyle } = useBuilder();
 
@@ -71,16 +74,21 @@ export function ToolbarSegmentedControl({
     : options;
 
   return (
-    <div className="flex bg-[var(--control-bg)] rounded-md p-0.5">
+    <div
+      className={`flex ${
+        columnLayout ? "flex-col" : "flex-row"
+      } bg-[var(--control-bg)] rounded-md ${!noPadding && "p-0.5"}`}
+    >
       {finalOptions.map((option) => {
-        const isActive = currentValue === option.value;
+        const isActive = option.value === activeValue;
         return (
           <button
             key={option.value}
             onClick={() => handleSegmentClick(option.value)}
             className={`
-              flex-1 flex items-center justify-center gap-2
-              text-xs px-3
+              ${columnLayout ? "w-full" : "flex-1"} 
+              flex items-center justify-center gap-2
+              text-xs 
               ${size === "sm" ? "py-1" : size === "md" ? "py-1.5" : "py-2"}
               rounded transition-colors
               ${

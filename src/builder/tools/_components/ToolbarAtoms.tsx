@@ -44,7 +44,7 @@ interface LabelProps {
 
 export function Label({ children }: LabelProps) {
   return (
-    <span className="text-xs text-[var(--text-secondary)]">{children}</span>
+    <span className="text-xs  text-[var(--text-secondary)]">{children}</span>
   );
 }
 
