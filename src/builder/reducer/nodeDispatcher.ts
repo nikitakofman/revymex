@@ -44,6 +44,7 @@ export interface Node {
     parentId: string | number | null;
     inViewport: boolean;
   };
+  isAbsoluteInFrame?: boolean;
 }
 
 export interface NodeState {

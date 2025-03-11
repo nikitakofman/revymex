@@ -11,6 +11,7 @@ import {
   parseSkew,
   createSkewTransform,
   Direction,
+  isAbsoluteInFrame,
 } from "../utils";
 import { RotateHandle } from "./RotateHandle";
 import { BorderRadiusHandle } from "./BorderRadiusHandle";
@@ -606,7 +607,8 @@ export const VisualHelpers = ({
 
                   {/* Grip handles */}
                   {!node.id.includes("viewport") &&
-                    !hasSkewTransform(node.style.transform) && (
+                    !hasSkewTransform(node.style.transform) &&
+                    !isAbsoluteInFrame(node) && (
                       <GripHandles node={node} elementRef={elementRef} />
                     )}
 

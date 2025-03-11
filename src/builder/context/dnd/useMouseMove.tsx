@@ -7,6 +7,7 @@ import {
   getCalibrationAdjustedPosition,
   isWithinViewport,
   findIndexWithinParent,
+  isAbsoluteInFrame,
 } from "../utils";
 import { useEffect, useRef } from "react";
 import {
@@ -76,6 +77,14 @@ export const useMouseMove = () => {
   } | null>(null);
 
   const hasLeftViewportRef = useRef(false);
+
+  // Helper function to check if node is absolutely positioned within a frame
+
+  // Helper function to check if node is absolutely positioned within a frame by ID
+  const isNodeAbsoluteInFrame = (nodeId: string | number) => {
+    const node = nodeState.nodes.find((n) => n.id === nodeId);
+    return node ? isAbsoluteInFrame(node) : false;
+  };
 
   // On drag start, store the original container info.
   useEffect(() => {
@@ -159,8 +168,65 @@ export const useMouseMove = () => {
     );
   };
 
+  // Helper: Get non-absolute siblings for a parent
+  const getNonAbsoluteSiblings = (parentId: string | number | null) => {
+    if (!parentId) return [];
+
+    return nodeState.nodes.filter(
+      (n) =>
+        n.parentId === parentId &&
+        // Filter out absolute positioned nodes
+        !isAbsoluteInFrame(n) &&
+        // Filter out placeholders
+        n.type !== "placeholder"
+    );
+  };
+
+  // Modified computeSiblingReorderResult that ignores absolute-in-frame elements
+  const computeModifiedSiblingReorderResult = (
+    draggedNode: Node,
+    nodes: Node[],
+    parentElement: Element,
+    mouseX: number,
+    mouseY: number,
+    prevMouseX: number,
+    prevMouseY: number
+  ) => {
+    // Only use siblings that are not absolute-in-frame
+    const siblings = getNonAbsoluteSiblings(draggedNode.parentId);
+
+    if (siblings.length === 0) {
+      // If no valid siblings, return result for parent's inside position
+      return {
+        targetId: draggedNode.parentId!,
+        position: "inside" as "before" | "after" | "inside",
+      };
+    }
+
+    // Use the existing computeSiblingReorderResult but with filtered siblings
+    return computeSiblingReorderResult(
+      draggedNode,
+      // Create modified node array with only non-absolute siblings
+      nodes.filter(
+        (n) =>
+          n.id === draggedNode.id ||
+          siblings.some((s) => s.id === n.id) ||
+          n.id === draggedNode.parentId
+      ),
+      parentElement,
+      mouseX,
+      mouseY,
+      prevMouseX,
+      prevMouseY
+    );
+  };
+
   return (e: MouseEvent) => {
     e.preventDefault();
+
+    if (dragState.isDragging) {
+      dragDisp.setLastMousePosition(e.clientX, e.clientY);
+    }
 
     if (
       !dragState.isDragging ||
@@ -195,7 +261,65 @@ export const useMouseMove = () => {
       dragDisp.setDragPositions(finalX, finalY);
     }
 
-    // In useMouseMove.tsx
+    // Handle absolute positioning in frames
+    if (
+      dragState.dragSource === "absolute-in-frame" ||
+      isAbsoluteInFrame(draggedNode)
+    ) {
+      // Get the parent frame element
+      const parentElement = document.querySelector(
+        `[data-node-id="${draggedNode.parentId}"]`
+      ) as HTMLElement | null;
+
+      if (parentElement) {
+        const parentRect = parentElement.getBoundingClientRect();
+
+        // Check if mouse is still over parent frame
+        const isOverParent =
+          e.clientX >= parentRect.left &&
+          e.clientX <= parentRect.right &&
+          e.clientY >= parentRect.top &&
+          e.clientY <= parentRect.bottom;
+
+        if (isOverParent) {
+          // Calculate position relative to parent frame
+          const relativeX = (e.clientX - parentRect.left) / transform.scale;
+          const relativeY = (e.clientY - parentRect.top) / transform.scale;
+
+          // Update drag positions for visual feedback
+          dragDisp.setDragPositions(relativeX, relativeY);
+
+          // Set drop info with parent as target and "absolute-inside" position mode
+          dragDisp.setDropInfo(
+            draggedNode.parentId,
+            "absolute-inside",
+            relativeX,
+            relativeY
+          );
+
+          // No need for reordering indicators
+          dragDisp.hideLineIndicator();
+
+          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+          return;
+        } else {
+          // Mouse left parent frame - convert to canvas absolute positioning
+          const canvasX =
+            (e.clientX - containerRect.left - transform.x) / transform.scale;
+          const canvasY =
+            (e.clientY - containerRect.top - transform.y) / transform.scale;
+
+          dragDisp.setDragPositions(canvasX, canvasY);
+          dragDisp.setDropInfo(null, null, canvasX, canvasY);
+          dragDisp.setIsOverCanvas(true);
+
+          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+      }
+    }
+
+    // Handle auto-scrolling
     const isNearEdge = (
       clientX: number,
       clientY: number,
@@ -241,7 +365,8 @@ export const useMouseMove = () => {
         `[data-node-id="${draggedNode.parentId}"]`
       );
       if (parentElement) {
-        const reorderResult = computeSiblingReorderResult(
+        // Use modified reorder function that ignores absolute-in-frame elements
+        const reorderResult = computeModifiedSiblingReorderResult(
           draggedNode,
           nodeState.nodes,
           parentElement,
@@ -250,11 +375,23 @@ export const useMouseMove = () => {
           prevMousePosRef.current.x,
           prevMousePosRef.current.y
         );
+
         if (reorderResult) {
+          // Make sure target is not an absolute-in-frame element
+          if (
+            reorderResult.position !== "inside" &&
+            isNodeAbsoluteInFrame(reorderResult.targetId)
+          ) {
+            // Skip absolute targets for before/after positions
+            prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+            return;
+          }
+
           lastPlaceholderPositionRef.current = {
             targetId: reorderResult.targetId,
             position: reorderResult.position,
           };
+
           if (dragState.placeholderInfo) {
             const allDraggedNodes = [
               {
@@ -352,9 +489,12 @@ export const useMouseMove = () => {
           prevMousePosRef.current = { x: e.clientX, y: e.clientY };
           return;
         }
+
+        // Get only non-absolute frame children for drop indicators
         const frameChildren = nodeState.nodes.filter(
-          (child) => child.parentId === targetId
+          (child) => child.parentId === targetId && !isAbsoluteInFrame(child)
         );
+
         const childRects = frameChildren
           .map((childNode) => {
             const el = document.querySelector(
@@ -365,12 +505,14 @@ export const useMouseMove = () => {
               : null;
           })
           .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
+
         const result = computeFrameDropIndicator(
           dropTargetElement,
           childRects,
           e.clientX,
           e.clientY
         );
+
         if (result) {
           dragDisp.setDropInfo(
             result.dropInfo.targetId,
@@ -447,11 +589,16 @@ export const useMouseMove = () => {
             targetId = lastPlaceholderPositionRef.current.targetId;
             position = lastPlaceholderPositionRef.current.position;
           } else {
+            // Get only non-absolute siblings for positioning
             const currentSiblings = nodeState.nodes
               .filter(
-                (n) => n.parentId === parentId && n.type !== "placeholder"
+                (n) =>
+                  n.parentId === parentId &&
+                  n.type !== "placeholder" &&
+                  !isAbsoluteInFrame(n)
               )
               .map((n) => n.id);
+
             if (currentSiblings.length > 0) {
               const originalIndex = mainNodeInfo.index;
               if (originalIndex === 0) {
@@ -525,13 +672,16 @@ export const useMouseMove = () => {
                     additionalPosition = "after";
                   }
                 } else {
+                  // Get only non-absolute siblings
                   const addSiblings = nodeState.nodes
                     .filter(
                       (n) =>
                         n.parentId === additionalParentId &&
-                        n.type !== "placeholder"
+                        n.type !== "placeholder" &&
+                        !isAbsoluteInFrame(n)
                     )
                     .map((n) => n.id);
+
                   if (addSiblings.length > 0) {
                     if (additionalOriginalIndex === 0) {
                       additionalTargetId = addSiblings[0];
@@ -593,7 +743,9 @@ export const useMouseMove = () => {
         `[data-node-id="${draggedNode.parentId}"]`
       );
       if (!parentElement) return;
-      const reorderResult = computeSiblingReorderResult(
+
+      // Use the modified reorder function that ignores absolute-in-frame elements
+      const reorderResult = computeModifiedSiblingReorderResult(
         draggedNode,
         nodeState.nodes,
         parentElement,
@@ -602,11 +754,13 @@ export const useMouseMove = () => {
         prevMousePosRef.current.x,
         prevMousePosRef.current.y
       );
+
       if (reorderResult) {
         lastPlaceholderPositionRef.current = {
           targetId: reorderResult.targetId,
           position: reorderResult.position,
         };
+
         if (dragState.placeholderInfo) {
           const allDraggedNodes = [
             {
@@ -653,6 +807,7 @@ export const useMouseMove = () => {
         const closestNode = el.closest(`[data-node-id="${draggedNode.id}"]`);
         return !closestNode;
       });
+
       const frameElement = filteredElements.find(
         (el) => el.getAttribute("data-node-type") === "frame"
       );
@@ -663,8 +818,9 @@ export const useMouseMove = () => {
           return;
         }
         const frameId = frameElement.getAttribute("data-node-id")!;
+        // Get only non-absolute frame children
         const frameChildren = nodeState.nodes.filter(
-          (child) => child.parentId === frameId
+          (child) => child.parentId === frameId && !isAbsoluteInFrame(child)
         );
         const frameNode = nodeState.nodes.find((n) => n.id === frameId);
         if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
@@ -722,10 +878,21 @@ export const useMouseMove = () => {
         prevMousePosRef.current = { x: e.clientX, y: e.clientY };
         return;
       }
+
+      // Find siblings but skip absolute-in-frame ones for line indicators
       const siblingElement = filteredElements.find((el) => {
         if (!el.hasAttribute("data-node-id")) return false;
-        return el.getAttribute("data-node-type") !== "placeholder";
+
+        // Skip placeholder elements
+        if (el.getAttribute("data-node-type") === "placeholder") return false;
+
+        // Skip absolute-in-frame elements
+        const nodeId = el.getAttribute("data-node-id");
+        if (nodeId && isNodeAbsoluteInFrame(nodeId)) return false;
+
+        return true;
       });
+
       if (siblingElement) {
         const siblingId = siblingElement.getAttribute("data-node-id")!;
         const nodeType = siblingElement.getAttribute("data-node-type");
@@ -743,6 +910,7 @@ export const useMouseMove = () => {
         dragDisp.setDropInfo(null, null, canvasX, canvasY);
       }
     }
+
     if (overCanvas) {
       dragDisp.setIsOverCanvas(true);
       if (
@@ -773,6 +941,7 @@ export const useMouseMove = () => {
       }
       return;
     }
+
     prevMousePosRef.current = { x: e.clientX, y: e.clientY };
   };
 };

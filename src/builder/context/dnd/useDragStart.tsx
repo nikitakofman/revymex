@@ -1,9 +1,11 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useBuilder } from "@/builder/context/builderState";
-import { calculateAndUpdateDimensions, findIndexWithinParent } from "../utils";
+import {
+  calculateAndUpdateDimensions,
+  findIndexWithinParent,
+  isAbsoluteInFrame,
+} from "../utils";
 import { nanoid } from "nanoid";
-import { convertToNewUnit } from "@/builder/elementTools/_components/ToolInput";
-import { parse } from "path";
 import { createPlaceholder } from "./createPlaceholder";
 
 export const useDragStart = () => {
@@ -79,6 +81,74 @@ export const useDragStart = () => {
 
     if (!node || !contentRef.current) return;
 
+    // NEW: Check if node is absolutely positioned in a frame
+    if (isAbsoluteInFrame(node)) {
+      dragDisp.setDragSource("absolute-in-frame"); // New drag source type
+
+      const element = document.querySelector(`[data-node-id="${node.id}"]`);
+      if (!element) return;
+
+      const elementRect = element.getBoundingClientRect();
+      const contentRect = contentRef.current.getBoundingClientRect();
+
+      // Calculate initial position
+      const currentLeft = parseFloat(node.style.left as string) || 0;
+      const currentTop = parseFloat(node.style.top as string) || 0;
+
+      const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
+      const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
+
+      // Set up dragging
+      dragDisp.setDraggedNode(node, {
+        x: currentLeft,
+        y: currentTop,
+        mouseX: mouseOffsetX,
+        mouseY: mouseOffsetY,
+      });
+
+      dragDisp.setIsDragging(true);
+      dragDisp.setDraggedItem(null);
+
+      // Handle multiple selection for absolute positioned elements
+      if (selectedIds.length > 1) {
+        const additional = selectedIds
+          .filter((id) => id !== node.id)
+          .map((id) => {
+            const otherNode = nodeState.nodes.find((n) => n.id === id);
+            if (!otherNode) return null;
+
+            const el = document.querySelector(
+              `[data-node-id="${id}"]`
+            ) as HTMLElement;
+            if (!el) return null;
+
+            const rect = el.getBoundingClientRect();
+
+            // Calculate position for additional node
+            const xPos = parseFloat(otherNode.style.left as string) || 0;
+            const yPos = parseFloat(otherNode.style.top as string) || 0;
+
+            const mouseOffsetX = (e.clientX - rect.left) / transform.scale;
+            const mouseOffsetY = (e.clientY - rect.top) / transform.scale;
+
+            return {
+              node: otherNode,
+              offset: {
+                x: xPos,
+                y: yPos,
+                mouseX: mouseOffsetX,
+                mouseY: mouseOffsetY,
+              },
+            };
+          })
+          .filter(Boolean) as Array<{ node: Node; offset: any }>;
+
+        dragDisp.setAdditionalDraggedNodes(additional);
+      }
+
+      return;
+    }
+
     if (!dragState.dynamicModeNodeId) {
       const dynamicParent = getDynamicParentNode(node);
       if (dynamicParent && !node.isDynamic) {
@@ -92,8 +162,6 @@ export const useDragStart = () => {
     const elementRect = element.getBoundingClientRect();
     const contentRect = contentRef.current.getBoundingClientRect();
 
-    // TODO EXTEND TO IF NODE IN VIEWPORT TRUE OR NODE PARENT ID TRUE , CURRETNLY EVERYTHING THAT HAS A PRENT IS BECOME IN VIEWPORT TRUE EVEN IF PARENT IN CANVAS AND NOT IN VIEWPORT
-
     if (node.inViewport) {
       dragDisp.setDragSource("viewport");
       const oldIndex = findIndexWithinParent(
@@ -105,8 +173,6 @@ export const useDragStart = () => {
       const element = document.querySelector(
         `[data-node-id="${node.id}"]`
       ) as HTMLElement;
-
-      // TODO: fill mode is good on drag start but when I drop it goes to 1px
 
       const { finalWidth, finalHeight } = calculateAndUpdateDimensions({
         node,

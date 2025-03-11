@@ -19,13 +19,11 @@ export const StylesTool = () => {
   const [activeTool, setActiveTool] = useState(null);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
 
-  // Default opacity value state - initially 1 (fully visible)
   const [opacityValue, setOpacityValue] = useState(1);
 
   if (!selectedNode) return null;
 
   const handleTriggerPopup = (tool) => (triggerElement, e) => {
-    // Stop propagation to prevent event bubbling
     e.stopPropagation();
 
     if (triggerElement) {
@@ -35,16 +33,23 @@ export const StylesTool = () => {
     }
   };
 
-  // Handle opacity change with precision fix
   const handleOpacityChange = (value) => {
-    // Format to 1 decimal place to avoid floating point precision issues
     const formattedValue = parseFloat(value.toFixed(1));
     setOpacityValue(formattedValue);
 
-    // Apply the opacity to the selected node(s)
     setNodeStyle(
       {
         opacity: formattedValue.toString(),
+      },
+      undefined,
+      true
+    );
+  };
+
+  const handleZindexChange = (value) => {
+    setNodeStyle(
+      {
+        zIndex: value,
       },
       undefined,
       true
@@ -68,6 +73,15 @@ export const StylesTool = () => {
           sliderMin={0}
           sliderMax={1}
           sliderStep={0.1}
+        />
+        <ToolInput
+          type="number"
+          name="zIndex"
+          label="Z Index"
+          onCustomChange={handleZindexChange}
+          min={0}
+          max={9999}
+          step={1}
         />
         <div className="flex flex-col gap-4">
           <ToolPopupTrigger

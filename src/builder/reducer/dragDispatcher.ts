@@ -4,7 +4,7 @@ import { LineIndicatorState } from "../context/builderState";
 
 export interface DropInfo {
   targetId: string | number | null;
-  position: "before" | "after" | "inside" | null;
+  position: "before" | "after" | "inside" | "absolute-inside" | null;
   dropX?: number;
   dropY?: number;
 }
@@ -63,6 +63,7 @@ export interface DragState {
     | "parent"
     | "dynamic"
     | "gripHandle"
+    | "absolute-in-frame"
     | null;
   snapGuides: SnapGuideLine[];
   originalParentId: string | number | null;
@@ -93,6 +94,8 @@ export interface DragState {
     };
   };
   duplicatedFromAlt: boolean;
+  lastMouseX: number;
+  lastMouseY: number;
 }
 
 interface PlaceholderInfo {
@@ -198,6 +201,22 @@ export class DragDispatcher {
     );
   }
 
+  setLastMouseX(lastMouseX: number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.lastMouseX = lastMouseX;
+      })
+    );
+  }
+
+  setLastMouseY(lastMouseY: number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.lastMouseY = lastMouseY;
+      })
+    );
+  }
+
   selectNode(nodeId: string | number) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -220,6 +239,15 @@ export class DragDispatcher {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.selectedIds = ids;
+      })
+    );
+  }
+
+  setLastMousePosition(x: number, y: number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.lastMouseX = x;
+        draft.lastMouseY = y;
       })
     );
   }
@@ -286,7 +314,14 @@ export class DragDispatcher {
   }
 
   setDragSource(
-    source: "canvas" | "viewport" | "toolbar" | "parent" | "dynamic" | null
+    source:
+      | "canvas"
+      | "viewport"
+      | "toolbar"
+      | "parent"
+      | "dynamic"
+      | "absolute-in-frame"
+      | null
   ) {
     this.setState((prev) =>
       produce(prev, (draft) => {

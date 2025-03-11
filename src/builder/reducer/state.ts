@@ -233,6 +233,8 @@ export const dragInitialState: DragState = {
   nodeDimensions: {},
   duplicatedFromAlt: false,
   placeholderInfo: null,
+  lastMouseX: 0,
+  lastMouseY: 0,
 };
 
 export const interfaceInitialState: InterfaceState = {

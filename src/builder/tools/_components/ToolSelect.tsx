@@ -20,7 +20,7 @@ export const ToolSelect = ({
   disabled = false,
   onChange,
 }: ToolSelectProps) => {
-  const { setNodeStyle, nodeState, dragState } = useBuilder();
+  const { setNodeStyle, nodeState, dragState, nodeDisp } = useBuilder();
 
   const computedStyle = useComputedStyle({
     property: name,
@@ -50,8 +50,67 @@ export const ToolSelect = ({
     if (onChange) {
       onChange(newValue);
     } else {
-      setNodeStyle({ [name]: newValue });
+      // Special case for position changes
+      if (name === "position") {
+        handlePositionChange(newValue);
+      } else {
+        setNodeStyle({ [name]: newValue });
+      }
     }
+  };
+
+  // Handle position changes with special logic for absolute positioning in frames
+  const handlePositionChange = (position: string) => {
+    if (dragState.selectedIds.length === 0) return;
+
+    // If position is absolute, check if node is within a frame
+    if (position === "absolute") {
+      // For each selected node
+      dragState.selectedIds.forEach((nodeId) => {
+        const node = nodeState.nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+
+        // Check if parent is a frame
+        const parentNode = node.parentId
+          ? nodeState.nodes.find((n) => n.id === node.parentId)
+          : null;
+
+        const isInFrame =
+          parentNode && (parentNode.type === "frame" || parentNode.isViewport);
+
+        if (isInFrame) {
+          // For elements in frames, set the isAbsoluteInFrame flag
+          nodeDisp.updateNode(node.id, { isAbsoluteInFrame: true });
+
+          // If the element already has positions, keep them
+          // Otherwise, set initial positions at 0,0 within the frame
+          const currentLeft = node.style.left || "0px";
+          const currentTop = node.style.top || "0px";
+
+          setNodeStyle(
+            {
+              position: "absolute",
+              left: currentLeft,
+              top: currentTop,
+            },
+            [node.id]
+          );
+
+          return;
+        }
+      });
+    } else if (position !== "absolute") {
+      // When changing from absolute to another position, reset the flag
+      dragState.selectedIds.forEach((nodeId) => {
+        const node = nodeState.nodes.find((n) => n.id === nodeId);
+        if (node?.isAbsoluteInFrame) {
+          nodeDisp.updateNode(node.id, { isAbsoluteInFrame: false });
+        }
+      });
+    }
+
+    // Apply the position style
+    setNodeStyle({ position });
   };
 
   return (

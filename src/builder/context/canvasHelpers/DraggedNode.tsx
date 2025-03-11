@@ -1,4 +1,4 @@
-// DraggedNode.tsx
+// DraggedNode.tsx - Fixed to snap to both canvas and frame lines
 
 import React, {
   ReactElement,
@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import { Node } from "../../reducer/nodeDispatcher";
 import { useBuilder } from "../builderState";
 import { useSnapGrid, SnapResult } from "./SnapGrid";
-import { getFilteredNodes, parseRotation } from "../utils";
+import { getFilteredNodes, isAbsoluteInFrame, parseRotation } from "../utils";
 
 interface Transform {
   x: number;
@@ -48,6 +48,28 @@ interface DraggedNodeProps {
   virtualReference: VirtualReference | null;
   transform: Transform;
   offset: Offset;
+}
+
+// Utility function to get absolute position by recursively adding parent offsets
+function getAbsolutePosition(
+  nodeId: string | number,
+  allNodes: Node[]
+): { x: number; y: number } {
+  const node = allNodes.find((n) => n.id === nodeId);
+  if (!node || !node.style) return { x: 0, y: 0 };
+
+  // Start with the node's local position
+  let x = parseFloat(node.style.left as string) || 0;
+  let y = parseFloat(node.style.top as string) || 0;
+
+  // If this is absolute-in-frame, recursively add the parent's offset
+  if (isAbsoluteInFrame(node) && node.parentId) {
+    const parentPos = getAbsolutePosition(node.parentId, allNodes);
+    x += parentPos.x;
+    y += parentPos.y;
+  }
+
+  return { x, y };
 }
 
 const DraggedNode: React.FC<DraggedNodeProps> = ({
@@ -121,10 +143,29 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     (info) => info.node.id === node.id
   );
 
-  // Step 1: compute rawLeft, rawTop from mouse coords
+  // Check if we're dealing with an absolute-in-frame element
+  const isAbsoluteNodeInFrame =
+    dragState.dragSource === "absolute-in-frame" || isAbsoluteInFrame(node);
+
+  // Function to get the parent frame for absolute-in-frame elements
+  const getParentFrame = () => {
+    if (!node.parentId) return null;
+    return nodeState.nodes.find((n) => n.id === node.parentId) || null;
+  };
+
+  // Position calculation for the dragged node
   let rawLeft: number;
   let rawTop: number;
-  if (isAdditionalDraggedNode) {
+
+  if (isAbsoluteNodeInFrame) {
+    // For absolute-in-frame, position directly based on mouse position
+    const mouseX = baseRect.left;
+    const mouseY = baseRect.top;
+
+    rawLeft = mouseX - offset.mouseX * transform.scale - containerRect.left;
+    rawTop = mouseY - offset.mouseY * transform.scale - containerRect.top;
+  } else if (isAdditionalDraggedNode) {
+    // Standard logic for additional dragged nodes
     const currentLeft = parseFloat(node.style.left as string) || 0;
     const currentTop = parseFloat(node.style.top as string) || 0;
 
@@ -139,16 +180,17 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
       offset.mouseY * transform.scale -
       currentTop * transform.scale;
   } else {
+    // Standard logic for normal dragged nodes
     rawLeft =
       baseRect.left - containerRect.left - offset.mouseX * transform.scale;
     rawTop = baseRect.top - containerRect.top - offset.mouseY * transform.scale;
   }
 
-  // convert to canvas coords
+  // Convert from screen coordinates to canvas coordinates
   const canvasX = (rawLeft - transform.x) / transform.scale;
   const canvasY = (rawTop - transform.y) / transform.scale;
 
-  // add rotation offset
+  // Add rotation offset
   let finalLeft = rawLeft + offsetX * transform.scale;
   let finalTop = rawTop + offsetY * transform.scale;
 
@@ -178,26 +220,160 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     }
   }
 
-  // Build the 6 snap points
-  const snapPoints = [
-    { value: canvasX, type: "left" },
-    { value: canvasX + nodeWidth, type: "right" },
-    { value: canvasX + nodeWidth / 2, type: "centerX" },
-    { value: canvasY, type: "top" },
-    { value: canvasY + nodeHeight, type: "bottom" },
-    { value: canvasY + nodeHeight / 2, type: "centerY" },
-  ];
+  // Build snap points for the current position - in global coordinates
+  let snapPoints = [];
+
+  if (isAbsoluteNodeInFrame && node.parentId) {
+    const parentFrame = getParentFrame();
+
+    if (parentFrame) {
+      // Get parent position
+      const parentLeft = parseFloat(parentFrame.style.left as string) || 0;
+      const parentTop = parseFloat(parentFrame.style.top as string) || 0;
+
+      // Calculate current position in canvas coordinates
+      const frameRelativeX =
+        (finalLeft - transform.x) / transform.scale - offsetX;
+      const frameRelativeY =
+        (finalTop - transform.y) / transform.scale - offsetY;
+
+      // Convert to global canvas coordinates by adding parent position
+      const globalX = parentLeft + frameRelativeX;
+      const globalY = parentTop + frameRelativeY;
+
+      // Create snap points in global canvas coordinates
+      snapPoints = [
+        { value: globalX, type: "left" },
+        { value: globalX + nodeWidth, type: "right" },
+        { value: globalX + nodeWidth / 2, type: "centerX" },
+        { value: globalY, type: "top" },
+        { value: globalY + nodeHeight, type: "bottom" },
+        { value: globalY + nodeHeight / 2, type: "centerY" },
+      ];
+    } else {
+      // Fallback
+      snapPoints = [
+        { value: canvasX, type: "left" },
+        { value: canvasX + nodeWidth, type: "right" },
+        { value: canvasX + nodeWidth / 2, type: "centerX" },
+        { value: canvasY, type: "top" },
+        { value: canvasY + nodeHeight, type: "bottom" },
+        { value: canvasY + nodeHeight / 2, type: "centerY" },
+      ];
+    }
+  } else {
+    // Regular elements
+    snapPoints = [
+      { value: canvasX, type: "left" },
+      { value: canvasX + nodeWidth, type: "right" },
+      { value: canvasX + nodeWidth / 2, type: "centerX" },
+      { value: canvasY, type: "top" },
+      { value: canvasY + nodeHeight, type: "bottom" },
+      { value: canvasY + nodeHeight / 2, type: "centerY" },
+    ];
+  }
 
   let snapResult: SnapResult | null = null;
 
-  // Step 2: compute prospective snaps
-  if (snapGrid && (dragState.isOverCanvas || dragState.dynamicModeNodeId)) {
-    snapResult = snapGrid.findNearestSnaps(snapPoints, 10, node.id);
+  // Always enable snapping for absolute-in-frame elements, regardless of whether we're over the canvas
+  const enableSnapping =
+    snapGrid &&
+    (dragState.isOverCanvas ||
+      dragState.dynamicModeNodeId ||
+      isAbsoluteNodeInFrame);
 
-    // apply alignment snap
-    if (snapResult.verticalSnap) {
+  // Find relevant nodes for snapping
+  let relevantNodes = undefined;
+
+  if (isAbsoluteNodeInFrame && node.parentId) {
+    const parentFrame = getParentFrame();
+
+    if (parentFrame) {
+      // Get siblings (nodes with same parent) and the parent frame
+      const siblings = nodeState.nodes.filter(
+        (n) => n.parentId === node.parentId && n.id !== node.id
+      );
+
+      // Include the parent frame itself
+      relevantNodes = [...siblings, parentFrame];
+
+      // Optionally, also include other nodes with the same parent as the parent frame
+      // This helps snapping to "uncle" elements
+      if (parentFrame.parentId) {
+        const uncles = nodeState.nodes.filter(
+          (n) => n.parentId === parentFrame.parentId && n.id !== parentFrame.id
+        );
+        relevantNodes = [...relevantNodes, ...uncles];
+      }
+    }
+  }
+
+  // Compute prospective snaps with increased threshold for better snapping
+  if (enableSnapping) {
+    // Find snaps using only relevant nodes if specified - increase threshold for better snapping
+    snapResult = snapGrid.findNearestSnaps(
+      snapPoints,
+      25,
+      node.id,
+      relevantNodes
+    );
+
+    // DEBUGGING
+    if (snapResult?.verticalSnap || snapResult?.horizontalSnap) {
+      const sourceNode =
+        snapResult.verticalSnap?.sourceNodeId ||
+        snapResult.horizontalSnap?.sourceNodeId;
+      const source = nodeState.nodes.find((n) => n.id === sourceNode);
+      console.log("SNAP DETECTED:", {
+        sourceNode: source?.id,
+        isFrameChild: !!source?.parentId,
+        verticalSnap: snapResult.verticalSnap,
+        horizontalSnap: snapResult.horizontalSnap,
+        relevantNodeCount: relevantNodes?.length,
+      });
+    }
+
+    // Apply alignment snap for vertical direction
+    if (
+      snapResult &&
+      snapResult.verticalSnap &&
+      isAbsoluteNodeInFrame &&
+      node.parentId
+    ) {
+      const parentFrame = getParentFrame();
+
+      if (parentFrame) {
+        const parentLeft = parseFloat(parentFrame.style.left as string) || 0;
+        const snappedX = snapResult.verticalSnap.position;
+
+        // Convert the snap position from global to frame-relative
+        const frameRelativeX = snappedX - parentLeft;
+
+        // Apply offset based on snap type
+        let frameX = frameRelativeX;
+        switch (snapResult.verticalSnap.type) {
+          case "left":
+            // No adjustment needed
+            break;
+          case "right":
+            frameX = frameRelativeX - nodeWidth;
+            break;
+          case "centerX":
+            frameX = frameRelativeX - nodeWidth / 2;
+            break;
+        }
+
+        // Convert frame-relative position to screen position
+        finalLeft =
+          transform.x +
+          (parentLeft + frameX) * transform.scale +
+          offsetX * transform.scale;
+      }
+    } else if (snapResult && snapResult.verticalSnap) {
+      // Standard snap application for regular canvas elements
       const snappedX =
         transform.x + snapResult.verticalSnap.position * transform.scale;
+
       switch (snapResult.verticalSnap.type) {
         case "left":
           finalLeft = snappedX + offsetX * transform.scale;
@@ -214,9 +390,48 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
           break;
       }
     }
-    if (snapResult.horizontalSnap) {
+
+    // Apply alignment snap for horizontal direction
+    if (
+      snapResult &&
+      snapResult.horizontalSnap &&
+      isAbsoluteNodeInFrame &&
+      node.parentId
+    ) {
+      const parentFrame = getParentFrame();
+
+      if (parentFrame) {
+        const parentTop = parseFloat(parentFrame.style.top as string) || 0;
+        const snappedY = snapResult.horizontalSnap.position;
+
+        // Convert the snap position from global to frame-relative
+        const frameRelativeY = snappedY - parentTop;
+
+        // Apply offset based on snap type
+        let frameY = frameRelativeY;
+        switch (snapResult.horizontalSnap.type) {
+          case "top":
+            // No adjustment needed
+            break;
+          case "bottom":
+            frameY = frameRelativeY - nodeHeight;
+            break;
+          case "centerY":
+            frameY = frameRelativeY - nodeHeight / 2;
+            break;
+        }
+
+        // Convert frame-relative position to screen position
+        finalTop =
+          transform.y +
+          (parentTop + frameY) * transform.scale +
+          offsetY * transform.scale;
+      }
+    } else if (snapResult && snapResult.horizontalSnap) {
+      // Standard snap application for regular canvas elements
       const snappedY =
         transform.y + snapResult.horizontalSnap.position * transform.scale;
+
       switch (snapResult.horizontalSnap.type) {
         case "top":
           finalTop = snappedY + offsetY * transform.scale;
@@ -233,44 +448,53 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
           break;
       }
     }
-
-    // apply spacing snap (for "best" offset)
-    if (typeof snapResult.horizontalSpacingSnap === "number") {
-      const snappedCanvasX = snapResult.horizontalSpacingSnap;
-      const snappedScreenX = transform.x + snappedCanvasX * transform.scale;
-      finalLeft = snappedScreenX + offsetX * transform.scale;
-    }
-    if (typeof snapResult.verticalSpacingSnap === "number") {
-      const snappedCanvasY = snapResult.verticalSpacingSnap;
-      const snappedScreenY = transform.y + snappedCanvasY * transform.scale;
-      finalTop = snappedScreenY + offsetY * transform.scale;
-    }
   }
 
-  // OPTIONAL: Recompute the final snap lines from the final (snapped) position
-  // so they do not move if the mouse slightly moves.
-  // We'll do a "mini second pass" for stable lines:
+  // Compute stable snaps for consistent guides
   let stableSnapResult: SnapResult | null = null;
-  if (snapGrid && snapResult) {
-    // figure out final left/top in canvas coords
-    const stableCanvasX = (finalLeft - transform.x) / transform.scale;
-    const stableCanvasY = (finalTop - transform.y) / transform.scale;
+  if (enableSnapping && snapResult) {
+    // Figure out final left/top in canvas coords
+    const stableCanvasX = (finalLeft - transform.x) / transform.scale - offsetX;
+    const stableCanvasY = (finalTop - transform.y) / transform.scale - offsetY;
+
+    // Convert to absolute canvas coordinates if needed
+    let stableAbsoluteX = stableCanvasX;
+    let stableAbsoluteY = stableCanvasY;
+
+    if (isAbsoluteNodeInFrame && node.parentId) {
+      const parentFrame = getParentFrame();
+      if (parentFrame) {
+        const parentLeft = parseFloat(parentFrame.style.left as string) || 0;
+        const parentTop = parseFloat(parentFrame.style.top as string) || 0;
+
+        // Convert to global coordinates by adding parent position
+        stableAbsoluteX = parentLeft + stableCanvasX;
+        stableAbsoluteY = parentTop + stableCanvasY;
+      }
+    }
 
     const stablePoints = [
-      { value: stableCanvasX, type: "left" },
-      { value: stableCanvasX + nodeWidth, type: "right" },
-      { value: stableCanvasX + nodeWidth / 2, type: "centerX" },
-      { value: stableCanvasY, type: "top" },
-      { value: stableCanvasY + nodeHeight, type: "bottom" },
-      { value: stableCanvasY + nodeHeight / 2, type: "centerY" },
+      { value: stableAbsoluteX, type: "left" },
+      { value: stableAbsoluteX + nodeWidth, type: "right" },
+      { value: stableAbsoluteX + nodeWidth / 2, type: "centerX" },
+      { value: stableAbsoluteY, type: "top" },
+      { value: stableAbsoluteY + nodeHeight, type: "bottom" },
+      { value: stableAbsoluteY + nodeHeight / 2, type: "centerY" },
     ];
-    stableSnapResult = snapGrid.findNearestSnaps(stablePoints, 10, node.id);
+
+    // Find stable snap result using relevant nodes if specified
+    stableSnapResult = snapGrid.findNearestSnaps(
+      stablePoints,
+      25,
+      node.id,
+      relevantNodes
+    );
   }
 
   // Decide which result to dispatch (the stable one if we have it)
   const finalSnapResult = stableSnapResult || snapResult;
 
-  // Step 3: dispatch the final guides
+  // Dispatch the final guides
   useEffect(() => {
     if (!finalSnapResult) {
       dragDisp.clearSnapGuides();
@@ -278,7 +502,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
       return;
     }
     const { snapGuides } = finalSnapResult;
-    // compare
+    // Compare with previous guides to avoid re-dispatching identical guides
     const oldString = JSON.stringify(lastSnapRef.current);
     const newString = JSON.stringify(finalSnapResult);
     if (oldString !== newString) {
@@ -291,7 +515,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     }
   }, [finalSnapResult, dragDisp]);
 
-  // keep original node width/height while dragging
+  // Keep original node width/height while dragging
   useEffect(() => {
     if ((node.parentId || node.inViewport) && initialDimensionsRef.current) {
       const el = document.querySelector(
@@ -309,8 +533,17 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
       data-node-dragged={node.id}
       style={{
         position: "absolute",
-        left: `${finalLeft}px`,
-        top: `${finalTop}px`,
+        left: isAbsoluteNodeInFrame
+          ? `${
+              finalLeft -
+              parseFloat(node.style.left as string) * transform.scale
+            }px`
+          : `${finalLeft}px`,
+        top: isAbsoluteNodeInFrame
+          ? `${
+              finalTop - parseFloat(node.style.top as string) * transform.scale
+            }px`
+          : `${finalTop}px`,
         transform: `scale(${transform.scale})`,
         transformOrigin: "top left",
         pointerEvents: "none",
@@ -323,8 +556,16 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
           position: "absolute",
           transformOrigin: "top left",
           pointerEvents: "none",
-          left: undefined,
-          top: undefined,
+          left:
+            dragState.dragSource === "absolute-in-frame" ||
+            isAbsoluteInFrame(node)
+              ? "0px" // Force to zero instead of undefined
+              : undefined,
+          top:
+            dragState.dragSource === "absolute-in-frame" ||
+            isAbsoluteInFrame(node)
+              ? "0px" // Force to zero instead of undefined
+              : undefined,
           width: `${nodeWidth}px`,
           height: `${nodeHeight}px`,
         },

@@ -2,6 +2,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import {
   findIndexWithinParent,
   findParentViewport,
+  isAbsoluteInFrame,
   isWithinViewport,
 } from "../utils";
 import { useRef } from "react";
@@ -55,6 +56,158 @@ export const useMouseUp = () => {
       draggedNode.parentId,
       nodeState.nodes
     );
+
+    // NEW: Handle absolute positioning within frames
+    if (
+      dragState.dragSource === "absolute-in-frame" ||
+      isAbsoluteInFrame(draggedNode)
+    ) {
+      // If we have a target parent ID and absolute-inside position
+      if (
+        dragState.dropInfo.targetId &&
+        dragState.dropInfo.position === "absolute-inside"
+      ) {
+        const parentId = dragState.dropInfo.targetId;
+        const parentNode = nodeState.nodes.find((n) => n.id === parentId);
+
+        if (parentNode) {
+          // Calculate the correct position that accounts for the grab offset
+          const relativeX = dragState.dropInfo.dropX || 0;
+          const relativeY = dragState.dropInfo.dropY || 0;
+
+          // FIXED: We need to apply the same offset logic used during dragging
+          // to ensure the element's final position maintains the same grab point
+          const finalX = relativeX - dragState.draggedNode.offset.mouseX;
+          const finalY = relativeY - dragState.draggedNode.offset.mouseY;
+
+          // Set absolute position within the frame
+          setNodeStyle(
+            {
+              position: "absolute",
+              left: `${finalX}px`,
+              top: `${finalY}px`,
+            },
+            [draggedNode.id]
+          );
+
+          // Update node properties
+          nodeDisp.updateNode(draggedNode.id, {
+            parentId: parentId,
+            isAbsoluteInFrame: true,
+            inViewport: isWithinViewport(parentId, nodeState.nodes),
+          });
+
+          // Handle additional dragged nodes if any
+          if (dragState.additionalDraggedNodes?.length) {
+            dragState.additionalDraggedNodes.forEach((info, index) => {
+              // Calculate offset from main node
+              const offsetX =
+                info.offset.x - dragState.draggedNode.offset.x || 0;
+              const offsetY =
+                info.offset.y - dragState.draggedNode.offset.y || 0;
+
+              // Apply same positioning to additional node with corrected offset
+              setNodeStyle(
+                {
+                  position: "absolute",
+                  left: `${finalX + offsetX}px`,
+                  top: `${finalY + offsetY}px`,
+                },
+                [info.node.id]
+              );
+
+              // Update node properties
+              nodeDisp.updateNode(info.node.id, {
+                parentId: parentId,
+                isAbsoluteInFrame: true,
+                inViewport: isWithinViewport(parentId, nodeState.nodes),
+              });
+            });
+          }
+
+          // Clean up and finish
+          dragDisp.hideLineIndicator();
+          dragDisp.resetDragState();
+          stopRecording(dragState.recordingSessionId);
+          return;
+        }
+      } else {
+        // If dragged outside to canvas, convert to regular canvas element
+        const { dropX, dropY } = dragState.dropInfo;
+
+        if (dropX !== undefined && dropY !== undefined) {
+          // FIXED: Apply the same offset logic for canvas positioning
+          const finalX = dropX - dragState.draggedNode.offset.mouseX;
+          const finalY = dropY - dragState.draggedNode.offset.mouseY;
+
+          // Set position in canvas
+          setNodeStyle(
+            {
+              position: "absolute",
+              left: `${finalX}px`,
+              top: `${finalY}px`,
+            },
+            [draggedNode.id]
+          );
+
+          // Update node
+          nodeDisp.updateNode(draggedNode.id, {
+            parentId: null,
+            isAbsoluteInFrame: false,
+            inViewport: false,
+          });
+
+          // Update position for node on canvas
+          nodeDisp.updateNodePosition(draggedNode.id, {
+            x: finalX,
+            y: finalY,
+          });
+
+          // Handle additional dragged nodes if any
+          if (dragState.additionalDraggedNodes?.length) {
+            dragState.additionalDraggedNodes.forEach((info) => {
+              // Calculate offset from main node
+              const offsetX =
+                info.offset.x - dragState.draggedNode.offset.x || 0;
+              const offsetY =
+                info.offset.y - dragState.draggedNode.offset.y || 0;
+
+              const additionalX = finalX + offsetX;
+              const additionalY = finalY + offsetY;
+
+              // Apply positioning to additional node
+              setNodeStyle(
+                {
+                  position: "absolute",
+                  left: `${additionalX}px`,
+                  top: `${additionalY}px`,
+                },
+                [info.node.id]
+              );
+
+              // Update node
+              nodeDisp.updateNode(info.node.id, {
+                parentId: null,
+                isAbsoluteInFrame: false,
+                inViewport: false,
+              });
+
+              // Update position
+              nodeDisp.updateNodePosition(info.node.id, {
+                x: additionalX,
+                y: additionalY,
+              });
+            });
+          }
+
+          // Clean up and finish
+          dragDisp.hideLineIndicator();
+          dragDisp.resetDragState();
+          stopRecording(dragState.recordingSessionId);
+          return;
+        }
+      }
+    }
 
     if (dragState.dropInfo.targetId) {
       const { targetId, position } = dragState.dropInfo;

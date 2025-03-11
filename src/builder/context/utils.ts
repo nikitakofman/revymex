@@ -1811,3 +1811,7 @@ export const getCumulativeRotation = (
 
   return totalRotation;
 };
+
+export const isAbsoluteInFrame = (node: Node) => {
+  return node.isAbsoluteInFrame === true && node.parentId !== null;
+};
