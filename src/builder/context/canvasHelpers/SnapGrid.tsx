@@ -1,57 +1,50 @@
-// SnapGrid.ts - Optimized for both canvas and frame elements
+// SnapGrid.ts
 
 import React from "react";
-import { Node } from "../../reducer/nodeDispatcher";
-import { isAbsoluteInFrame } from "../utils";
+import { Node } from "@/builder/reducer/nodeDispatcher";
 
 export interface SnapLine {
   orientation: "horizontal" | "vertical";
   sourceNodeId: string | number;
-  position: number; // Alignment position
+
+  // For alignment lines
+  position?: number;
+
+  // For spacing lines
+  spacing?: number;
+  x1?: number;
+  x2?: number;
+  y?: number;
+  y1?: number;
+  y2?: number;
+  x?: number;
 }
 
 export interface SnapResult {
   // Edge/center alignment
-  horizontalSnap: {
-    position: number;
-    type: string;
-    sourceNodeId: string | number;
-  } | null;
-  verticalSnap: {
-    position: number;
-    type: string;
-    sourceNodeId: string | number;
-  } | null;
+  horizontalSnap: { position: number; type: string } | null;
+  verticalSnap: { position: number; type: string } | null;
+
+  // Potential offsets if you want to snap exactly to that spacing
+  horizontalSpacingSnap?: number;
+  verticalSpacingSnap?: number;
+
+  // The combined array of alignment + spacing lines
   snapGuides: SnapLine[];
-}
-
-// Utility function to get absolute position by recursively adding parent offsets
-function getAbsolutePosition(
-  node: Node,
-  allNodes: Node[]
-): { x: number; y: number } {
-  if (!node.style) return { x: 0, y: 0 };
-
-  // Start with the node's local position
-  let x = parseFloat(node.style.left as string) || 0;
-  let y = parseFloat(node.style.top as string) || 0;
-
-  // If this is absolute-in-frame, add the parent's position
-  if (isAbsoluteInFrame(node) && node.parentId) {
-    const parentNode = allNodes.find((n) => n.id === node.parentId);
-    if (parentNode) {
-      const parentPos = getAbsolutePosition(parentNode, allNodes);
-      x += parentPos.x;
-      y += parentPos.y;
-    }
-  }
-
-  return { x, y };
 }
 
 export class SnapGrid {
   private horizontalLines: Map<number, Set<string | number>> = new Map();
   private verticalLines: Map<number, Set<string | number>> = new Map();
+
+  private horizontalSpacings: Map<
+    number,
+    Set<[string | number, string | number]>
+  > = new Map();
+  private verticalSpacings: Map<
+    number,
+    Set<[string | number, string | number]>
+  > = new Map();
 
   private nodeRects: Record<
     string | number,
@@ -60,60 +53,47 @@ export class SnapGrid {
       right: number;
       top: number;
       bottom: number;
-      parentId?: string | number;
     }
   > = {};
 
-  // Store node references for additional filtering
-  private nodes: Node[] = [];
-
   constructor(nodes: Node[]) {
-    this.nodes = nodes;
     this.buildSnapPoints(nodes);
+    this.buildSpacingInfo(nodes);
   }
 
   /**
    * Build alignment lines for each node:
    *  - top/bottom/centerY
    *  - left/right/centerX
-   *
-   * All positions are converted to global canvas coordinates
    */
   private buildSnapPoints(nodes: Node[]) {
-    // First pass - calculate global coordinates for all nodes
     nodes.forEach((node) => {
       if (!node.style) return;
 
-      // Calculate global position
-      const { x: left, y: top } = getAbsolutePosition(node, nodes);
-
+      const left = parseFloat(node.style.left as string) || 0;
+      const top = parseFloat(node.style.top as string) || 0;
       const width = parseFloat(node.style.width as string) || 0;
       const height = parseFloat(node.style.height as string) || 0;
 
-      // Store node in global coordinates
-      this.nodeRects[node.id] = {
-        left,
-        right: left + width,
-        top,
-        bottom: top + height,
-        parentId: node.parentId,
-      };
+      const right = left + width;
+      const bottom = top + height;
 
-      // Add snap lines using global coordinates
+      this.nodeRects[node.id] = { left, right, top, bottom };
+
       const rLeft = Math.round(left);
-      const rRight = Math.round(left + width);
+      const rRight = Math.round(right);
       const rTop = Math.round(top);
-      const rBottom = Math.round(top + height);
-      const rCenterX = Math.round(left + width / 2);
-      const rCenterY = Math.round(top + height / 2);
+      const rBottom = Math.round(bottom);
 
+      // horizontal lines => top, bottom, centerY
       this.addHorizontalLine(rTop, node.id);
       this.addHorizontalLine(rBottom, node.id);
-      this.addHorizontalLine(rCenterY, node.id);
+      this.addHorizontalLine(Math.round((rTop + rBottom) / 2), node.id);
 
+      // vertical lines => left, right, centerX
       this.addVerticalLine(rLeft, node.id);
       this.addVerticalLine(rRight, node.id);
-      this.addVerticalLine(rCenterX, node.id);
+      this.addVerticalLine(Math.round((rLeft + rRight) / 2), node.id);
     });
   }
 
@@ -132,108 +112,117 @@ export class SnapGrid {
   }
 
   /**
+   * Build spacing data for pairs of nodes that appear in roughly the same row or column.
+   * If you want to show absolutely all horizontal gaps, remove the rowTolerance check.
+   */
+  private buildSpacingInfo(nodes: Node[]) {
+    // Increase these so more nodes are considered "in the same row/col."
+    const rowTolerance = 50;
+    const colTolerance = 50;
+
+    for (let i = 0; i < nodes.length; i++) {
+      const n1 = nodes[i];
+      const r1 = this.nodeRects[n1.id];
+      if (!r1) continue;
+
+      for (let j = i + 1; j < nodes.length; j++) {
+        const n2 = nodes[j];
+        const r2 = this.nodeRects[n2.id];
+        if (!r2) continue;
+
+        // same row => centerY within tolerance
+        const cY1 = (r1.top + r1.bottom) / 2;
+        const cY2 = (r2.top + r2.bottom) / 2;
+        const sameRow = Math.abs(cY1 - cY2) <= rowTolerance;
+        if (sameRow) {
+          if (r1.right < r2.left) {
+            const dist = Math.round(r2.left - r1.right);
+            if (dist > 0) this.addHorizontalSpacing(dist, n1.id, n2.id);
+          } else if (r2.right < r1.left) {
+            const dist = Math.round(r1.left - r2.right);
+            if (dist > 0) this.addHorizontalSpacing(dist, n2.id, n1.id);
+          }
+        }
+
+        // same column => centerX within tolerance
+        const cX1 = (r1.left + r1.right) / 2;
+        const cX2 = (r2.left + r2.right) / 2;
+        const sameCol = Math.abs(cX1 - cX2) <= colTolerance;
+        if (sameCol) {
+          if (r1.bottom < r2.top) {
+            const dist = Math.round(r2.top - r1.bottom);
+            if (dist > 0) this.addVerticalSpacing(dist, n1.id, n2.id);
+          } else if (r2.bottom < r1.top) {
+            const dist = Math.round(r1.top - r2.bottom);
+            if (dist > 0) this.addVerticalSpacing(dist, n2.id, n1.id);
+          }
+        }
+      }
+    }
+  }
+
+  private addHorizontalSpacing(
+    dist: number,
+    id1: string | number,
+    id2: string | number
+  ) {
+    if (!this.horizontalSpacings.has(dist)) {
+      this.horizontalSpacings.set(dist, new Set());
+    }
+    this.horizontalSpacings.get(dist)!.add([id1, id2]);
+  }
+
+  private addVerticalSpacing(
+    dist: number,
+    id1: string | number,
+    id2: string | number
+  ) {
+    if (!this.verticalSpacings.has(dist)) {
+      this.verticalSpacings.set(dist, new Set());
+    }
+    this.verticalSpacings.get(dist)!.add([id1, id2]);
+  }
+
+  /**
    * findNearestSnaps:
-   * Find alignment lines only (no spacing)
-   *
-   * The points passed in should be in global canvas coordinates.
+   * 1) normal alignment lines
+   * 2) multiple spacing lines
    */
   public findNearestSnaps(
     points: Array<{ value: number; type: string }>,
     threshold: number,
-    draggingNodeId: string | number,
-    relevantNodes?: Node[]
+    draggingNodeId: string | number
   ): SnapResult {
-    // Get the dragged node
-    const draggedNode = this.nodes.find((n) => n.id === draggingNodeId);
-
-    // Get relevant node IDs for filtering
-    let relevantNodeIds: (string | number)[] = [];
-
-    if (relevantNodes) {
-      // If relevantNodes is explicitly provided, use these nodes
-      relevantNodeIds = relevantNodes.map((n) => n.id);
-    } else {
-      // By default, consider all nodes except the one being dragged
-      relevantNodeIds = this.nodes
-        .filter((n) => n.id !== draggingNodeId)
-        .map((n) => n.id);
-    }
-
-    // For absolute-in-frame elements, focus on nodes within the same frame ecosystem
-    // Only if relevantNodes wasn't explicitly provided
-    if (
-      draggedNode &&
-      isAbsoluteInFrame(draggedNode) &&
-      draggedNode.parentId &&
-      !relevantNodes
-    ) {
-      // Get parent frame
-      const parentId = draggedNode.parentId;
-
-      // Get sibling nodes
-      const siblingIds = this.nodes
-        .filter((n) => n.parentId === parentId && n.id !== draggingNodeId)
-        .map((n) => n.id);
-
-      // Include the parent frame itself
-      relevantNodeIds = [...siblingIds, parentId];
-
-      // Optionally include "uncle" nodes (siblings of the parent)
-      const parentNode = this.nodes.find((n) => n.id === parentId);
-      if (parentNode && parentNode.parentId) {
-        const uncleIds = this.nodes
-          .filter(
-            (n) => n.parentId === parentNode.parentId && n.id !== parentId
-          )
-          .map((n) => n.id);
-        relevantNodeIds = [...relevantNodeIds, ...uncleIds];
-      }
-    }
-
     const { horizontalSnap, verticalSnap, snapGuides } = this.checkAlignments(
       points,
       threshold,
-      draggingNodeId,
-      relevantNodeIds
+      draggingNodeId
     );
+
+    const { allSpacingLines, bestHorizontalOffset, bestVerticalOffset } =
+      this.checkSpacing(points, threshold, draggingNodeId);
 
     return {
       horizontalSnap,
       verticalSnap,
-      snapGuides,
+      horizontalSpacingSnap: bestHorizontalOffset,
+      verticalSpacingSnap: bestVerticalOffset,
+      snapGuides: [...snapGuides, ...allSpacingLines],
     };
   }
 
   private checkAlignments(
     points: Array<{ value: number; type: string }>,
     threshold: number,
-    draggingNodeId: string | number,
-    relevantNodeIds: (string | number)[]
+    draggingNodeId: string | number
   ) {
-    let horizontalSnap: {
-      position: number;
-      type: string;
-      sourceNodeId: string | number;
-    } | null = null;
-    let verticalSnap: {
-      position: number;
-      type: string;
-      sourceNodeId: string | number;
-    } | null = null;
+    let horizontalSnap: { position: number; type: string } | null = null;
+    let verticalSnap: { position: number; type: string } | null = null;
     const snapGuides: SnapLine[] = [];
 
     let minHdist = threshold + 1;
-
-    // Process horizontal lines (for top, bottom, centerY alignment)
     this.horizontalLines.forEach((sourceNodes, linePos) => {
-      // Only consider lines from relevant nodes
-      const relevantSources = Array.from(sourceNodes).filter((id) =>
-        relevantNodeIds.includes(id)
-      );
-
-      if (!relevantSources.length) return;
       if (sourceNodes.has(draggingNodeId)) return;
-
       points.forEach((pt) => {
         if (
           pt.type === "top" ||
@@ -243,12 +232,7 @@ export class SnapGrid {
           const dist = Math.abs(pt.value - linePos);
           if (dist <= threshold && dist < minHdist) {
             minHdist = dist;
-            horizontalSnap = {
-              position: linePos,
-              type: pt.type,
-              sourceNodeId: relevantSources[0],
-            };
-
+            horizontalSnap = { position: linePos, type: pt.type };
             if (
               !snapGuides.some(
                 (g) => g.orientation === "horizontal" && g.position === linePos
@@ -257,7 +241,7 @@ export class SnapGrid {
               snapGuides.push({
                 orientation: "horizontal",
                 position: linePos,
-                sourceNodeId: relevantSources[0],
+                sourceNodeId: Array.from(sourceNodes)[0],
               });
             }
           }
@@ -266,17 +250,8 @@ export class SnapGrid {
     });
 
     let minVdist = threshold + 1;
-
-    // Process vertical lines (for left, right, centerX alignment)
     this.verticalLines.forEach((sourceNodes, linePos) => {
-      // Only consider lines from relevant nodes
-      const relevantSources = Array.from(sourceNodes).filter((id) =>
-        relevantNodeIds.includes(id)
-      );
-
-      if (!relevantSources.length) return;
       if (sourceNodes.has(draggingNodeId)) return;
-
       points.forEach((pt) => {
         if (
           pt.type === "left" ||
@@ -286,12 +261,7 @@ export class SnapGrid {
           const dist = Math.abs(pt.value - linePos);
           if (dist <= threshold && dist < minVdist) {
             minVdist = dist;
-            verticalSnap = {
-              position: linePos,
-              type: pt.type,
-              sourceNodeId: relevantSources[0],
-            };
-
+            verticalSnap = { position: linePos, type: pt.type };
             if (
               !snapGuides.some(
                 (g) => g.orientation === "vertical" && g.position === linePos
@@ -300,7 +270,7 @@ export class SnapGrid {
               snapGuides.push({
                 orientation: "vertical",
                 position: linePos,
-                sourceNodeId: relevantSources[0],
+                sourceNodeId: Array.from(sourceNodes)[0],
               });
             }
           }
@@ -312,42 +282,211 @@ export class SnapGrid {
   }
 
   /**
-   * Expose all alignment lines for debugging purposes
+   * checkSpacing:
+   * - ALWAYS push a SnapLine for each matching distance (no break).
+   * - Also compute the single "best" offset for snapping if you want to replicate that spacing.
    */
+  private checkSpacing(
+    points: Array<{ value: number; type: string }>,
+    threshold: number,
+    draggingNodeId: string | number
+  ) {
+    const allSpacingLines: SnapLine[] = [];
+    let bestHorizontalOffset: number | undefined;
+    let bestVerticalOffset: number | undefined;
+
+    // track minimal difference for the "closest" snap offset
+    let bestHorizDiff = threshold + 1;
+    let bestVertDiff = threshold + 1;
+
+    // bounding box in canvas coords
+    const leftP = points.find((p) => p.type === "left")?.value ?? 0;
+    const rightP = points.find((p) => p.type === "right")?.value ?? 0;
+    const topP = points.find((p) => p.type === "top")?.value ?? 0;
+    const bottomP = points.find((p) => p.type === "bottom")?.value ?? 0;
+
+    // we do the same row/column detection. Increase or remove if you want absolutely everything
+    const rowTolerance = 50;
+    const colTolerance = 50;
+
+    for (const [otherId, r] of Object.entries(this.nodeRects)) {
+      if (`${otherId}` === `${draggingNodeId}`) continue;
+
+      // same row
+      const cYdragged = (topP + bottomP) / 2;
+      const cYother = (r.top + r.bottom) / 2;
+      if (Math.abs(cYdragged - cYother) <= rowTolerance) {
+        const gapRight = r.left - rightP;
+        if (gapRight > 0) {
+          this.matchHorizontalGap(
+            allSpacingLines,
+            draggingNodeId,
+            +otherId,
+            gapRight,
+            { x1: rightP, x2: r.left, y: cYdragged },
+            threshold,
+            (dist, diff) => {
+              if (diff < bestHorizDiff) {
+                bestHorizDiff = diff;
+                const shift = r.left - dist - rightP;
+                bestHorizontalOffset = leftP + shift;
+              }
+            }
+          );
+        } else {
+          const gapLeft = leftP - r.right;
+          if (gapLeft > 0) {
+            this.matchHorizontalGap(
+              allSpacingLines,
+              draggingNodeId,
+              +otherId,
+              gapLeft,
+              { x1: r.right, x2: leftP, y: cYdragged },
+              threshold,
+              (dist, diff) => {
+                if (diff < bestHorizDiff) {
+                  bestHorizDiff = diff;
+                  const shift = r.right + dist - leftP;
+                  bestHorizontalOffset = leftP + shift;
+                }
+              }
+            );
+          }
+        }
+      }
+
+      // same column
+      const cXdragged = (leftP + rightP) / 2;
+      const cXother = (r.left + r.right) / 2;
+      if (Math.abs(cXdragged - cXother) <= colTolerance) {
+        const gapBelow = r.top - bottomP;
+        if (gapBelow > 0) {
+          this.matchVerticalGap(
+            allSpacingLines,
+            draggingNodeId,
+            +otherId,
+            gapBelow,
+            { y1: bottomP, y2: r.top, x: cXdragged },
+            threshold,
+            (dist, diff) => {
+              if (diff < bestVertDiff) {
+                bestVertDiff = diff;
+                const shift = r.top - dist - bottomP;
+                bestVerticalOffset = topP + shift;
+              }
+            }
+          );
+        } else {
+          const gapAbove = topP - r.bottom;
+          if (gapAbove > 0) {
+            this.matchVerticalGap(
+              allSpacingLines,
+              draggingNodeId,
+              +otherId,
+              gapAbove,
+              { y1: r.bottom, y2: topP, x: cXdragged },
+              threshold,
+              (dist, diff) => {
+                if (diff < bestVertDiff) {
+                  bestVertDiff = diff;
+                  const shift = r.bottom + dist - topP;
+                  bestVerticalOffset = topP + shift;
+                }
+              }
+            );
+          }
+        }
+      }
+    }
+
+    return {
+      allSpacingLines,
+      bestHorizontalOffset,
+      bestVerticalOffset,
+    };
+  }
+
+  private matchHorizontalGap(
+    lines: SnapLine[],
+    draggingNodeId: string | number,
+    otherId: number,
+    gap: number,
+    coords: { x1: number; x2: number; y: number },
+    threshold: number,
+    onMatch: (dist: number, diff: number) => void
+  ) {
+    // No "break": we push lines for *all* matching distances
+    for (const [dist, pairs] of this.horizontalSpacings.entries()) {
+      const diff = Math.abs(dist - gap);
+      if (diff <= threshold) {
+        lines.push({
+          orientation: "horizontal",
+          sourceNodeId: otherId,
+          spacing: dist,
+          x1: coords.x1,
+          x2: coords.x2,
+          y: coords.y,
+        });
+        onMatch(dist, diff);
+      }
+    }
+  }
+
+  private matchVerticalGap(
+    lines: SnapLine[],
+    draggingNodeId: string | number,
+    otherId: number,
+    gap: number,
+    coords: { y1: number; y2: number; x: number },
+    threshold: number,
+    onMatch: (dist: number, diff: number) => void
+  ) {
+    for (const [dist, pairs] of this.verticalSpacings.entries()) {
+      const diff = Math.abs(dist - gap);
+      if (diff <= threshold) {
+        lines.push({
+          orientation: "vertical",
+          sourceNodeId: otherId,
+          spacing: dist,
+          y1: coords.y1,
+          y2: coords.y2,
+          x: coords.x,
+        });
+        onMatch(dist, diff);
+      }
+    }
+  }
+
+  /** For debugging alignment lines only */
   public getAllLines(): SnapLine[] {
     const lines: SnapLine[] = [];
-
-    // Add all horizontal lines
     this.horizontalLines.forEach((sourceNodes, position) => {
-      const sourceNodeId = Array.from(sourceNodes)[0];
       lines.push({
         orientation: "horizontal",
         position,
-        sourceNodeId,
+        sourceNodeId: Array.from(sourceNodes)[0],
       });
     });
-
-    // Add all vertical lines
     this.verticalLines.forEach((sourceNodes, position) => {
-      const sourceNodeId = Array.from(sourceNodes)[0];
       lines.push({
         orientation: "vertical",
         position,
-        sourceNodeId,
+        sourceNodeId: Array.from(sourceNodes)[0],
       });
     });
-
     return lines;
   }
 
   public clear() {
     this.horizontalLines.clear();
     this.verticalLines.clear();
+    this.horizontalSpacings.clear();
+    this.verticalSpacings.clear();
     this.nodeRects = {};
   }
 }
 
-/** Hook to build or rebuild a SnapGrid whenever filteredNodes changes. */
+/** Hook to build or rebuild a SnapGrid whenever `filteredNodes` changes. */
 export const useSnapGrid = (filteredNodes: Node[]) => {
   const snapGridRef = React.useRef<SnapGrid | null>(null);
   const prevNodesRef = React.useRef<Node[]>([]);

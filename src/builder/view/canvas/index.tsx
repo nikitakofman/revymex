@@ -25,7 +25,6 @@ import BottomToolbar from "../toolbars/bottomToolbar";
 import { useCursorManager } from "../../context/hooks/useCursorManager";
 import LoadingScreen from "./loading-screen";
 import { useMoveCanvas } from "@/builder/context/hooks/useMoveCanvas";
-import DebugSnapGuides from "@/builder/dev/DebugSnap";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -38,8 +37,6 @@ const Canvas = () => {
     dragDisp,
     nodeDisp,
     transform,
-    isFrameModeActive,
-    isTextModeActive,
     interfaceDisp,
     isResizing,
     isRotating,
@@ -151,7 +148,7 @@ const Canvas = () => {
           onContextMenu={handleContextMenu}
         >
           <SnapGuides />
-          <DebugSnapGuides />
+          {/* <DebugSnapGrid /> */}
           <StyleUpdateHelper />
           {!isDrawingMode && !isMoveMode && !dragState.isDragging && (
             <SelectionBox />
