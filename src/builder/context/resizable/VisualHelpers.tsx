@@ -15,6 +15,7 @@ import {
 } from "../utils";
 import { RotateHandle } from "./RotateHandle";
 import { BorderRadiusHandle } from "./BorderRadiusHandle";
+import AddVariantsUI from "../canvasHelpers/AddVariantUI";
 
 /* -------------------------------------------
    2D MATRIX HELPERS
@@ -625,6 +626,7 @@ export const VisualHelpers = ({
 
                   {/* Connection handle */}
                   <ConnectionHandle node={node} transform={transform} />
+                  {/* <AddVariantsUI node={node} transform={transform} /> */}
                 </>
               )}
             </>

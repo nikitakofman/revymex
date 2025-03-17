@@ -969,18 +969,44 @@ export function getFilteredNodes(
   mode: "dynamicMode" | "inViewport" | "outOfViewport",
   dynamicModeNodeId: string | number | null | undefined
 ): Node[] {
-  return nodes.filter((node: Node) => {
+  // First, create a map to deduplicate nodes with the same ID
+  const nodesMap = new Map<string | number, Node>();
+
+  // Take the last occurrence of each node ID (this fixes duplicated IDs)
+  nodes.forEach((node) => {
+    nodesMap.set(node.id, node);
+  });
+
+  // Convert back to array
+  const uniqueNodes = Array.from(nodesMap.values());
+
+  // Now filter with our standard logic
+  return uniqueNodes.filter((node: Node) => {
     if (mode === "dynamicMode") {
+      // In dynamic mode, show only:
+      // 1. The main dynamic node
+      // 2. Nodes with dynamicParentId matching the current dynamic node
+      // 3. Variant nodes with variantParentId matching the current dynamic node
       return (
         node.id === dynamicModeNodeId ||
-        node.dynamicParentId === dynamicModeNodeId
+        node.dynamicParentId === dynamicModeNodeId ||
+        (node.isVariant && node.variantParentId === dynamicModeNodeId)
       );
     }
 
+    // In normal modes (inViewport, outOfViewport):
+
+    // Don't show nodes with dynamicParentId
     if (node.dynamicParentId) {
       return false;
     }
 
+    // Don't show variant nodes
+    if (node.isVariant) {
+      return false;
+    }
+
+    // Normal filtering by viewport status
     if (mode === "inViewport") {
       return node.inViewport === true;
     } else if (mode === "outOfViewport") {

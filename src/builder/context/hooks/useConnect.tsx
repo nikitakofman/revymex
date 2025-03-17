@@ -298,6 +298,17 @@ export const useConnect = () => {
         draggable: false,
         style: {
           ...otherStyles,
+          ...(dragState.dynamicState === "hovered" && node.dynamicState?.hovered
+            ? {
+                ...node.dynamicState.hovered,
+                // Override with original position values
+                position: node.style.position,
+                left: node.style.left,
+                top: node.style.top,
+                right: node.style.right,
+                bottom: node.style.bottom,
+              }
+            : {}),
         },
       };
     },
@@ -310,6 +321,12 @@ export const useConnect = () => {
       nodeDisp,
       dragState.dragSource,
       isMovingCanvas,
+      dragState.dynamicState,
+      dragState.selectedIds,
+      interfaceDisp,
+      isFrameModeActive,
+      isMoveCanvasMode,
+      isTextModeActive,
     ]
   );
 };

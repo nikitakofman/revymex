@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Play, X } from "lucide-react";
 import { ResponsivePreview } from "./combineViewports";
@@ -50,7 +50,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         <div className="flex-1 overflow-auto p-4 bg-[var(--bg-canvas)]">
           <div
             className="mx-auto bg-white min-h-[100px] transition-all duration-300 overflow-hidden relative flex justify-center items-start"
-            style={{ width: "100%" }}
+            style={{ maxWidth: `${viewport}px`, width: "100%" }}
           >
             <ResponsivePreview nodes={nodes} viewport={viewport} />
           </div>
@@ -59,129 +59,3 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
     </div>
   );
 };
-
-interface PreviewRendererProps {
-  nodes: Node[];
-}
-
-const PreviewRenderer: React.FC<PreviewRendererProps> = ({
-  nodes,
-  viewport,
-}) => {
-  const viewportNodes = useMemo(() => {
-    // Find all viewports ordered by width descending
-    const viewports = nodes
-      .filter((n) => n.isViewport)
-      .sort((a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0));
-
-    // Find current viewport and the next larger one
-    const targetViewport = viewports.find(
-      (v) => (v.viewportWidth || 0) <= viewport
-    );
-    const baseViewport = viewports.find((v) => (v.viewportWidth || 0) === 1440);
-
-    if (!targetViewport || !baseViewport) return [];
-
-    // Get nodes from desktop viewport as base
-    const baseNodes = getViewportNodes(nodes, baseViewport.id);
-
-    if (targetViewport.id === baseViewport.id) {
-      return baseNodes;
-    }
-
-    // Find nodes in current viewport to override styles
-    const currentViewportNodes = getViewportNodes(nodes, targetViewport.id);
-
-    // Map nodes by sharedId
-    const nodesBySharedId = new Map<string, Node>();
-    currentViewportNodes.forEach((node) => {
-      if (node.sharedId) {
-        nodesBySharedId.set(node.sharedId, node);
-      }
-    });
-
-    // Merge styles from current viewport
-    return baseNodes.map((node) => {
-      const overrideNode = node.sharedId
-        ? nodesBySharedId.get(node.sharedId)
-        : undefined;
-      if (!overrideNode) return node;
-
-      return {
-        ...node,
-        style: {
-          ...node.style,
-          ...Object.keys(overrideNode.style).reduce((acc, key) => {
-            if (overrideNode.independentStyles?.[key]) {
-              acc[key] = overrideNode.style[key];
-            }
-            return acc;
-          }, {} as Record<string, any>),
-        },
-      };
-    });
-  }, [nodes, viewport]);
-
-  const renderNode = (node: Node) => {
-    const style = {
-      ...node.style,
-      position: "relative",
-    };
-
-    switch (node.type) {
-      case "frame":
-        const children = viewportNodes.filter((n) => n.parentId === node.id);
-        return (
-          <div key={node.id} style={style} className="preview-frame">
-            {children.map(renderNode)}
-          </div>
-        );
-      case "text":
-        return (
-          <div key={node.id} style={style} className="preview-text">
-            {node.text || "Text"}
-          </div>
-        );
-      case "image":
-        return (
-          <img
-            key={node.id}
-            src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
-            alt="Preview"
-            style={style}
-            className="preview-image"
-          />
-        );
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <div className="preview-container relative">
-      {viewportNodes
-        .filter(
-          (n) =>
-            !n.parentId ||
-            n.parentId ===
-              nodes.find((v) => v.isViewport && v.viewportWidth === viewport)
-                ?.id
-        )
-        .map(renderNode)}
-    </div>
-  );
-};
-
-function getViewportNodes(nodes: Node[], viewportId: string | number): Node[] {
-  const result: Node[] = [];
-  const queue = [viewportId];
-
-  while (queue.length > 0) {
-    const currentId = queue.shift()!;
-    const children = nodes.filter((n) => n.parentId === currentId);
-    result.push(...children);
-    queue.push(...children.map((n) => n.id));
-  }
-
-  return result;
-}

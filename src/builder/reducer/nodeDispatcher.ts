@@ -1,4 +1,4 @@
-import { produce } from "immer";
+import { original, produce } from "immer";
 import { nanoid } from "nanoid";
 import { CSSProperties } from "react";
 import { findParentViewport } from "../context/utils";
@@ -8,10 +8,24 @@ export interface Position {
   y: number;
 }
 
+export interface VariantInfo {
+  name: string;
+  id: string;
+}
+
 export interface Node {
   id: string;
   type: "frame" | "image" | "text" | "placeholder" | string;
   customName?: string;
+  dynamicState?: {
+    hovered?: CSSProperties & {
+      src?: string;
+      text?: string;
+      backgroundImage?: string;
+      isVideoBackground?: boolean;
+      backgroundVideo?: string;
+    };
+  };
   style: CSSProperties & {
     src?: string;
     text?: string;
@@ -37,7 +51,7 @@ export interface Node {
   dynamicConnections?: {
     sourceId: string | number;
     targetId: string | number;
-    type: "click" | "hover";
+    type: "click" | "hover" | "mouseLeave";
   }[];
   dynamicPosition?: Position;
   originalState?: {
@@ -45,6 +59,9 @@ export interface Node {
     inViewport: boolean;
   };
   isAbsoluteInFrame?: boolean;
+  isVariant?: boolean;
+  variantParentId?: string | number;
+  variantInfo?: VariantInfo;
 }
 
 export interface NodeState {
@@ -69,7 +86,25 @@ export class NodeDispatcher {
   ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        const newNode = { ...node, inViewport: shouldBeInViewport };
+        // Ensure node has a sharedId if it's going to be in a viewport
+        const newNode = {
+          ...node,
+          inViewport: shouldBeInViewport,
+          // Add a sharedId if missing and node will be in a viewport
+          sharedId:
+            shouldBeInViewport && !node.sharedId ? nanoid() : node.sharedId,
+        };
+
+        // Also clean up incompatible properties based on node type
+        if (newNode.type === "image") {
+          // Remove text property from image nodes
+          if (newNode.style.text) delete newNode.style.text;
+          if (newNode.text) delete newNode.text;
+        } else if (newNode.type === "text") {
+          // Remove src property from text nodes
+          if (newNode.style.src) delete newNode.style.src;
+          if (newNode.src) delete newNode.src;
+        }
 
         if (!targetId) {
           newNode.parentId = null;
@@ -116,13 +151,31 @@ export class NodeDispatcher {
     );
   }
 
-  updateNodeStyle(nodeIds: (string | number)[], style: Partial<CSSProperties>) {
+  updateNodeStyle(
+    nodeIds: (string | number)[],
+    style: Partial<CSSProperties>,
+    dynamicState?: string
+  ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
         // Find all nodes that match the nodeIds
         const nodesToUpdate = draft.nodes.filter((n) => nodeIds.includes(n.id));
 
         if (nodesToUpdate.length === 0) return;
+
+        // Split style properties into positioning and non-positioning
+        const positioningStyles: Partial<CSSProperties> = {};
+        const otherStyles: Partial<CSSProperties> = {};
+
+        // Extract positioning properties
+        ["left", "top", "right", "bottom", "position"].forEach((prop) => {
+          if (prop in style) {
+            positioningStyles[prop] = style[prop];
+          }
+        });
+
+        // All remaining properties go to otherStyles
+        Object.assign(otherStyles, style);
 
         // Update each node
         nodesToUpdate.forEach((node) => {
@@ -131,12 +184,34 @@ export class NodeDispatcher {
           if (viewportId && viewportId !== "viewport-1440") {
             if (!node.independentStyles) node.independentStyles = {};
 
-            Object.keys(style).forEach((prop) => {
+            // Update independentStyles for all style properties
+            [
+              ...Object.keys(positioningStyles),
+              ...Object.keys(otherStyles),
+            ].forEach((prop) => {
               node.independentStyles![prop] = true;
             });
           }
 
-          Object.assign(node.style, style);
+          // Always apply positioning styles to the normal state
+          Object.assign(node.style, positioningStyles);
+
+          // Apply other styles according to the dynamic state
+          if (
+            dynamicState === "hovered" &&
+            Object.keys(otherStyles).length > 0
+          ) {
+            // Initialize dynamicState object if it doesn't exist
+            if (!node.dynamicState) node.dynamicState = {};
+            // Initialize hovered object if it doesn't exist
+            if (!node.dynamicState.hovered) node.dynamicState.hovered = {};
+
+            // Update the hovered styles with non-positioning properties
+            Object.assign(node.dynamicState.hovered, otherStyles);
+          } else {
+            // Apply all styles to normal state if not in hover state
+            Object.assign(node.style, otherStyles);
+          }
         });
       })
     );
@@ -466,6 +541,201 @@ export class NodeDispatcher {
     );
   }
 
+  duplicateDynamicElement(nodeId: string | number, elementWidth?: number) {
+    let duplicateId = "";
+
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // Find the original node
+        const originalNode = draft.nodes.find((n) => n.id === nodeId);
+        if (!originalNode) return;
+
+        // Determine if this is the main dynamic node
+        const isMainDynamicNode =
+          originalNode.isDynamic && !originalNode.dynamicParentId;
+
+        // Set dynamicParentId to either the current node (if main) or keep the original's dynamicParentId
+        const dynamicParentId = isMainDynamicNode
+          ? nodeId
+          : originalNode.dynamicParentId;
+
+        // Create duplicate with proper properties
+        duplicateId = nanoid();
+        const duplicate: Node = {
+          id: duplicateId,
+          type: originalNode.type,
+          style: {
+            ...originalNode.style,
+            left: `${
+              parseFloat(originalNode.style.left) + elementWidth + 200
+            }px`,
+            top: `${parseFloat(originalNode.style.top)}px`,
+          },
+          // Never make the duplicate a main dynamic node
+          isDynamic: false,
+          // Set dynamicParentId to ensure it appears in dynamic editor
+          dynamicParentId,
+          // Keep it out of viewport
+          inViewport: false,
+          parentId: null,
+        };
+
+        // Copy over other important properties
+        if (originalNode.customName)
+          duplicate.customName = originalNode.customName;
+        if (originalNode.src) duplicate.src = originalNode.src;
+        if (originalNode.text) duplicate.text = originalNode.text;
+        if (originalNode.dynamicState)
+          duplicate.dynamicState = { ...originalNode.dynamicState };
+
+        // Add to nodes array
+        draft.nodes.push(duplicate);
+
+        // If this is a frame, duplicate all its children
+        if (originalNode.type === "frame") {
+          const children = getSubtree(draft.nodes, nodeId, false);
+          const idMap = new Map<string | number, string | number>();
+          idMap.set(nodeId, duplicateId);
+
+          children.forEach((child) => {
+            const childDuplicateId = nanoid();
+
+            // Create duplicate child with same properties
+            const childDuplicate: Node = {
+              id: childDuplicateId,
+              type: child.type,
+              style: { ...child.style },
+              dynamicParentId,
+              inViewport: false,
+            };
+
+            // Copy other important properties
+            if (child.customName) childDuplicate.customName = child.customName;
+            if (child.src) childDuplicate.src = child.src;
+            if (child.text) childDuplicate.text = child.text;
+            if (child.dynamicState)
+              childDuplicate.dynamicState = { ...child.dynamicState };
+
+            // Map parent relationships to keep structure
+            const originalParentId = child.parentId;
+            if (originalParentId) {
+              const newParentId = idMap.get(originalParentId);
+              if (newParentId) {
+                childDuplicate.parentId = newParentId;
+              }
+            }
+
+            idMap.set(child.id, childDuplicateId);
+            draft.nodes.push(childDuplicate);
+          });
+        }
+      })
+    );
+
+    return duplicateId;
+  }
+
+  /**
+   * Add a single dynamic connection, allowing one connection per type per source node.
+   * A node can have one click, one hover, and one mouseLeave connection, but not multiple of the same type.
+   * @param sourceId Source node ID
+   * @param targetId Target node ID
+   * @param connectionType Connection type
+   * @param dynamicModeNodeId ID of the main dynamic node
+   */
+  addUniqueDynamicConnection(
+    sourceId: string | number,
+    targetId: string | number,
+    connectionType: "click" | "hover" | "mouseLeave",
+    dynamicModeNodeId: string | number
+  ) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // Find the source node
+        const sourceNode = draft.nodes.find((n) => n.id === sourceId);
+        if (!sourceNode) return;
+
+        // Initialize dynamicConnections array if it doesn't exist
+        if (!sourceNode.dynamicConnections) {
+          sourceNode.dynamicConnections = [];
+        }
+
+        // Remove any existing connections of the same type from this source node
+        sourceNode.dynamicConnections = sourceNode.dynamicConnections.filter(
+          (conn) => conn.type !== connectionType
+        );
+
+        // Add the new connection
+        sourceNode.dynamicConnections.push({
+          sourceId,
+          targetId,
+          type: connectionType,
+        });
+      })
+    );
+  }
+
+  /**
+   * Clean up all dynamic connections in the system to ensure one connection per type per target.
+   * This allows multiple connections to the same target as long as they have different types.
+   * @param dynamicModeNodeId ID of the main dynamic node
+   */
+  cleanupDynamicConnections(dynamicModeNodeId: string | number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // Get all nodes in the dynamic system
+        const dynamicNodes = draft.nodes.filter(
+          (n) =>
+            n.dynamicParentId === dynamicModeNodeId ||
+            n.id === dynamicModeNodeId
+        );
+
+        // Create a map to track connections by target ID and type
+        // The key is a composite of targetId and connection type
+        const targetTypeConnectionMap = new Map<
+          string, // "targetId-type" as key
+          {
+            sourceId: string | number;
+            targetId: string | number;
+            type: "click" | "hover" | "mouseLeave";
+          }
+        >();
+
+        // First, find all unique connections per target-type combination
+        dynamicNodes.forEach((node) => {
+          if (!node.dynamicConnections) return;
+
+          node.dynamicConnections.forEach((conn) => {
+            const compositeKey = `${conn.targetId}-${conn.type}`;
+            targetTypeConnectionMap.set(compositeKey, {
+              sourceId: conn.sourceId,
+              targetId: conn.targetId,
+              type: conn.type || "click", // Default to click if type is missing
+            });
+          });
+        });
+
+        // Clear all connections from all nodes
+        dynamicNodes.forEach((node) => {
+          if (node.dynamicConnections && node.dynamicConnections.length > 0) {
+            node.dynamicConnections = [];
+          }
+        });
+
+        // Add back unique connections based on target-type combinations
+        targetTypeConnectionMap.forEach((conn) => {
+          const sourceNode = draft.nodes.find((n) => n.id === conn.sourceId);
+          if (sourceNode) {
+            if (!sourceNode.dynamicConnections) {
+              sourceNode.dynamicConnections = [];
+            }
+            sourceNode.dynamicConnections.push(conn);
+          }
+        });
+      })
+    );
+  }
+
   syncViewports() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -580,6 +850,99 @@ export class NodeDispatcher {
         // Update each node
         nodesToToggle.forEach((node) => {
           node.isLocked = newLockState;
+        });
+      })
+    );
+  }
+
+  createVariant(dynamicNodeId: string | number, variantName: string) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // Find the main dynamic node
+        const mainNode = draft.nodes.find((n) => n.id === dynamicNodeId);
+        if (!mainNode || !mainNode.isDynamic) return;
+
+        // Create unique ID for the variant
+        const variantId = nanoid();
+        const variantSlug = variantName.toLowerCase().replace(/\s+/g, "-");
+
+        // Create a completely new node for the variant, instead of modifying the existing one
+        const variantNode: Node = {
+          id: variantId,
+          type: mainNode.type,
+          style: { ...mainNode.style },
+          isDynamic: false,
+          isVariant: true,
+          variantParentId: mainNode.id,
+          dynamicParentId: mainNode.id,
+          // Critical: These must be explicitly set to match dropped elements
+          inViewport: false,
+          parentId: null,
+          position: {
+            x: (mainNode.position?.x || 0) + 500,
+            y: (mainNode.position?.y || 0) + 200,
+          },
+          variantInfo: {
+            name: variantName,
+            id: variantSlug,
+          },
+        };
+
+        // Only copy needed properties, not problematic ones
+        if (mainNode.customName) variantNode.customName = mainNode.customName;
+        if (mainNode.src) variantNode.src = mainNode.src;
+        if (mainNode.text) variantNode.text = mainNode.text;
+        if (mainNode.dynamicState)
+          variantNode.dynamicState = { ...mainNode.dynamicState };
+
+        // Add the variant node to the array
+        draft.nodes.push(variantNode);
+
+        // Now clone all children of the main node for the variant
+        const mainChildren = getSubtree(draft.nodes, mainNode.id, false);
+
+        // Track the mapping from original IDs to new variant IDs
+        const idMap = new Map<string | number, string | number>();
+        idMap.set(mainNode.id, variantId);
+
+        // Clone each child node
+        mainChildren.forEach((childNode) => {
+          const childVariantId = nanoid();
+
+          // Create the cloned child with just the needed properties
+          const childVariant: Node = {
+            id: childVariantId,
+            type: childNode.type,
+            style: { ...childNode.style },
+            // Critical properties for variants
+            dynamicParentId: mainNode.id,
+            inViewport: false,
+            isVariant: true,
+            variantParentId: mainNode.id,
+          };
+
+          // Only copy needed properties
+          if (childNode.customName)
+            childVariant.customName = childNode.customName;
+          if (childNode.src) childVariant.src = childNode.src;
+          if (childNode.text) childVariant.text = childNode.text;
+          if (childNode.dynamicState)
+            childVariant.dynamicState = { ...childNode.dynamicState };
+
+          // Map the original parent to the new parent in the variant tree
+          const originalParentId = childNode.parentId;
+          if (originalParentId) {
+            const newParentId = idMap.get(originalParentId);
+            if (newParentId) {
+              childVariant.parentId = newParentId;
+            }
+          }
+
+          // Store the ID mapping for this node
+          idMap.set(childNode.id, childVariantId);
+
+          // Add to the nodes array
+          draft.nodes.push(childVariant);
         });
       })
     );

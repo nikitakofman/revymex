@@ -24,8 +24,10 @@ export const VideoElement = ({ node }: ElementProps) => {
             pointerEvents: "none",
           }}
           src={
-            node.style.src ||
-            "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
+            dragState.dynamicState === "hovered"
+              ? node.dynamicState?.hovered?.src
+              : node.style.src ||
+                "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
           }
           controls={false}
           autoPlay={true}

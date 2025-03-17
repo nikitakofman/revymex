@@ -7,6 +7,7 @@ export interface InterfaceState {
   isPreviewOpen: boolean;
   isPagesOpen: boolean;
   isComponentsOpen: boolean;
+  isTyping: boolean;
 }
 
 export class InterfaceDispatcher {
@@ -100,6 +101,14 @@ export class InterfaceDispatcher {
           draft.isComponentsOpen = false;
           draft.isPagesOpen = false;
         }
+      })
+    );
+  }
+
+  setIsTyping() {
+    this.setState(
+      produce((draft) => {
+        draft.isTyping = !draft.isTyping;
       })
     );
   }

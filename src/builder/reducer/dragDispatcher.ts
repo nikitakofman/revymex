@@ -96,6 +96,13 @@ export interface DragState {
   duplicatedFromAlt: boolean;
   lastMouseX: number;
   lastMouseY: number;
+  dynamicState: "normal" | "hovered";
+  connectionTypeModal: {
+    show: boolean;
+    position: { x: number; y: number };
+    sourceId: string | number | null;
+    targetId: string | number | null;
+  };
 }
 
 interface PlaceholderInfo {
@@ -399,6 +406,14 @@ export class DragDispatcher {
     );
   }
 
+  setDynamicState(state: "normal" | "hovered") {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.dynamicState = state;
+      })
+    );
+  }
+
   setDragPositions(x: number, y: number) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -471,6 +486,32 @@ export class DragDispatcher {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.duplicatedFromAlt = duplicatedFromAlt;
+      })
+    );
+  }
+
+  showConnectionTypeModal(
+    sourceId: string | number,
+    targetId: string | number,
+    position: { x: number; y: number }
+  ) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.connectionTypeModal = {
+          show: true,
+          position,
+          sourceId,
+          targetId,
+        };
+      })
+    );
+  }
+
+  // Method to hide the connection type modal
+  hideConnectionTypeModal() {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.connectionTypeModal.show = false;
       })
     );
   }

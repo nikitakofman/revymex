@@ -26,7 +26,11 @@ export const ImageElement = ({ node }: ElementProps) => {
             borderRadius: node.style.borderRadius,
             pointerEvents: "none",
           }}
-          src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
+          src={
+            dragState.dynamicState === "hovered"
+              ? node.dynamicState?.hovered?.src
+              : node.style.src || "https://batiment.imag.fr/img/imag.png"
+          }
           alt="Image"
         />
 

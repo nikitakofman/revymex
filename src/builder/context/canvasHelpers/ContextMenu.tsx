@@ -193,7 +193,7 @@ export const ContextMenu = () => {
     );
 
     // Add "Make Dynamic" option only for frame nodes
-    if (node && node.type === "frame") {
+    if (node) {
       menuItems.push(
         {
           label: "Make Dynamic",

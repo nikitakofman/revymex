@@ -69,11 +69,11 @@ const Header = () => {
         </Button>
       </div>
 
-      <PreviewModal
+      {/* <PreviewModal
         isOpen={interfaceState.isPreviewOpen}
         onClose={() => interfaceDisp.togglePreview()}
         nodes={nodeState.nodes}
-      />
+      /> */}
 
       <Tooltip
         id="header-tooltip"

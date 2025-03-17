@@ -1,5 +1,4 @@
-// Canvas.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import InterfaceToolbar from "../toolbars/leftToolbar";
 import { RenderNodes } from "../../registry/renderNodes";
 import { useBuilder } from "@/builder/context/builderState";
@@ -25,23 +24,33 @@ import BottomToolbar from "../toolbars/bottomToolbar";
 import { useCursorManager } from "../../context/hooks/useCursorManager";
 import LoadingScreen from "./loading-screen";
 import { useMoveCanvas } from "@/builder/context/hooks/useMoveCanvas";
+import { DynamicToolbar } from "../toolbars/dynamicToolbar";
+import { AddVariantsUI } from "@/builder/context/canvasHelpers/AddVariantUI";
+import ConnectionTypeModal from "@/builder/context/canvasHelpers/ConnectionTypeModal";
+import ResponsivePreview from "../preview/combineViewports";
+import IframePreview from "../preview/iframePreview";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
+  const eventHandlersAttached = useRef(false);
 
   const {
     containerRef,
     contentRef,
     dragState,
     isMovingCanvas,
+    setIsMovingCanvas,
     dragDisp,
     nodeDisp,
     transform,
+    setTransform,
     interfaceDisp,
     isResizing,
     isRotating,
     isAdjustingGap,
     isAdjustingBorderRadius,
+    nodeState,
+    interfaceState,
   } = useBuilder();
 
   // Use the cursor manager hook
@@ -62,14 +71,64 @@ const Canvas = () => {
   });
 
   useEffect(() => {
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    if (
+      document.activeElement?.tagName === "INPUT" ||
+      document.activeElement?.tagName === "TEXTAREA" ||
+      document.activeElement?.isContentEditable
+    ) {
+      return;
+    }
+  });
 
-    return () => {
+  // Function to attach event listeners
+  const attachEventListeners = () => {
+    if (!eventHandlersAttached.current) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+      eventHandlersAttached.current = true;
+      console.log("Event handlers attached");
+    }
+  };
+
+  // Function to detach event listeners
+  const detachEventListeners = () => {
+    if (eventHandlersAttached.current) {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      eventHandlersAttached.current = false;
+      console.log("Event handlers detached");
+    }
+  };
+
+  // Attach event listeners when not in preview mode
+  useEffect(() => {
+    if (!interfaceState.isPreviewOpen) {
+      attachEventListeners();
+    } else {
+      detachEventListeners();
+    }
+
+    return () => {
+      detachEventListeners();
     };
-  }, [handleMouseMove, handleMouseUp]);
+  }, [
+    interfaceState.isPreviewOpen,
+    handleMouseMove,
+    handleMouseUp,
+    attachEventListeners,
+    detachEventListeners,
+  ]);
+
+  // Reset any necessary state when switching back from preview mode
+  useEffect(() => {
+    if (!interfaceState.isPreviewOpen && eventHandlersAttached.current) {
+      // Reset any necessary state when returning from preview mode
+      setIsMovingCanvas(false);
+
+      // Force a redraw of the canvas by triggering a window resize event
+      window.dispatchEvent(new Event("resize"));
+    }
+  }, [interfaceState.isPreviewOpen, setIsMovingCanvas]);
 
   // Loading state detection based on critical refs and a minimum time
   useEffect(() => {
@@ -98,6 +157,16 @@ const Canvas = () => {
       clearTimeout(minLoadTimer);
     };
   }, [containerRef.current, contentRef.current]);
+
+  // Update transform when switching from preview back to editor
+  useEffect(() => {
+    if (!interfaceState.isPreviewOpen && contentRef.current) {
+      // Ensure the transform is applied to the content
+      contentRef.current.style.willChange = "transform";
+      contentRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
+      contentRef.current.style.transformOrigin = "0 0";
+    }
+  }, [interfaceState.isPreviewOpen, transform, contentRef]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (dragState.isSelectionBoxActive) {
@@ -128,54 +197,68 @@ const Canvas = () => {
       <LoadingScreen isLoading={isLoading} />
 
       <Header />
-      <div className="fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)]">
-        <ViewportDevTools />
-        <InterfaceToolbar />
-        <LeftMenu />
-        <ToolbarDragPreview />
-        <div
-          ref={containerRef}
-          style={{
-            willChange: "transform",
-            transform: "translateZ(0)",
-            backfaceVisibility: "hidden",
-            isolation: "isolate",
-          }}
-          className="w-full h-full canvas relative"
-          onClick={handleCanvasClick}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onContextMenu={handleContextMenu}
-        >
-          <SnapGuides />
-          {/* <DebugSnapGrid /> */}
-          <StyleUpdateHelper />
-          {!isDrawingMode && !isMoveMode && !dragState.isDragging && (
-            <SelectionBox />
-          )}
-          {isAnyResize && <FrameCreator />}
-          {isAnyResize && <TextCreator />}
-          {!isMovingCanvas && <ArrowConnectors />}
+      <div
+        className={`fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)] ${
+          interfaceState.isPreviewOpen && ""
+        }`}
+      >
+        {interfaceState.isPreviewOpen ? (
+          <IframePreview nodes={nodeState.nodes} viewport={1440} />
+        ) : (
+          <>
+            <ViewportDevTools />
+            <InterfaceToolbar />
+            <LeftMenu />
+            <ToolbarDragPreview />
+            <DynamicToolbar />
+            <div
+              ref={containerRef}
+              style={{
+                willChange: "transform",
+                transform: "translateZ(0)",
+                backfaceVisibility: "hidden",
+                isolation: "isolate",
+              }}
+              className="w-full h-full canvas relative"
+              onClick={handleCanvasClick}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onContextMenu={handleContextMenu}
+            >
+              <SnapGuides />
+              {/* <DebugSnapGrid /> */}
+              <StyleUpdateHelper />
+              {!isDrawingMode && !isMoveMode && !dragState.isDragging && (
+                <SelectionBox />
+              )}
+              {isAnyResize && <FrameCreator />}
+              {isAnyResize && <TextCreator />}
+              {!isMovingCanvas && <ArrowConnectors />}
+              <div
+                ref={contentRef}
+                className="relative"
+                style={{
+                  isolation: "isolate",
+                  willChange: "transform",
+                  transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+                  transformOrigin: "0 0",
+                }}
+              >
+                {dragState.dynamicModeNodeId ? (
+                  <RenderNodes filter="dynamicMode" />
+                ) : (
+                  <RenderNodes filter="outOfViewport" />
+                )}
 
-          <div
-            ref={contentRef}
-            className="relative"
-            style={{
-              isolation: "isolate",
-            }}
-          >
-            {dragState.dynamicModeNodeId ? (
-              <RenderNodes filter="dynamicMode" />
-            ) : (
-              <RenderNodes filter="outOfViewport" />
-            )}
-
-            <LineIndicator />
-            <ContextMenu />
-          </div>
-        </div>
-        <BottomToolbar />
-        <ElementToolbar />
+                <LineIndicator />
+                <ContextMenu />
+              </div>
+            </div>
+            <BottomToolbar />
+            <ElementToolbar />
+            <ConnectionTypeModal />
+          </>
+        )}
       </div>
     </>
   );

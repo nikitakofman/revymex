@@ -1,19 +1,27 @@
-import React, { useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import ResponsiveNode from "./responsiveNode";
+import { ResponsiveNode as ResponsiveNodeType } from "./types";
 
-interface ResponsiveNode {
-  id: string;
-  type: string;
-  style?: React.CSSProperties;
-  src?: string;
-  text?: string;
-  viewportStyles: {
-    [viewport: number]: React.CSSProperties & { src?: string };
-  };
-  parentId?: string | null;
-}
+/**
+ * Helper function to convert style to CSS string
+ */
+const convertStyleToCss = (
+  style: React.CSSProperties & { src?: string; text?: string }
+): string => {
+  return Object.entries(style)
+    .filter(([key, value]) => value !== "" && key !== "src" && key !== "text")
+    .map(([key, value]) => {
+      const cssKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
+      return `  ${cssKey}: ${value};`;
+    })
+    .join("\n");
+};
 
-function combineNodes(nodes: Node[]): ResponsiveNode[] {
+/**
+ * Combines nodes into responsive nodes with viewport-specific styles
+ */
+function combineNodes(nodes: Node[]): ResponsiveNodeType[] {
   const viewports = nodes
     .filter((n) => n.isViewport)
     .sort((a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0));
@@ -35,7 +43,7 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
     }
   });
 
-  const result = new Map<string, ResponsiveNode>();
+  const result = new Map<string, ResponsiveNodeType>();
 
   const processNode = (node: Node, viewportWidth: number) => {
     if (!node.sharedId) return;
@@ -44,22 +52,57 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
       ? idToSharedId.get(node.parentId)
       : null;
 
+    // Create a clean style object without absolute positioning values
+    const cleanStyle = { ...node.style };
+
+    // Reset absolute positioning values
+    if (cleanStyle.position === "absolute") {
+      cleanStyle.position = "relative";
+      cleanStyle.left = undefined;
+      cleanStyle.top = undefined;
+    }
+
+    // Ensure we preserve the text property from style
+    const textContent = node.text || node.style?.text || "";
+    const srcContent = node.style?.src || node.src || "";
+
     if (result.has(node.sharedId)) {
       result.get(node.sharedId)!.viewportStyles[viewportWidth] = {
-        ...node.style,
-        src: node.style.src,
+        ...cleanStyle,
+        src: srcContent,
+        text: textContent,
       };
+
+      // Preserve text at the top level too
+      if (textContent && !result.get(node.sharedId)!.text) {
+        result.get(node.sharedId)!.text = textContent;
+      }
+
+      // Preserve dynamic properties
+      if (node.isDynamic) {
+        result.get(node.sharedId)!.isDynamic = true;
+      }
+
+      if (node.dynamicConnections) {
+        result.get(node.sharedId)!.dynamicConnections = node.dynamicConnections;
+      }
     } else {
       result.set(node.sharedId, {
         id: node.sharedId,
+        originalId: node.id,
         type: node.type,
         parentId: parentSharedId,
         viewportStyles: {
           [viewportWidth]: {
-            ...node.style,
-            src: node.style.src,
+            ...cleanStyle,
+            src: srcContent,
+            text: textContent,
           },
         },
+        isDynamic: node.isDynamic,
+        dynamicConnections: node.dynamicConnections,
+        text: textContent,
+        src: srcContent,
       });
     }
 
@@ -85,200 +128,139 @@ function combineNodes(nodes: Node[]): ResponsiveNode[] {
     });
   });
 
+  // Direct mapping of original node IDs to ResponsiveNodes (for variants reference)
+  const nodeMap = new Map<string, ResponsiveNodeType>();
+
+  // Process all dynamic nodes and their variants
+  const processedDynamicParentIds = new Set<string | number>();
+
+  nodes.forEach((node) => {
+    // Skip nodes that have already been processed through sharedId
+    if (node.sharedId && result.has(node.sharedId)) {
+      nodeMap.set(node.id, result.get(node.sharedId)!);
+      return;
+    }
+
+    // Process dynamic nodes and their variants
+    if (node.isDynamic || node.dynamicParentId) {
+      // If it's a variant, add it only if we haven't processed its parent yet
+      if (node.dynamicParentId) {
+        if (processedDynamicParentIds.has(node.dynamicParentId)) {
+          return; // Skip variants of already processed dynamic parents
+        }
+      } else if (node.isDynamic) {
+        processedDynamicParentIds.add(node.id);
+      }
+
+      // Create a clean style object
+      const cleanStyle = { ...node.style };
+      if (cleanStyle.position === "absolute") {
+        cleanStyle.position = "relative";
+        cleanStyle.left = undefined;
+        cleanStyle.top = undefined;
+      }
+
+      // Ensure we preserve the text property from style
+      const textContent = node.text || node.style?.text || "";
+      const srcContent = node.style?.src || node.src || "";
+
+      const responsiveNode: ResponsiveNodeType = {
+        id: node.id,
+        originalId: node.id,
+        type: node.type,
+        viewportStyles: {
+          [viewports[0].viewportWidth!]: {
+            ...cleanStyle,
+            src: srcContent,
+            text: textContent,
+          },
+        },
+        isDynamic: node.isDynamic,
+        dynamicConnections: node.dynamicConnections,
+        dynamicParentId: node.dynamicParentId,
+        text: textContent,
+        parentId: node.parentId,
+        src: srcContent,
+      };
+
+      nodeMap.set(node.id, responsiveNode);
+
+      // Only add it to the result if it's not a variant (variants are accessed via nodeMap)
+      if (!node.dynamicParentId) {
+        result.set(node.id, responsiveNode);
+      }
+    }
+  });
+
+  // Process children for all nodes (including dynamic variants)
+  nodes.forEach((node) => {
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      // This is a child of a dynamic node or variant
+      const parent = nodeMap.get(node.parentId)!;
+
+      // Create a clean style
+      const cleanStyle = { ...node.style };
+      if (cleanStyle.position === "absolute") {
+        cleanStyle.position = "relative";
+        cleanStyle.left = undefined;
+        cleanStyle.top = undefined;
+      }
+
+      // Ensure we preserve the text property from style
+      const textContent = node.text || node.style?.text || "";
+      const srcContent = node.style?.src || node.src || "";
+
+      const childNode: ResponsiveNodeType = {
+        id: node.id,
+        originalId: node.id,
+        type: node.type,
+        viewportStyles: {
+          [viewports[0].viewportWidth!]: {
+            ...cleanStyle,
+            src: srcContent,
+            text: textContent,
+          },
+        },
+        parentId: node.parentId,
+        text: textContent,
+        src: srcContent,
+      };
+
+      // Add to nodeMap for reference
+      nodeMap.set(node.id, childNode);
+
+      // Add to parent's children
+      if (!parent.children) {
+        parent.children = [];
+      }
+      parent.children.push(childNode);
+    }
+  });
+
   return Array.from(result.values());
 }
 
-const convertStyleToCss = (
-  style: React.CSSProperties & { src?: string }
-): string => {
-  return Object.entries(style)
-    .filter(([key, value]) => value !== "" && key !== "src")
-    .map(([key, value]) => {
-      const cssKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
-      return `  ${cssKey}: ${value};`;
-    })
-    .join("\n");
-};
+export const ResponsivePreview: React.FC<{
+  nodes: Node[];
+  viewport: number;
+}> = ({ nodes, viewport }) => {
+  // Create a state map to track the active state for each dynamic node
+  const [nodeStates, setNodeStates] = useState<
+    Map<string | number, string | number | null>
+  >(new Map());
 
-const ResponsiveNode: React.FC<{
-  node: ResponsiveNode;
-  allNodes: ResponsiveNode[];
-}> = ({ node, allNodes }) => {
-  const children = allNodes.filter((n) => n.parentId === node.id);
-  const viewportWidths = Object.keys(node.viewportStyles)
-    .map((v) => parseInt(v))
-    .sort((a, b) => b - a);
+  // Function to update the state for a specific node
+  const setNodeState = (
+    nodeId: string | number,
+    stateId: string | number | null
+  ) => {
+    setNodeStates((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(nodeId, stateId);
+      return newMap;
+    });
+  };
 
-  const cssRules = viewportWidths
-    .map((viewport, index) => {
-      const styles = { ...node.viewportStyles[viewport] };
-
-      // Extract border properties except borderRadius
-      const {
-        border,
-        borderTop,
-        borderRight,
-        borderBottom,
-        borderLeft,
-        borderWidth,
-        borderStyle,
-        borderColor,
-        ...mainStyles
-      } = styles;
-
-      // Keep borderRadius in mainStyles for the element itself
-      const { borderRadius } = styles;
-
-      // Check if we have any border properties
-      const hasBorder =
-        border || borderWidth || borderStyle || borderColor || borderRadius;
-
-      let mediaQuery;
-      if (index === viewportWidths.length - 1) {
-        mediaQuery = `@media (max-width: ${viewportWidths[index - 1] - 1}px)`;
-      } else if (index === 0) {
-        mediaQuery = `@media (min-width: ${viewport}px)`;
-      } else {
-        const nextLargerViewport = viewportWidths[index - 1];
-        mediaQuery = `@media (min-width: ${viewport}px) and (max-width: ${
-          nextLargerViewport - 1
-        }px)`;
-      }
-
-      return `${mediaQuery} {
-        #${node.id} {
-          position: relative;
-          ${convertStyleToCss(mainStyles)}
-        }
-        ${
-          hasBorder
-            ? `
-        #${node.id}::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          z-index: 1;
-          border: ${border || ""};
-          border-width: ${borderWidth || ""};
-          border-style: ${borderStyle || "solid"};
-          border-color: ${borderColor || "transparent"};
-          border-radius: ${borderRadius || 0};
-          box-sizing: border-box;
-        }`
-            : ""
-        }
-      }`;
-    })
-    .join("\n\n");
-
-  const defaultStyles = node.viewportStyles[viewportWidths[0]];
-  // Extract border properties except borderRadius
-  const {
-    border,
-    borderTop,
-    borderRight,
-    borderBottom,
-    borderLeft,
-    borderWidth,
-    borderStyle,
-    borderColor,
-    ...cleanStyles
-  } = defaultStyles;
-
-  // Keep borderRadius in the main element styles
-  if (!cleanStyles.borderRadius) {
-    delete cleanStyles.borderRadius;
-  }
-
-  switch (node.type) {
-    case "frame":
-      return (
-        <>
-          <style>{cssRules}</style>
-          <div
-            id={node.id}
-            style={{
-              position: "relative",
-              display: "flex",
-              flexDirection: "row",
-              justifyContent: "center",
-              alignItems: "center",
-              ...cleanStyles,
-            }}
-          >
-            {children.map((child) => (
-              <ResponsiveNode key={child.id} node={child} allNodes={allNodes} />
-            ))}
-          </div>
-        </>
-      );
-
-    case "image":
-      const defaultSrc =
-        cleanStyles?.src || "https://batiment.imag.fr/img/imag.png";
-      return (
-        <>
-          <style>{cssRules}</style>
-          <picture
-            id={node.id}
-            style={{ position: "relative", ...cleanStyles }}
-          >
-            {viewportWidths.map((viewport, index) => {
-              const src = node.viewportStyles[viewport]?.src;
-              if (!src) return null;
-
-              if (index === 0) {
-                return (
-                  <source
-                    key={viewport}
-                    media={`(min-width: ${viewport}px)`}
-                    srcSet={src}
-                  />
-                );
-              } else {
-                return (
-                  <source
-                    key={viewport}
-                    media={`(min-width: ${viewport}px) and (max-width: ${
-                      viewportWidths[index - 1] - 1
-                    }px)`}
-                    srcSet={src}
-                  />
-                );
-              }
-            })}
-            <img
-              src={defaultSrc}
-              style={{
-                position: "relative",
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                borderRadius: cleanStyles.borderRadius, // Apply borderRadius to img as well
-              }}
-              alt=""
-            />
-          </picture>
-        </>
-      );
-
-    case "text":
-      return (
-        <>
-          <style>{cssRules}</style>
-          <div id={node.id} style={{ position: "relative", ...cleanStyles }}>
-            {node.text}
-          </div>
-        </>
-      );
-
-    default:
-      return null;
-  }
-};
-
-export const ResponsivePreview: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
   const viewportWidths = useMemo(
     () =>
       nodes
@@ -305,8 +287,117 @@ export const ResponsivePreview: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
     }, {} as { [key: number]: React.CSSProperties });
   }, [nodes]);
 
+  // Create a nodeMap for fast lookups by ID
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, ResponsiveNodeType>();
+
+    // Process all variants and their children
+    nodes.forEach((node) => {
+      // Skip non-dynamic nodes and non-variants
+      if (!node.isDynamic && !node.dynamicParentId) return;
+
+      // Create a clean style
+      const cleanStyle = { ...node.style };
+      if (cleanStyle.position === "absolute") {
+        cleanStyle.position = "relative";
+        cleanStyle.left = undefined;
+        cleanStyle.top = undefined;
+      }
+
+      // Ensure we preserve the text property from style
+      const textContent = node.text || node.style?.text || "";
+      const srcContent = node.style?.src || node.src || "";
+
+      const responsiveNode: ResponsiveNodeType = {
+        id: node.id,
+        originalId: node.id,
+        type: node.type,
+        viewportStyles: {
+          [viewportWidths[0]]: {
+            ...cleanStyle,
+            src: srcContent,
+            text: textContent,
+          },
+        },
+        isDynamic: node.isDynamic,
+        dynamicConnections: node.dynamicConnections,
+        dynamicParentId: node.dynamicParentId,
+        text: textContent,
+        parentId: node.parentId,
+        src: srcContent,
+        children: [],
+      };
+
+      map.set(node.id, responsiveNode);
+    });
+
+    // Now process all children of variants
+    nodes.forEach((node) => {
+      if (node.parentId && map.has(node.parentId)) {
+        const parentNode = map.get(node.parentId)!;
+
+        // Create a clean style
+        const cleanStyle = { ...node.style };
+        if (cleanStyle.position === "absolute") {
+          cleanStyle.position = "relative";
+          cleanStyle.left = undefined;
+          cleanStyle.top = undefined;
+        }
+
+        // Ensure we preserve the text property from style
+        const textContent = node.text || node.style?.text || "";
+        const srcContent = node.style?.src || node.src || "";
+
+        const childNode: ResponsiveNodeType = {
+          id: node.id,
+          originalId: node.id,
+          type: node.type,
+          viewportStyles: {
+            [viewportWidths[0]]: {
+              ...cleanStyle,
+              src: srcContent,
+              text: textContent,
+            },
+          },
+          parentId: node.parentId,
+          text: textContent,
+          src: srcContent,
+        };
+
+        map.set(node.id, childNode);
+
+        // Add to parent's children
+        if (!parentNode.children) {
+          parentNode.children = [];
+        }
+        parentNode.children.push(childNode);
+      }
+    });
+
+    return map;
+  }, [nodes, viewportWidths]);
+
   const responsiveNodes = useMemo(() => {
-    return combineNodes(nodes);
+    const combined = combineNodes(nodes);
+
+    // Debug output to check if text is being preserved
+    combined.forEach((node) => {
+      const hasText =
+        node.text ||
+        Object.values(node.viewportStyles).some((style) => style.text);
+      if (hasText) {
+        console.log("ResponsiveNode with text:", {
+          id: node.id,
+          type: node.type,
+          text: node.text,
+          viewportStylesText: Object.entries(node.viewportStyles).map(
+            ([vw, style]) => ({ viewport: vw, text: style.text })
+          ),
+        });
+      }
+    });
+
+    return combined;
   }, [nodes]);
 
   const viewportCssRules = Object.entries(viewportStyles)
@@ -334,20 +425,39 @@ export const ResponsivePreview: React.FC<{ nodes: Node[] }> = ({ nodes }) => {
     })
     .join("\n\n");
 
-  const rootNodes = responsiveNodes.filter((n) => !n.parentId);
+  // Filter out variants from root nodes (only show them when active)
+  const rootNodes = responsiveNodes.filter((n) => {
+    // Only include top-level nodes
+    if (n.parentId) return false;
+
+    // Hide variants
+    if (n.dynamicParentId) return false;
+
+    return true;
+  });
 
   return (
     <>
       <style>{viewportCssRules}</style>
-      <div className="viewport-container" style={{ position: "relative" }}>
+      <div
+        className="viewport-container"
+        style={{ position: "relative", width: "100%" }}
+      >
         {rootNodes.map((node) => (
           <ResponsiveNode
             key={node.id}
             node={node}
             allNodes={responsiveNodes}
+            originalNodes={nodes}
+            viewport={viewport}
+            nodeStates={nodeStates}
+            setNodeState={setNodeState}
+            nodeMap={nodeMap}
           />
         ))}
       </div>
     </>
   );
 };
+
+export default ResponsivePreview;

@@ -21,6 +21,14 @@ export const useKeyboardDrag = () => {
 
   // Handle keyboard shortcuts
   useEffect(() => {
+    if (
+      document.activeElement?.tagName === "INPUT" ||
+      document.activeElement?.tagName === "TEXTAREA" ||
+      document.activeElement?.isContentEditable
+    ) {
+      return;
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Handle Alt key for duplication
       if (e.key === "Alt") {

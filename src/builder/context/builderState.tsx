@@ -60,6 +60,7 @@ interface BuilderContextType {
   nodeDisp: NodeDispatcher;
   dragDisp: DragDispatcher;
   isMovingCanvas: boolean;
+  setIsMovingCanvas: React.Dispatch<React.SetStateAction<boolean>>;
   elementRef: React.RefObject<HTMLDivElement | null>;
   isResizing: boolean;
   setIsResizing: React.Dispatch<React.SetStateAction<boolean>>;
@@ -88,6 +89,9 @@ interface BuilderContextType {
   isMoveCanvasMode: boolean;
   setIsMoveCanvasMode: React.Dispatch<React.SetStateAction<boolean>>;
   popupRef: RefObject<HTMLDivElement | null>;
+  handleWheel: (e: WheelEvent) => void;
+  attachWheelListener: () => void;
+  detachWheelListener: () => void;
 }
 
 export interface RecordingSession {
@@ -130,6 +134,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const dragDimensionsRef = useRef<DragDimensions>({});
   const selectedIdsRef = useRef(null);
   const popupRef = useRef(null);
+  const wheelHandlerAttached = useRef(false);
 
   const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
 
@@ -211,7 +216,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     (e: WheelEvent) => {
       e.preventDefault();
 
-      if (!containerRef.current) return;
+      if (!containerRef.current || interfaceState.isPreviewOpen) return;
 
       startMoving();
 
@@ -242,8 +247,44 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         }));
       }
     },
-    [transform, startMoving, debouncedSetTransform]
+    [
+      transform,
+      startMoving,
+      debouncedSetTransform,
+      interfaceState.isPreviewOpen,
+    ]
   );
+
+  const attachWheelListener = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || wheelHandlerAttached.current) return;
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    wheelHandlerAttached.current = true;
+    console.log("Wheel event handler attached");
+  }, [handleWheel]);
+
+  const detachWheelListener = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || !wheelHandlerAttached.current) return;
+
+    container.removeEventListener("wheel", handleWheel);
+    wheelHandlerAttached.current = false;
+    console.log("Wheel event handler detached");
+  }, [handleWheel]);
+
+  // Attach/detach wheel listener based on preview state
+  useEffect(() => {
+    if (interfaceState.isPreviewOpen) {
+      detachWheelListener();
+    } else {
+      attachWheelListener();
+    }
+
+    return () => {
+      detachWheelListener();
+    };
+  }, [interfaceState.isPreviewOpen, attachWheelListener, detachWheelListener]);
 
   useEffect(() => {
     if (contentRef.current) {
@@ -252,14 +293,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       contentRef.current.style.transformOrigin = "0 0";
     }
   }, [transform]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    container.addEventListener("wheel", handleWheel, { passive: false });
-    return () => container.removeEventListener("wheel", handleWheel);
-  }, [handleWheel]);
 
   useEffect(() => {
     if (dragState.isDragging) {
@@ -278,13 +311,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       const targetIds = nodeIds || dragState.selectedIds;
 
       if (targetIds.length > 0) {
-        nodeDisp.updateNodeStyle(targetIds, styles);
+        // Pass the current dynamicState to updateNodeStyle
+        nodeDisp.updateNodeStyle(targetIds, styles, dragState.dynamicState);
         if (sync) {
           nodeDisp.syncViewports();
         }
       }
     },
-    [dragState.selectedIds, nodeDisp]
+    [dragState.selectedIds, nodeDisp, dragState.dynamicState]
   );
 
   const value: BuilderContextType = {
@@ -298,6 +332,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     nodeDisp,
     dragDisp,
     isMovingCanvas,
+    setIsMovingCanvas,
     elementRef,
     isResizing,
     setIsResizing,
@@ -325,8 +360,10 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     setIsAdjustingBorderRadius,
     isMoveCanvasMode,
     setIsMoveCanvasMode,
-    setIsMovingCanvas,
     popupRef,
+    handleWheel,
+    attachWheelListener,
+    detachWheelListener,
   };
 
   return (

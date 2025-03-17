@@ -235,6 +235,13 @@ export const dragInitialState: DragState = {
   placeholderInfo: null,
   lastMouseX: 0,
   lastMouseY: 0,
+  dynamicState: "normal",
+  connectionTypeModal: {
+    show: false,
+    position: { x: 0, y: 0 },
+    sourceId: null,
+    targetId: null,
+  },
 };
 
 export const interfaceInitialState: InterfaceState = {
@@ -244,4 +251,5 @@ export const interfaceInitialState: InterfaceState = {
   isPreviewOpen: false,
   isPagesOpen: false,
   isComponentsOpen: false,
+  isTyping: false,
 };
