@@ -4,7 +4,6 @@ import React, { useLayoutEffect, useState, useCallback, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle, Copy } from "lucide-react";
-import { PreviewModal } from "../view/preview/PreviewRenderer";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPortal } from "react-dom";
 
@@ -276,12 +275,6 @@ export const ViewportDevTools: React.FC = () => {
           {dragState.selectedIds.length}
         </button>
       </div>
-
-      <PreviewModal
-        isOpen={showPreview}
-        onClose={() => setShowPreview(false)}
-        nodes={nodeState.nodes}
-      />
 
       {showTree && (
         <div className="fixed inset-0 flex z-50 items-center justify-center bg-black/50">
