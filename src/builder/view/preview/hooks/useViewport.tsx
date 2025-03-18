@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { Node, Viewport } from "../types";
+import { Node } from "../types";
 
 export const useViewport = (nodes: Node[]) => {
   const [currentViewport, setCurrentViewport] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1440
   );
 
-  // Force update on viewport change
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -18,7 +17,6 @@ export const useViewport = (nodes: Node[]) => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Get sorted viewport breakpoints
   const viewportBreakpoints = useMemo(
     () =>
       nodes

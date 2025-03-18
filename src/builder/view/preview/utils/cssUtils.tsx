@@ -182,7 +182,7 @@ export const generateMediaQueryContent = (
       }
 
       // Generate dynamic content based on viewport
-      let mediaContent = [];
+      const mediaContent = [];
 
       // Handle src changes for images
       if (node.type === "image" && styles.src && styles.src !== src) {

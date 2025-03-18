@@ -1,5 +1,4 @@
 import React, { useMemo } from "react";
-import { nodes } from "./nodes";
 
 type NodeType = {
   id: string;
@@ -7,6 +6,9 @@ type NodeType = {
   style: React.CSSProperties & {
     src?: string;
     text?: string;
+    backgroundImage?: string;
+    isVideoBackground?: boolean;
+    backgroundVideo?: string;
   };
   isViewport?: boolean;
   viewportWidth?: number;
@@ -27,20 +29,53 @@ type ResponsiveNode = NodeType & {
     React.CSSProperties & {
       src?: string;
       text?: string;
+      backgroundImage?: string;
+      isVideoBackground?: boolean;
+      backgroundVideo?: string;
     }
   >;
   children: ResponsiveNode[];
 };
 
-const PreviewPlay = () => {
+const PreviewPlay = ({ nodes }) => {
   // Convert style object to CSS string
   const convertStyleToCss = (
-    style: React.CSSProperties & { src?: string; text?: string }
+    style: React.CSSProperties & {
+      src?: string;
+      text?: string;
+      backgroundImage?: string;
+      isVideoBackground?: boolean;
+      backgroundVideo?: string;
+    }
   ): string => {
     return Object.entries(style)
-      .filter(([key, value]) => value !== "" && key !== "src" && key !== "text")
+      .filter(([key, value]) => {
+        return (
+          value !== "" &&
+          key !== "src" &&
+          key !== "text" &&
+          key !== "isVideoBackground" &&
+          key !== "backgroundVideo" &&
+          // Include backgroundImage in CSS only if it's a URL, not a data URL
+          !(
+            key === "backgroundImage" &&
+            typeof value === "string" &&
+            (value.startsWith("data:") || value === "none" || value === "")
+          )
+        );
+      })
       .map(([key, value]) => {
         const cssKey = key.replace(/([A-Z])/g, "-$1").toLowerCase();
+
+        // Special handling for backgroundImage to ensure it's formatted as a URL
+        if (
+          key === "backgroundImage" &&
+          typeof value === "string" &&
+          !value.includes("url(")
+        ) {
+          return `  ${cssKey}: url("${value}");`;
+        }
+
         return `  ${cssKey}: ${value};`;
       })
       .join("\n");
@@ -146,55 +181,46 @@ ${convertStyleToCss(cleanStyle)}
       if (node.sharedId) {
         const sharedNodeIds = sharedIdMap.get(node.sharedId) || [];
 
-        // For each shared node instance
-        sharedNodeIds.forEach((nodeId) => {
-          const sharedNode = nodesById.get(nodeId);
-          if (!sharedNode) return;
+        // For each viewport, find the correct node instance and collect styles
+        viewportBreakpoints.forEach((viewport) => {
+          // Find the node for this viewport and sharedId
+          const nodeForViewport = sharedNodeIds
+            .map((id) => nodesById.get(id))
+            .find((n) => {
+              if (!n) return false;
 
-          // Find which viewport this node belongs to
-          let currentNode: NodeType | undefined = sharedNode;
-          let viewportId: string | null = null;
-
-          // Traverse up to find the viewport
-          while (currentNode && !viewportId) {
-            if (currentNode.parentId) {
-              const parent = nodesById.get(currentNode.parentId);
-              if (parent?.isViewport) {
-                viewportId = parent.id;
-              }
-              currentNode = parent;
-            } else {
-              break;
-            }
-          }
-
-          // If we found a viewport and it has a width
-          if (viewportId) {
-            const viewport = nodes.find((n) => n.id === viewportId);
-            const viewportWidth = viewport?.viewportWidth;
-
-            if (viewportWidth) {
-              // First, initialize the responsive styles for this viewport if not already done
-              if (!responsiveNode.responsiveStyles[viewportWidth]) {
-                responsiveNode.responsiveStyles[viewportWidth] = {};
-              }
-
-              // Then copy all styles from the shared node with the appropriate rules
-              const isPrimaryNode = nodeId === node.id;
-
-              Object.entries(sharedNode.style).forEach(([key, value]) => {
-                // Include styles if:
-                // 1. This is the primary node (base styles)
-                // 2. No independentStyles specified (legacy mode)
-                // 3. This style is marked as independent for this node
-                if (
-                  isPrimaryNode ||
-                  !sharedNode.independentStyles ||
-                  sharedNode.independentStyles[key]
-                ) {
-                  responsiveNode.responsiveStyles[viewportWidth][key] = value;
+              // Find its parent viewport
+              let currentNode: NodeType | undefined = n;
+              while (currentNode && currentNode.parentId) {
+                const parent = nodesById.get(currentNode.parentId);
+                if (parent?.isViewport && parent.id === viewport.id) {
+                  return true;
                 }
-              });
+                currentNode = parent;
+              }
+              return false;
+            });
+
+          // If we found a node for this viewport
+          if (nodeForViewport) {
+            // For primary viewport, collect all styles
+            // For other viewports, only collect independent styles
+            const isPrimaryViewport = viewport.id === primaryViewportId;
+            const styles: Record<string, any> = {};
+
+            Object.entries(nodeForViewport.style).forEach(([key, value]) => {
+              if (
+                isPrimaryViewport ||
+                !nodeForViewport.independentStyles ||
+                nodeForViewport.independentStyles[key]
+              ) {
+                styles[key] = value;
+              }
+            });
+
+            // Store styles for this viewport
+            if (Object.keys(styles).length > 0) {
+              responsiveNode.responsiveStyles[viewport.width] = styles;
             }
           }
         });
@@ -223,8 +249,13 @@ ${convertStyleToCss(cleanStyle)}
         const styles = node.responsiveStyles[viewport.width];
         if (
           !styles ||
-          Object.keys(styles).filter((key) => key !== "src" && key !== "text")
-            .length === 0
+          Object.keys(styles).filter(
+            (key) =>
+              key !== "src" &&
+              key !== "text" &&
+              key !== "isVideoBackground" &&
+              key !== "backgroundVideo"
+          ).length === 0
         )
           return "";
 
@@ -239,12 +270,38 @@ ${convertStyleToCss(cleanStyle)}
           }px) and (max-width: ${array[index - 1].width - 1}px)`;
         }
 
-        // Create a copy of styles without text and src
-        const { text, src, ...stylesToApply } = styles;
+        // Create a copy of styles without text, src, and video-related properties
+        const {
+          text,
+          src,
+          isVideoBackground,
+          backgroundVideo,
+          ...stylesToApply
+        } = styles;
+
+        // For frame/container elements, make sure critical styles like backgroundColor have !important
+        const modifiedStyles = { ...stylesToApply };
+        if (node.type === "frame" && modifiedStyles.backgroundColor) {
+          modifiedStyles.backgroundColor = `${modifiedStyles.backgroundColor} !important`;
+        }
+
+        // Handle background image separately to ensure proper URL formatting
+        if (
+          styles.backgroundImage &&
+          typeof styles.backgroundImage === "string"
+        ) {
+          if (
+            !styles.backgroundImage.includes("url(") &&
+            !styles.backgroundImage.startsWith("none") &&
+            !styles.backgroundImage.startsWith("")
+          ) {
+            modifiedStyles.backgroundImage = `url("${styles.backgroundImage}")`;
+          }
+        }
 
         return `${mediaQuery} {
   #node-${node.id} {
-${convertStyleToCss(stylesToApply)}
+${convertStyleToCss(modifiedStyles)}
   }
 }`;
       })
@@ -254,17 +311,130 @@ ${convertStyleToCss(stylesToApply)}
     return cssRules;
   };
 
+  // Generate background related HTML/CSS for frames (background images and videos)
+  const generateBackgroundContent = (node: ResponsiveNode) => {
+    // Set up background content for primary style
+    let backgroundContent = null;
+
+    // Handle video background
+    if (node.style.isVideoBackground && node.style.backgroundVideo) {
+      backgroundContent = (
+        <video
+          id={`node-${node.id}-bg-video`}
+          className="node-background-video"
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            zIndex: -1,
+          }}
+        >
+          <source src={node.style.backgroundVideo} type="video/mp4" />
+        </video>
+      );
+    }
+    // For image backgrounds, handle via CSS which is already done in generateResponsiveCSS
+
+    // Generate responsive background content
+    const responsiveBackgrounds = Object.entries(node.responsiveStyles)
+      .map(([viewport, styles]) => {
+        const viewportWidth = parseInt(viewport);
+        const viewportIndex = viewportBreakpoints.findIndex(
+          (vb) => vb.width === viewportWidth
+        );
+
+        // Skip if this viewport doesn't have a specific background
+        if (!styles.isVideoBackground && !styles.backgroundImage) return null;
+
+        let mediaQuery;
+        if (viewportIndex === 0) {
+          mediaQuery = `@media (min-width: ${viewportWidth}px)`;
+        } else if (viewportIndex === viewportBreakpoints.length - 1) {
+          mediaQuery = `@media (max-width: ${
+            viewportBreakpoints[viewportIndex - 1].width - 1
+          }px)`;
+        } else {
+          mediaQuery = `@media (min-width: ${viewportWidth}px) and (max-width: ${
+            viewportBreakpoints[viewportIndex - 1].width - 1
+          }px)`;
+        }
+
+        // For video backgrounds in responsive viewports
+        if (styles.isVideoBackground && styles.backgroundVideo) {
+          return (
+            <React.Fragment key={`bg-video-${viewport}`}>
+              <style>{`
+              ${mediaQuery} {
+                #node-${node.id}-bg-video {
+                  display: none !important;
+                }
+                #node-${node.id}-bg-video-${viewportWidth} {
+                  display: block !important;
+                }
+              }
+            `}</style>
+              <video
+                id={`node-${node.id}-bg-video-${viewportWidth}`}
+                className="node-background-video"
+                autoPlay
+                loop
+                muted
+                playsInline
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  zIndex: -1,
+                  display: "none",
+                }}
+              >
+                <source src={styles.backgroundVideo} type="video/mp4" />
+              </video>
+            </React.Fragment>
+          );
+        }
+
+        // For image backgrounds, handle via CSS which is already done in generateResponsiveCSS
+        return null;
+      })
+      .filter(Boolean);
+
+    return (
+      <>
+        {backgroundContent}
+        {responsiveBackgrounds}
+      </>
+    );
+  };
+
   // Recursive render function for nodes
   const renderNode = (node: ResponsiveNode) => {
     // Extract src and text from style for special handling
-    const { src, text, ...styleProps } = node.style;
+    const {
+      src,
+      text,
+      backgroundImage,
+      isVideoBackground,
+      backgroundVideo,
+      ...styleProps
+    } = node.style;
 
-    // Add default object-fit: cover for all images
+    // Handle special styling for different node types
     if (node.type === "image") {
       styleProps.objectFit = styleProps.objectFit || "cover";
     }
 
-    // Handle responsive styles
+    // Generate responsive CSS for this node
     const responsiveCSS = generateResponsiveCSS(node);
 
     // Get current viewport styles for src and text
@@ -301,6 +471,19 @@ ${convertStyleToCss(stylesToApply)}
   }`);
         }
 
+        // Handle src changes for videos
+        if (node.type === "video" && styles.src && styles.src !== src) {
+          mediaContent.push(`
+  ${mediaQuery} {
+    #node-${node.id}-video-source-primary {
+      display: none !important;
+    }
+    #node-${node.id}-video-source-${viewportWidth} {
+      display: block !important;
+    }
+  }`);
+        }
+
         // Handle text changes - need to include the entire HTML for text content changes
         if (styles.text && styles.text !== text) {
           mediaContent.push(`
@@ -322,7 +505,18 @@ ${convertStyleToCss(stylesToApply)}
       .filter(Boolean)
       .join("\n");
 
-    // Render image elements differently from other elements
+    // Handle backgroundImage
+    if (
+      backgroundImage &&
+      typeof backgroundImage === "string" &&
+      !backgroundImage.includes("url(") &&
+      backgroundImage !== "none" &&
+      backgroundImage !== ""
+    ) {
+      styleProps.backgroundImage = `url("${backgroundImage}")`;
+    }
+
+    // Render image elements
     if (node.type === "image") {
       return (
         <React.Fragment key={node.id}>
@@ -336,6 +530,47 @@ ${convertStyleToCss(stylesToApply)}
             alt=""
             style={styleProps as React.CSSProperties}
           />
+        </React.Fragment>
+      );
+    }
+
+    // Render video elements
+    if (node.type === "video") {
+      // Collect all responsive video sources
+      const videoSources = Object.entries(node.responsiveStyles)
+        .filter(([_, styles]) => styles.src && styles.src !== src)
+        .map(([viewport, styles]) => (
+          <source
+            key={`video-source-${viewport}`}
+            id={`node-${node.id}-video-source-${viewport}`}
+            src={styles.src}
+            type="video/mp4"
+            style={{ display: "none" }}
+          />
+        ));
+
+      return (
+        <React.Fragment key={node.id}>
+          {responsiveCSS && <style>{responsiveCSS}</style>}
+          {mediaQueryContent && <style>{mediaQueryContent}</style>}
+
+          <video
+            id={`node-${node.id}`}
+            className="node node-video"
+            autoPlay
+            loop
+            muted
+            playsInline
+            controls={styleProps.controls || false}
+            style={styleProps as React.CSSProperties}
+          >
+            <source
+              id={`node-${node.id}-video-source-primary`}
+              src={src}
+              type="video/mp4"
+            />
+            {videoSources}
+          </video>
         </React.Fragment>
       );
     }
@@ -388,6 +623,12 @@ ${convertStyleToCss(stylesToApply)}
           className={`node node-${node.type}`}
           style={styleProps as React.CSSProperties}
         >
+          {/* Background content (videos or images) */}
+          {node.type === "frame" &&
+            (isVideoBackground || backgroundImage) &&
+            generateBackgroundContent(node)}
+
+          {/* Primary text content if present */}
           {text && (
             <div
               id={`node-${node.id}-content`}
@@ -435,11 +676,42 @@ ${convertStyleToCss(stylesToApply)}
           box-sizing: border-box;
           min-height: 100vh;
         }
+        /* Force CSS property application in responsive designs */
+        @media (min-width: 0px) {
+          .node-frame {
+            background-color: inherit !important;
+          }
+        }
+        /* Default styles for background containers */
+        .node-background-video {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          z-index: 0;
+        }
       `}</style>
       <style>{viewportContainerRules}</style>
       <div className="viewport-container">
         {responsiveNodeTree.map(renderNode)}
       </div>
+
+      {/* Debug tools - uncomment when debugging */}
+      {/* <div style={{ 
+        position: 'fixed', 
+        bottom: '10px', 
+        right: '10px', 
+        background: 'rgba(0,0,0,0.7)', 
+        color: 'white', 
+        padding: '10px',
+        zIndex: 9999,
+        fontSize: '12px'
+      }}>
+        <div>Viewport Width: <span id="debug-width">{typeof window !== 'undefined' ? window.innerWidth : '--'}</span>px</div>
+        <div>Breakpoints: {viewportBreakpoints.map(v => v.width).join(', ')}px</div>
+      </div> */}
     </div>
   );
 };

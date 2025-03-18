@@ -9,14 +9,12 @@ type VideoNodeProps = {
   node: ResponsiveNode;
   currentViewport: number;
   viewportBreakpoints: Viewport[];
-  eventHandlers?: Record<string, (e: React.SyntheticEvent) => void>;
 };
 
 export const VideoNode: React.FC<VideoNodeProps> = ({
   node,
   currentViewport,
   viewportBreakpoints,
-  eventHandlers = {},
 }) => {
   const { src, text, backgroundImage, backgroundVideo, ...styleProps } =
     node.style;
@@ -77,7 +75,6 @@ export const VideoNode: React.FC<VideoNodeProps> = ({
             objectFit: styleProps.objectFit || "cover",
           } as React.CSSProperties
         }
-        {...eventHandlers}
       />
     </React.Fragment>
   );

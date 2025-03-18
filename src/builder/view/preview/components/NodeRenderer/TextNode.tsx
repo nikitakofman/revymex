@@ -8,16 +8,15 @@ import {
 type TextNodeProps = {
   node: ResponsiveNode;
   viewportBreakpoints: Viewport[];
-  eventHandlers?: Record<string, (e: React.SyntheticEvent) => void>;
 };
 
 export const TextNode: React.FC<TextNodeProps> = ({
   node,
   viewportBreakpoints,
-  eventHandlers = {},
 }) => {
   const { src, text, backgroundImage, backgroundVideo, ...styleProps } =
     node.style;
+
   const responsiveCSS = generateResponsiveCSS(node, viewportBreakpoints);
   const mediaQueryContent = generateMediaQueryContent(
     node,
@@ -33,7 +32,6 @@ export const TextNode: React.FC<TextNodeProps> = ({
         id={`node-${node.id}`}
         className="node node-text"
         style={styleProps as React.CSSProperties}
-        {...eventHandlers}
       >
         {/* Primary text content */}
         {text && (

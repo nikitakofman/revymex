@@ -12,9 +12,6 @@ type FrameNodeProps = {
   currentViewport: number;
   viewportBreakpoints: Viewport[];
   renderNode: (node: ResponsiveNode) => React.ReactNode;
-  eventHandlers?: Record<string, (e: React.SyntheticEvent) => void>;
-  onInteraction?: (sourceId: string, eventType: string) => void;
-  allNodes?: ResponsiveNode[];
 };
 
 export const FrameNode: React.FC<FrameNodeProps> = ({
@@ -22,7 +19,6 @@ export const FrameNode: React.FC<FrameNodeProps> = ({
   currentViewport,
   viewportBreakpoints,
   renderNode,
-  eventHandlers = {},
 }) => {
   const { src, text, backgroundImage, backgroundVideo, ...styleProps } =
     node.style;
@@ -45,12 +41,8 @@ export const FrameNode: React.FC<FrameNodeProps> = ({
         id={`node-${node.id}`}
         data-node-id={node.id}
         data-node-type={node.type}
-        data-dynamic={node.isDynamic ? "true" : "false"}
-        className={`node node-${node.type} ${
-          node.isDynamic ? "node-dynamic" : ""
-        }`}
+        className={`node node-${node.type}`}
         style={styleProps as React.CSSProperties}
-        {...eventHandlers}
       >
         {/* Background wrapper for image/video backgrounds */}
         {(backgroundImage || backgroundVideo) && (
@@ -82,7 +74,7 @@ export const FrameNode: React.FC<FrameNodeProps> = ({
           ))}
 
         {/* Render children */}
-        {node.children.map((childNode) => renderNode(childNode))}
+        {node.children.map(renderNode)}
       </div>
     </React.Fragment>
   );

@@ -1,5 +1,6 @@
 import React from "react";
 import { ResponsiveNode, Viewport } from "../types";
+import Image from "next/image";
 
 type BackgroundWrapperProps = {
   node: ResponsiveNode;
@@ -65,7 +66,7 @@ export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
       }}
     >
       {backgroundImage && (
-        <img
+        <Image
           alt=""
           loading="lazy"
           src={backgroundImage}
@@ -84,7 +85,6 @@ export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
 
       {backgroundVideo && (
         <video
-          // Key forces recreation when source changes
           key={`bg-video-${node.id}-${backgroundVideo}`}
           src={backgroundVideo}
           autoPlay

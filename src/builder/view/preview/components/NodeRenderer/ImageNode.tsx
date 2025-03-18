@@ -4,17 +4,16 @@ import {
   generateResponsiveCSS,
   generateMediaQueryContent,
 } from "../../utils/cssUtils";
+import Image from "next/image";
 
 type ImageNodeProps = {
   node: ResponsiveNode;
   viewportBreakpoints: Viewport[];
-  eventHandlers?: Record<string, (e: React.SyntheticEvent) => void>;
 };
 
 export const ImageNode: React.FC<ImageNodeProps> = ({
   node,
   viewportBreakpoints,
-  eventHandlers = {},
 }) => {
   const { src, text, backgroundImage, backgroundVideo, ...styleProps } =
     node.style;
@@ -29,10 +28,12 @@ export const ImageNode: React.FC<ImageNodeProps> = ({
       {responsiveCSS && <style>{responsiveCSS}</style>}
       {mediaQueryContent && <style>{mediaQueryContent}</style>}
 
-      <img
+      <Image
         id={`node-${node.id}`}
         className="node node-image"
         src={src}
+        width={parseFloat(styleProps.width)}
+        height={parseFloat(styleProps.height)}
         alt=""
         style={
           {
@@ -40,7 +41,6 @@ export const ImageNode: React.FC<ImageNodeProps> = ({
             objectFit: styleProps.objectFit || "cover",
           } as React.CSSProperties
         }
-        {...eventHandlers}
       />
     </React.Fragment>
   );
