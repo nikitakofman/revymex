@@ -34,6 +34,7 @@ export const DynamicToolbar: React.FC = () => {
               dragDisp.setDynamicModeNodeId(null);
               nodeDisp.syncViewports();
               dragDisp.setDynamicState("normal");
+              dragDisp.setSelectedIds([]);
             }}
           >
             Home
@@ -43,30 +44,6 @@ export const DynamicToolbar: React.FC = () => {
             color="var(--border-default)"
             height="20px"
           />
-          <Button
-            variant="secondary"
-            size="sm"
-            className={` ${
-              dragState.dynamicState === "normal"
-                ? " outline outline-[var(--accent)] "
-                : "bg-transparent"
-            }`}
-            onClick={() => dragDisp.setDynamicState("normal")}
-          >
-            Normal
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className={`${
-              dragState.dynamicState === "hovered"
-                ? " outline outline-[var(--accent)] "
-                : "bg-transparent"
-            }`}
-            onClick={() => dragDisp.setDynamicState("hovered")}
-          >
-            Hovered
-          </Button>
         </div>
       </>,
       document.body

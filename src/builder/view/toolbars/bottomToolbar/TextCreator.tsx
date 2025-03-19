@@ -28,6 +28,7 @@ export const TextCreator: React.FC = () => {
     isResizing,
     isRotating,
     isAdjustingGap,
+    dragState,
   } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
@@ -133,6 +134,10 @@ export const TextCreator: React.FC = () => {
       const width = Math.abs(finalX - box.startX);
       const height = Math.abs(finalY - box.startY);
 
+      // Check if we're in dynamic mode
+      const inDynamicMode = !!dragState.dynamicModeNodeId;
+      const dynamicParentId = dragState.dynamicModeNodeId;
+
       if (width > 5 && height > 5) {
         const canvasX = (left - transform.x) / transform.scale;
         const canvasY = (top - transform.y) / transform.scale;
@@ -186,6 +191,8 @@ export const TextCreator: React.FC = () => {
               text: defaultText,
             },
             inViewport: mediaElement.node.inViewport || false,
+            // If in dynamic mode, add the dynamic parent ID
+            ...(inDynamicMode && { dynamicParentId }),
           };
 
           newNodeId = newText.id;
@@ -223,6 +230,8 @@ export const TextCreator: React.FC = () => {
               text: defaultText,
             },
             inViewport: true,
+            // If in dynamic mode, add the dynamic parent ID
+            ...(inDynamicMode && { dynamicParentId }),
           };
 
           newNodeId = newText.id;
@@ -258,6 +267,11 @@ export const TextCreator: React.FC = () => {
               text: defaultText,
             },
             inViewport: false,
+            // If in dynamic mode, add both the dynamic parent ID and dynamicPosition
+            ...(inDynamicMode && {
+              dynamicParentId,
+              dynamicPosition: { x: canvasX, y: canvasY },
+            }),
           };
 
           newNodeId = newText.id;
@@ -316,6 +330,7 @@ export const TextCreator: React.FC = () => {
     isAdjustingGap,
     box?.startX,
     box?.startY,
+    dragState.dynamicModeNodeId,
   ]);
 
   if (!box?.isDrawing) return null;

@@ -27,6 +27,7 @@ export const FrameCreator: React.FC = () => {
     isResizing,
     isRotating,
     isAdjustingGap,
+    dragState,
   } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
@@ -122,6 +123,10 @@ export const FrameCreator: React.FC = () => {
       const width = Math.abs(finalX - box.startX);
       const height = Math.abs(finalY - box.startY);
 
+      // Check if we're in dynamic mode
+      const inDynamicMode = !!dragState.dynamicModeNodeId;
+      const dynamicParentId = dragState.dynamicModeNodeId;
+
       if (width > 5 && height > 5) {
         const canvasX = (left - transform.x) / transform.scale;
         const canvasY = (top - transform.y) / transform.scale;
@@ -139,9 +144,51 @@ export const FrameCreator: React.FC = () => {
           (node) => node.type !== "placeholder" && !node.isViewport
         );
 
+        // Create a map of nodes and their direct children
+        const nodeChildrenMap = new Map<
+          string | number,
+          Array<string | number>
+        >();
+        allElements.forEach((node) => {
+          if (node.parentId) {
+            const parentChildren = nodeChildrenMap.get(node.parentId) || [];
+            parentChildren.push(node.id);
+            nodeChildrenMap.set(node.parentId, parentChildren);
+          }
+        });
+
+        // Find nodes that are dynamic connection targets
+        const dynamicConnectionTargetMap = new Map<
+          string | number,
+          Array<{
+            sourceId: string | number;
+            type: "click" | "hover" | "mouseLeave";
+          }>
+        >();
+
+        // Find all dynamic connections in all nodes
+        allElements.forEach((node) => {
+          if (node.dynamicConnections && node.dynamicConnections.length > 0) {
+            node.dynamicConnections.forEach((conn) => {
+              const targets =
+                dynamicConnectionTargetMap.get(conn.targetId) || [];
+              targets.push({
+                sourceId: conn.sourceId,
+                type: conn.type,
+              });
+              dynamicConnectionTargetMap.set(conn.targetId, targets);
+            });
+          }
+        });
+
+        // Find top-level nodes that are contained in the box
         const containedElements = [];
+        const processedIds = new Set<string | number>();
 
         for (const node of allElements) {
+          // Skip if already processed (as a child of another node)
+          if (processedIds.has(node.id)) continue;
+
           const element = document.querySelector(
             `[data-node-id="${node.id}"]`
           ) as HTMLElement;
@@ -164,13 +211,78 @@ export const FrameCreator: React.FC = () => {
             elCanvasBottom <= boxRect.bottom;
 
           if (isContained) {
-            containedElements.push({
-              node,
-              absolutePosition: {
-                left: elCanvasX,
-                top: elCanvasY,
-              },
-            });
+            // Find the top-most parent that is still fully contained in the box
+            let currentNode = node;
+            let topMostContainedParent = node;
+            let parentElement: HTMLElement | null = null;
+
+            // Traverse up the parent chain
+            while (currentNode.parentId) {
+              const parent = allElements.find(
+                (n) => n.id === currentNode.parentId
+              );
+              if (!parent) break;
+
+              parentElement = document.querySelector(
+                `[data-node-id="${parent.id}"]`
+              ) as HTMLElement;
+
+              if (parentElement) {
+                const parentRect = parentElement.getBoundingClientRect();
+                const parentCanvasX =
+                  (parentRect.left - rect.left - transform.x) / transform.scale;
+                const parentCanvasY =
+                  (parentRect.top - rect.top - transform.y) / transform.scale;
+                const parentCanvasRight =
+                  parentCanvasX + parentRect.width / transform.scale;
+                const parentCanvasBottom =
+                  parentCanvasY + parentRect.height / transform.scale;
+
+                const isParentContained =
+                  parentCanvasX >= boxRect.left &&
+                  parentCanvasY >= boxRect.top &&
+                  parentCanvasRight <= boxRect.right &&
+                  parentCanvasBottom <= boxRect.bottom;
+
+                if (isParentContained) {
+                  // This parent is also contained, continue up
+                  topMostContainedParent = parent;
+                  currentNode = parent;
+                  continue;
+                }
+              }
+
+              // Parent is not contained or not found, stop here
+              break;
+            }
+
+            // Only add top-most parent to contained elements
+            // Mark all descendants as processed
+            const markDescendantsAsProcessed = (nodeId: string | number) => {
+              processedIds.add(nodeId);
+              const children = nodeChildrenMap.get(nodeId) || [];
+              children.forEach((childId) =>
+                markDescendantsAsProcessed(childId)
+              );
+            };
+
+            if (!processedIds.has(topMostContainedParent.id)) {
+              containedElements.push({
+                node: topMostContainedParent,
+                absolutePosition: {
+                  left: elCanvasX,
+                  top: elCanvasY,
+                },
+                // Track if this is a dynamic connection target
+                isDynamicTarget: dynamicConnectionTargetMap.has(
+                  topMostContainedParent.id
+                ),
+                dynamicConnections:
+                  dynamicConnectionTargetMap.get(topMostContainedParent.id) ||
+                  [],
+              });
+              markDescendantsAsProcessed(topMostContainedParent.id);
+            }
           }
         }
 
@@ -211,6 +323,8 @@ export const FrameCreator: React.FC = () => {
               justifyContent: "center",
             },
             inViewport: mediaElement.node.inViewport,
+            // If in dynamic mode, add the dynamic parent ID
+            ...(inDynamicMode && { dynamicParentId }),
           };
 
           // Use the centralized transformation utility
@@ -232,18 +346,28 @@ export const FrameCreator: React.FC = () => {
                   // Skip the media element itself
                   if (item.node.id === mediaElement.node.id) continue;
 
-                  // Update position to be centered in the frame
+                  // Update position to be relative within the new frame
                   nodeDisp.updateNodeStyle([item.node.id], {
                     position: "relative",
                     left: "",
                     top: "",
                   });
 
-                  // Then make it a child of the frame
+                  // Move the whole hierarchy as is (maintains parent-child relationships)
                   nodeDisp.moveNode(item.node.id, true, {
                     targetId: newFrame.id,
                     position: "inside",
                   });
+
+                  // Handle dynamic connection targets
+                  if (item.isDynamicTarget) {
+                    // Update connections to point to the new frame instead
+                    updateDynamicConnections(
+                      item.node.id,
+                      newFrame.id,
+                      item.dynamicConnections
+                    );
+                  }
                 }
               }
             }
@@ -279,6 +403,8 @@ export const FrameCreator: React.FC = () => {
               justifyContent: "center",
             },
             inViewport: true,
+            // If in dynamic mode, add the dynamic parent ID
+            ...(inDynamicMode && { dynamicParentId }),
           };
 
           const dropIndicator = computeFrameDropIndicator(
@@ -304,18 +430,28 @@ export const FrameCreator: React.FC = () => {
           // Process contained elements if any
           if (containedElements.length > 0) {
             for (const item of containedElements) {
-              // Update position to be centered in the frame
+              // Update position to be relative within the new frame
               nodeDisp.updateNodeStyle([item.node.id], {
                 position: "relative",
                 left: "",
                 top: "",
               });
 
-              // Then make it a child of the frame
+              // Move node to the new frame, maintaining hierarchy
               nodeDisp.moveNode(item.node.id, true, {
                 targetId: newFrameId,
                 position: "inside",
               });
+
+              // Handle dynamic connection targets
+              if (item.isDynamicTarget) {
+                // Update connections to point to the new frame instead
+                updateDynamicConnections(
+                  item.node.id,
+                  newFrameId,
+                  item.dynamicConnections
+                );
+              }
             }
           }
         } else {
@@ -337,6 +473,11 @@ export const FrameCreator: React.FC = () => {
               justifyContent: "center",
             },
             inViewport: false,
+            // If in dynamic mode, add both the dynamic parent ID and dynamicPosition
+            ...(inDynamicMode && {
+              dynamicParentId,
+              dynamicPosition: { x: canvasX, y: canvasY },
+            }),
           };
 
           nodeDisp.addNode(newFrame, null, null, false);
@@ -344,18 +485,28 @@ export const FrameCreator: React.FC = () => {
           // Process contained elements if any
           if (containedElements.length > 0) {
             for (const item of containedElements) {
-              // Update position to be centered in the frame
+              // Update position to be relative within the new frame
               nodeDisp.updateNodeStyle([item.node.id], {
                 position: "relative",
                 left: "",
                 top: "",
               });
 
-              // Then make it a child of the frame
+              // Move the whole hierarchy as is
               nodeDisp.moveNode(item.node.id, true, {
                 targetId: newFrameId,
                 position: "inside",
               });
+
+              // Handle dynamic connection targets
+              if (item.isDynamicTarget) {
+                // Update connections to point to the new frame instead
+                updateDynamicConnections(
+                  item.node.id,
+                  newFrameId,
+                  item.dynamicConnections
+                );
+              }
             }
           }
         }
@@ -372,6 +523,44 @@ export const FrameCreator: React.FC = () => {
       setIsFrameModeActive(false);
 
       window.dispatchEvent(new Event("resize"));
+    };
+
+    // Helper function to update dynamic connections to point to a new target
+    const updateDynamicConnections = (
+      oldTargetId: string | number,
+      newTargetId: string | number,
+      connections: Array<{
+        sourceId: string | number;
+        type: "click" | "hover" | "mouseLeave";
+      }>
+    ) => {
+      // For each source node that had a connection to the old target
+      connections.forEach((conn) => {
+        const sourceNode = nodeState.nodes.find((n) => n.id === conn.sourceId);
+        if (sourceNode && sourceNode.dynamicConnections) {
+          // Create a new array of connections for this source, but with the target updated
+          const updatedConnections = sourceNode.dynamicConnections.map(
+            (existingConn) => {
+              if (
+                existingConn.targetId === oldTargetId &&
+                existingConn.type === conn.type
+              ) {
+                // Update the target ID for this connection
+                return {
+                  ...existingConn,
+                  targetId: newTargetId,
+                };
+              }
+              return existingConn;
+            }
+          );
+
+          // Update the source node with the modified connections
+          nodeDisp.updateNode(conn.sourceId, {
+            dynamicConnections: updatedConnections,
+          });
+        }
+      });
     };
 
     canvas.addEventListener("mousedown", handleMouseDown);
@@ -399,6 +588,7 @@ export const FrameCreator: React.FC = () => {
     isAdjustingGap,
     box?.startX,
     box?.startY,
+    dragState.dynamicModeNodeId,
   ]);
 
   if (!box?.isDrawing) return null;

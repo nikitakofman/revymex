@@ -39,6 +39,15 @@ export const useConnect = () => {
     return nearLeft || nearRight || nearTop || nearBottom;
   };
 
+  // Helper function to find dynamic parent in hierarchy
+  const findDynamicParent = (node: Node): Node | null => {
+    if (node.isDynamic) return node;
+    if (!node.parentId) return null;
+    const parent = nodeState.nodes.find((n) => n.id === node.parentId);
+    if (!parent) return null;
+    return parent.isDynamic ? parent : findDynamicParent(parent);
+  };
+
   return useCallback(
     (node: Node) => {
       const handleMouseDown = (e: React.MouseEvent) => {
@@ -80,11 +89,26 @@ export const useConnect = () => {
           ? nodeState.nodes.find((n) => n.id === node.parentId)
           : null;
 
-        if (!dragState.dynamicModeNodeId && parentNode?.isDynamic) {
-          if (!e.shiftKey) {
-            dragDisp.selectNode(parentNode.id);
-          } else {
-            dragDisp.addToSelection(parentNode.id);
+        // Find dynamic parent in hierarchy or by dynamicParentId
+        const dynamicParentByRef = node.dynamicParentId
+          ? nodeState.nodes.find(
+              (n) => n.id === node.dynamicParentId && n.isDynamic
+            )
+          : null;
+
+        const dynamicParentInHierarchy = findDynamicParent(node);
+        const dynamicParent = dynamicParentByRef || dynamicParentInHierarchy;
+
+        if (
+          !dragState.dynamicModeNodeId &&
+          (parentNode?.isDynamic || dynamicParent)
+        ) {
+          // If not in dynamic mode and clicking on a dynamic node or its child, select the dynamic parent
+          const targetNodeId = dynamicParent?.id || parentNode?.id;
+          if (!e.shiftKey && targetNodeId) {
+            dragDisp.selectNode(targetNodeId);
+          } else if (targetNodeId) {
+            dragDisp.addToSelection(targetNodeId);
           }
         } else {
           if (isAlreadySelected && dragState.selectedIds.length > 1) {
@@ -143,7 +167,6 @@ export const useConnect = () => {
         }
       };
 
-      // Rest of your existing component code...
       const handleMouseUp = (e: React.MouseEvent) => {
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
@@ -163,11 +186,26 @@ export const useConnect = () => {
               ? nodeState.nodes.find((n) => n.id === node.parentId)
               : null;
 
-            if (!dragState.dynamicModeNodeId && parentNode?.isDynamic) {
-              if (!e.shiftKey) {
-                dragDisp.selectNode(parentNode.id);
-              } else {
-                dragDisp.addToSelection(parentNode.id);
+            // Find dynamic parent in hierarchy or by dynamicParentId
+            const dynamicParentByRef = node.dynamicParentId
+              ? nodeState.nodes.find(
+                  (n) => n.id === node.dynamicParentId && n.isDynamic
+                )
+              : null;
+
+            const dynamicParentInHierarchy = findDynamicParent(node);
+            const dynamicParent =
+              dynamicParentByRef || dynamicParentInHierarchy;
+
+            if (
+              !dragState.dynamicModeNodeId &&
+              (parentNode?.isDynamic || dynamicParent)
+            ) {
+              const targetNodeId = dynamicParent?.id || parentNode?.id;
+              if (!e.shiftKey && targetNodeId) {
+                dragDisp.selectNode(targetNodeId);
+              } else if (targetNodeId) {
+                dragDisp.addToSelection(targetNodeId);
               }
             } else {
               if (!e.shiftKey) {
@@ -186,6 +224,12 @@ export const useConnect = () => {
         e.preventDefault();
         e.stopPropagation();
 
+        // Find the dynamic parent node - either:
+        // 1. The node itself if it's dynamic
+        // 2. A node referenced by dynamicParentId
+        // 3. A dynamic node in the hierarchy
+
+        // First check if this node is already dynamic
         if (node.isDynamic) {
           if (!dragState.dynamicModeNodeId) {
             nodeDisp.storeDynamicNodeState(node.id);
@@ -195,6 +239,34 @@ export const useConnect = () => {
           }
           dragDisp.setDynamicModeNodeId(
             dragState.dynamicModeNodeId ? null : node.id
+          );
+          return;
+        }
+
+        // Next, check for a referenced dynamic parent
+        const dynamicParentByRef = node.dynamicParentId
+          ? nodeState.nodes.find(
+              (n) => n.id === node.dynamicParentId && n.isDynamic
+            )
+          : null;
+
+        // Finally, check for a dynamic parent in the hierarchy
+        const dynamicParentInHierarchy = findDynamicParent(node);
+
+        // Use the first one we find
+        const dynamicNode = dynamicParentByRef || dynamicParentInHierarchy;
+
+        if (dynamicNode) {
+          if (!dragState.dynamicModeNodeId) {
+            nodeDisp.storeDynamicNodeState(dynamicNode.id);
+            if (!dynamicNode.dynamicPosition) {
+              nodeDisp.updateNode(dynamicNode.id, {
+                dynamicPosition: { x: 0, y: 0 },
+              });
+            }
+          }
+          dragDisp.setDynamicModeNodeId(
+            dragState.dynamicModeNodeId ? null : dynamicNode.id
           );
         }
       };
@@ -211,9 +283,21 @@ export const useConnect = () => {
         const parentNode = node.parentId
           ? nodeState.nodes.find((n) => n.id === node.parentId)
           : null;
+
+        // Find dynamic parent in hierarchy or by dynamicParentId
+        const dynamicParentByRef = node.dynamicParentId
+          ? nodeState.nodes.find(
+              (n) => n.id === node.dynamicParentId && n.isDynamic
+            )
+          : null;
+
+        const dynamicParentInHierarchy = findDynamicParent(node);
+        const dynamicParent = dynamicParentByRef || dynamicParentInHierarchy;
+
         const targetNodeId =
-          !dragState.dynamicModeNodeId && parentNode?.isDynamic
-            ? parentNode.id
+          !dragState.dynamicModeNodeId &&
+          (parentNode?.isDynamic || dynamicParent)
+            ? dynamicParent?.id || parentNode?.id
             : node.id;
 
         // Check if the clicked node is already in the selection
@@ -280,9 +364,24 @@ export const useConnect = () => {
             !dragState.dragSource &&
             !isMovingCanvas
           ) {
-            requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(node.id);
-            });
+            // Determine if this is a child of a dynamic node
+            const isDynamicChild =
+              !node.isDynamic &&
+              (!!node.dynamicParentId || !!findDynamicParent(node));
+
+            // Only set hover for nodes that are either:
+            // 1. In dynamic mode (all nodes can be hovered), OR
+            // 2. Dynamic nodes themselves (can always be hovered), OR
+            // 3. NOT children of dynamic nodes when not in dynamic mode
+            if (
+              dragState.dynamicModeNodeId ||
+              node.isDynamic ||
+              !isDynamicChild
+            ) {
+              requestAnimationFrame(() => {
+                dragDisp.setHoverNodeId(node.id);
+              });
+            }
           }
         },
         onMouseOut: (e: React.MouseEvent) => {
@@ -327,6 +426,7 @@ export const useConnect = () => {
       isFrameModeActive,
       isMoveCanvasMode,
       isTextModeActive,
+      findDynamicParent,
     ]
   );
 };

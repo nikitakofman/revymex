@@ -90,11 +90,35 @@ export class NodeDispatcher {
         const newNode = {
           ...node,
           inViewport: shouldBeInViewport,
-          // Add a sharedId if missing and node will be in a viewport
           sharedId:
             shouldBeInViewport && !node.sharedId ? nanoid() : node.sharedId,
         };
 
+        // CHECK IF THIS IS A DUPLICATE FOR DYNAMIC NODES
+        // If this node has a dynamicParentId and it's the main dynamic node
+        if (newNode.dynamicParentId && targetId === newNode.dynamicParentId) {
+          // Check if we already have a node with the same source (e.g., same image)
+          // and same dynamic parent - use whatever unique identifier makes sense
+          const duplicateExists = draft.nodes.some(
+            (existingNode) =>
+              existingNode.dynamicParentId === newNode.dynamicParentId &&
+              existingNode.type === newNode.type &&
+              existingNode.style.src === newNode.style.src &&
+              existingNode.id !== newNode.id
+          );
+
+          if (duplicateExists) {
+            // Skip adding this node as it appears to be a duplicate
+            return;
+          }
+        }
+
+        // Continue with the existing logic...
+        if (!targetId) {
+          newNode.parentId = null;
+          draft.nodes.push(newNode);
+          return;
+        }
         // Also clean up incompatible properties based on node type
         if (newNode.type === "image") {
           // Remove text property from image nodes

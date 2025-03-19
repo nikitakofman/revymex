@@ -602,7 +602,8 @@ export const VisualHelpers = ({
 
                   {/* BorderRadius handle */}
                   {!node.id.includes("viewport") &&
-                    !hasSkewTransform(node.style.transform) && (
+                    !hasSkewTransform(node.style.transform) &&
+                    node.type !== "text" && (
                       <BorderRadiusHandle node={node} elementRef={elementRef} />
                     )}
 

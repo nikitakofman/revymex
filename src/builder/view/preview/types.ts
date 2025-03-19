@@ -33,6 +33,7 @@ export type Node = {
   isDynamic?: boolean;
   dynamicPosition?: { x: number; y: number };
   dynamicConnections?: DynamicConnection[];
+  dynamicParentId?: string | number;
 };
 
 export type ResponsiveNode = Node & {

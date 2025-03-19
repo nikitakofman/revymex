@@ -978,24 +978,64 @@ export function getFilteredNodes(
   });
 
   // Convert back to array
-  const uniqueNodes = Array.from(nodesMap.values());
+  const deduplicatedNodes = Array.from(nodesMap.values());
 
-  // Now filter with our standard logic
-  return uniqueNodes.filter((node: Node) => {
-    if (mode === "dynamicMode") {
-      // In dynamic mode, show only:
-      // 1. The main dynamic node
-      // 2. Nodes with dynamicParentId matching the current dynamic node
-      // 3. Variant nodes with variantParentId matching the current dynamic node
-      return (
+  if (mode === "dynamicMode" && dynamicModeNodeId) {
+    // First pass: collect all nodes that should be in dynamic mode
+    const dynamicModeNodes = deduplicatedNodes.filter(
+      (node: Node) =>
         node.id === dynamicModeNodeId ||
         node.dynamicParentId === dynamicModeNodeId ||
         (node.isVariant && node.variantParentId === dynamicModeNodeId)
-      );
-    }
+    );
 
-    // In normal modes (inViewport, outOfViewport):
+    // Group nodes by sharedId (only for nodes that have sharedId)
+    const nodesBySharedId = new Map<string, Node[]>();
 
+    dynamicModeNodes.forEach((node) => {
+      if (node.sharedId) {
+        const existing = nodesBySharedId.get(node.sharedId) || [];
+        existing.push(node);
+        nodesBySharedId.set(node.sharedId, existing);
+      }
+    });
+
+    // Find nodes that don't have duplicates (either no sharedId or unique sharedId)
+    const singletonNodes = dynamicModeNodes.filter(
+      (node) =>
+        !node.sharedId || nodesBySharedId.get(node.sharedId)?.length === 1
+    );
+
+    // For duplicates, only keep the one in viewport-1440 if available, otherwise the first one
+    const filteredDuplicates: Node[] = [];
+
+    nodesBySharedId.forEach((nodesGroup, sharedId) => {
+      if (nodesGroup.length > 1) {
+        // Check if any node is in viewport-1440
+        const desktopNode = nodesGroup.find((node) => {
+          let current = node;
+          while (current.parentId) {
+            const parent = deduplicatedNodes.find(
+              (n) => n.id === current.parentId
+            );
+            if (!parent) break;
+            if (parent.id === "viewport-1440") return true;
+            current = parent;
+          }
+          return false;
+        });
+
+        // Add either the desktop node or the first node in the group
+        filteredDuplicates.push(desktopNode || nodesGroup[0]);
+      }
+    });
+
+    // Combine singleton nodes and filtered duplicates
+    return [...singletonNodes, ...filteredDuplicates];
+  }
+
+  // For non-dynamic modes, use the existing filtering logic
+  return deduplicatedNodes.filter((node: Node) => {
     // Don't show nodes with dynamicParentId
     if (node.dynamicParentId) {
       return false;

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
@@ -128,9 +128,27 @@ export const ConnectionHandle: React.FC<{
     return false;
   };
 
+  // Ensure the source node stays selected when showing connection modal
+  useEffect(() => {
+    // If we have a connection modal showing and the current node is the source
+    if (
+      dragState.connectionTypeModal.show &&
+      dragState.connectionTypeModal.sourceId === node.id &&
+      !dragState.selectedIds.includes(node.id)
+    ) {
+      // Re-select this node to ensure it stays selected
+      dragDisp.selectNode(node.id);
+    }
+  }, [dragState.connectionTypeModal, node.id, dragState.selectedIds]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Make sure the source node is selected before dragging
+    if (!dragState.selectedIds.includes(node.id)) {
+      dragDisp.selectNode(node.id);
+    }
 
     // Get the cable icon's center position in screen coordinates
     if (cableIconRef.current) {
@@ -208,6 +226,11 @@ export const ConnectionHandle: React.FC<{
       if (currentHoverTarget) {
         console.log("Showing modal for target:", currentHoverTarget.id);
 
+        // Ensure our source node remains selected
+        if (!dragState.selectedIds.includes(node.id)) {
+          dragDisp.selectNode(node.id);
+        }
+
         // Show the connection type modal without resetting existing connections
         dragDisp.showConnectionTypeModal(node.id, currentHoverTarget.id, {
           x: upEvent.clientX,
@@ -244,6 +267,11 @@ export const ConnectionHandle: React.FC<{
                 "Showing modal for target found on mouseup:",
                 topmostParentId
               );
+
+              // Ensure our source node remains selected
+              if (!dragState.selectedIds.includes(node.id)) {
+                dragDisp.selectNode(node.id);
+              }
 
               // Show the connection type modal without resetting existing connections
               dragDisp.showConnectionTypeModal(node.id, topmostParentId, {
@@ -385,21 +413,6 @@ export const ConnectionHandle: React.FC<{
                 <polygon points="0 0, 10 3.5, 0 7" fill="#9966FE" />
               </marker>
             </defs>
-
-            {/* If hovering over a target, highlight it with a glow */}
-            {/* {hoverTarget && (
-              <rect
-                x={hoverTarget.rect.left - 2}
-                y={hoverTarget.rect.top - 2}
-                width={hoverTarget.rect.width + 4}
-                height={hoverTarget.rect.height + 4}
-                rx="4"
-                fill="none"
-                stroke="#9966FE"
-                strokeWidth="2"
-                filter="drop-shadow(0 0 3px rgba(153, 102, 254, 0.7))"
-              />
-            )} */}
           </svg>,
           document.body
         )}

@@ -122,6 +122,7 @@ const TextElement = ({ node }: ElementProps) => {
     isMovingCanvas,
     isResizing,
     dragState,
+    dragDisp,
   } = useBuilder();
   const isNodeSelected = dragState.selectedIds.includes(node.id);
 
@@ -277,10 +278,14 @@ const TextElement = ({ node }: ElementProps) => {
   }, [editor]);
 
   const handleDoubleClick = (e: React.MouseEvent) => {
-    if (isNodeSelected) {
-      e.stopPropagation();
-      e.preventDefault();
-      setIsEditing(true);
+    if (node.isDynamic && dragState.dynamicModeNodeId === null) {
+      dragDisp.setDynamicModeNodeId(node.id);
+    } else {
+      if (isNodeSelected) {
+        e.stopPropagation();
+        e.preventDefault();
+        setIsEditing(true);
+      }
     }
   };
 

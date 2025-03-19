@@ -1,63 +1,82 @@
-import React from "react";
-import { ResponsiveNode, Viewport } from "../types";
+import React, { useMemo } from "react";
 import Image from "next/image";
+import { usePreview } from "../preview-context";
+import { findNodeById } from "../utils/nodeUtils";
 
 type BackgroundWrapperProps = {
-  node: ResponsiveNode;
-  currentViewport: number;
-  viewportBreakpoints: Viewport[];
+  nodeId: string;
 };
 
 export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
-  node,
-  currentViewport,
-  viewportBreakpoints,
+  nodeId,
 }) => {
-  // Start with default background media from the node's style
-  let backgroundImage = node.style.backgroundImage;
-  let backgroundVideo = node.style.backgroundVideo;
+  const { nodeTree, viewportBreakpoints, currentViewport } = usePreview();
 
-  // Determine if we need to use a different background based on current viewport
-  const sortedViewports = [...viewportBreakpoints].sort(
-    (a, b) => a.width - b.width
+  // Find this node from the context
+  const node = useMemo(
+    () => findNodeById(nodeTree, nodeId),
+    [nodeTree, nodeId]
   );
 
-  // Find appropriate background for current viewport
-  for (let i = 0; i < sortedViewports.length; i++) {
-    const viewport = sortedViewports[i];
-    const nextViewport = sortedViewports[i + 1];
+  // Determine background media based on current viewport - only if node exists
+  const backgroundData = useMemo(() => {
+    if (!node)
+      return { backgroundImage: undefined, backgroundVideo: undefined };
 
-    // Check if we're in this viewport's range
-    const inViewportRange =
-      (i === 0 && currentViewport < viewport.width) || // Mobile
-      (i === sortedViewports.length - 1 && currentViewport >= viewport.width) || // Desktop
-      (nextViewport &&
-        currentViewport >= viewport.width &&
-        currentViewport < nextViewport.width); // Tablet
+    // Start with default background media from the node's style
+    let currentBgImage = node.style.backgroundImage;
+    let currentBgVideo = node.style.backgroundVideo;
 
-    if (inViewportRange) {
-      // Get the styles for this viewport
-      const viewportStyles = node.responsiveStyles[viewport.width];
-      if (viewportStyles) {
-        // Override with responsive background if available
-        if (viewportStyles.backgroundImage) {
-          backgroundImage = viewportStyles.backgroundImage;
+    // Sort viewports from smallest to largest
+    const sortedViewports = [...viewportBreakpoints].sort(
+      (a, b) => a.width - b.width
+    );
+
+    // Find appropriate background for current viewport
+    for (let i = 0; i < sortedViewports.length; i++) {
+      const viewport = sortedViewports[i];
+      const nextViewport = sortedViewports[i + 1];
+
+      // Check if we're in this viewport's range
+      const inViewportRange =
+        (i === 0 && currentViewport < viewport.width) || // Mobile
+        (i === sortedViewports.length - 1 &&
+          currentViewport >= viewport.width) || // Desktop
+        (nextViewport &&
+          currentViewport >= viewport.width &&
+          currentViewport < nextViewport.width); // Tablet
+
+      if (inViewportRange) {
+        // Get the styles for this viewport
+        const viewportStyles = node.responsiveStyles[viewport.width];
+        if (viewportStyles) {
+          // Override with responsive background if available
+          if (viewportStyles.backgroundImage) {
+            currentBgImage = viewportStyles.backgroundImage;
+          }
+          if (viewportStyles.backgroundVideo) {
+            currentBgVideo = viewportStyles.backgroundVideo;
+          }
         }
-        if (viewportStyles.backgroundVideo) {
-          backgroundVideo = viewportStyles.backgroundVideo;
-        }
+        break;
       }
-      break;
     }
-  }
 
-  // If we have neither background image nor video, return null
-  if (!backgroundImage && !backgroundVideo) return null;
+    return {
+      backgroundImage: currentBgImage,
+      backgroundVideo: currentBgVideo,
+    };
+  }, [node, viewportBreakpoints, currentViewport]);
+
+  const { backgroundImage, backgroundVideo } = backgroundData;
+
+  // If node doesn't exist or we have neither background image nor video, return null
+  if (!node || (!backgroundImage && !backgroundVideo)) return null;
 
   return (
     <div
       data-background-wrapper="true"
-      id={`node-${node.id}-bg-wrapper`}
+      id={`node-${nodeId}-bg-wrapper`}
       style={{
         position: "absolute",
         inset: 0,
@@ -66,26 +85,34 @@ export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
       }}
     >
       {backgroundImage && (
-        <Image
-          alt=""
-          loading="lazy"
-          src={backgroundImage}
+        <div
           style={{
             position: "absolute",
             height: "100%",
             width: "100%",
             inset: 0,
-            objectFit: "cover",
-            color: "transparent",
+            overflow: "hidden",
             borderRadius: "inherit",
-            pointerEvents: "none",
           }}
-        />
+        >
+          <Image
+            alt=""
+            loading="lazy"
+            src={backgroundImage}
+            fill={true}
+            sizes="100vw"
+            style={{
+              objectFit: "cover",
+              color: "transparent",
+              pointerEvents: "none",
+            }}
+          />
+        </div>
       )}
 
       {backgroundVideo && (
         <video
-          key={`bg-video-${node.id}-${backgroundVideo}`}
+          key={`bg-video-${nodeId}-${backgroundVideo}`}
           src={backgroundVideo}
           autoPlay
           loop

@@ -1,6 +1,8 @@
-import React from "react";
-import { ResponsiveNode, Viewport } from "../../types";
+import React, { useMemo } from "react";
 import { BackgroundWrapper } from "../BackgroundWrapper";
+import { NodeRenderer } from ".";
+import { usePreview } from "../../preview-context";
+import { findNodeById } from "../../utils/nodeUtils";
 import {
   generateResponsiveCSS,
   generateBackgroundImageCSS,
@@ -8,20 +10,25 @@ import {
 } from "../../utils/cssUtils";
 
 type FrameNodeProps = {
-  node: ResponsiveNode;
-  currentViewport: number;
-  viewportBreakpoints: Viewport[];
-  renderNode: (node: ResponsiveNode) => React.ReactNode;
+  nodeId: string;
 };
 
-export const FrameNode: React.FC<FrameNodeProps> = ({
-  node,
-  currentViewport,
-  viewportBreakpoints,
-  renderNode,
-}) => {
+export const FrameNode: React.FC<FrameNodeProps> = ({ nodeId }) => {
+  const { nodeTree, viewportBreakpoints } = usePreview();
+
+  // Find this node from the context
+  const node = useMemo(
+    () => findNodeById(nodeTree, nodeId),
+    [nodeTree, nodeId]
+  );
+
+  if (!node) return null;
+
+  // Extract styles
   const { src, text, backgroundImage, backgroundVideo, ...styleProps } =
     node.style;
+
+  // Generate CSS
   const responsiveCSS = generateResponsiveCSS(node, viewportBreakpoints);
   const backgroundImageCSS = backgroundImage
     ? generateBackgroundImageCSS(node, viewportBreakpoints)
@@ -31,6 +38,9 @@ export const FrameNode: React.FC<FrameNodeProps> = ({
     viewportBreakpoints
   );
 
+  // Check if this node has children to render
+  const hasChildren = node.children && node.children.length > 0;
+
   return (
     <React.Fragment>
       {responsiveCSS && <style>{responsiveCSS}</style>}
@@ -38,25 +48,26 @@ export const FrameNode: React.FC<FrameNodeProps> = ({
       {mediaQueryContent && <style>{mediaQueryContent}</style>}
 
       <div
-        id={`node-${node.id}`}
-        data-node-id={node.id}
+        id={`node-${nodeId}`}
+        data-node-id={nodeId}
         data-node-type={node.type}
+        data-has-children={hasChildren ? "true" : undefined}
         className={`node node-${node.type}`}
-        style={styleProps as React.CSSProperties}
+        style={{
+          ...(styleProps as React.CSSProperties),
+          // Force background color to be visible
+          backgroundColor: styleProps.backgroundColor || "transparent",
+        }}
       >
         {/* Background wrapper for image/video backgrounds */}
         {(backgroundImage || backgroundVideo) && (
-          <BackgroundWrapper
-            node={node}
-            currentViewport={currentViewport}
-            viewportBreakpoints={viewportBreakpoints}
-          />
+          <BackgroundWrapper nodeId={nodeId} />
         )}
 
         {/* Primary text content if present */}
         {text && (
           <div
-            id={`node-${node.id}-content`}
+            id={`node-${nodeId}-content`}
             dangerouslySetInnerHTML={{ __html: text }}
           />
         )}
@@ -67,14 +78,17 @@ export const FrameNode: React.FC<FrameNodeProps> = ({
           .map(([viewport, styles]) => (
             <div
               key={`content-${viewport}`}
-              id={`node-${node.id}-content-${viewport}`}
+              id={`node-${nodeId}-content-${viewport}`}
               style={{ display: "none" }}
               dangerouslySetInnerHTML={{ __html: styles.text || "" }}
             />
           ))}
 
         {/* Render children */}
-        {node.children.map(renderNode)}
+        {hasChildren &&
+          node.children.map((child) => (
+            <NodeRenderer key={child.id} nodeId={child.id} />
+          ))}
       </div>
     </React.Fragment>
   );

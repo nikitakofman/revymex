@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ResponsivePreview from "@/builder/view/preview/combineViewports";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import RevymeIcon from "@/builder/view/header/revyme-icon";
 import LoadingScreen from "@/builder/view/canvas/loading-screen";
-import PreviewPlay from "@/builder/view/preview/preview-new";
+import PreviewPlay from "@/builder/view/preview/preview-play";
 
 export default function PreviewPage() {
   const [previewData, setPreviewData] = useState<{

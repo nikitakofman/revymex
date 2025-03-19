@@ -1,19 +1,26 @@
-import React from "react";
-import { ResponsiveNode, Viewport } from "../../types";
+import React, { useMemo } from "react";
+import { usePreview } from "../../preview-context";
+import { findNodeById } from "../../utils/nodeUtils";
 import {
   generateResponsiveCSS,
   generateMediaQueryContent,
 } from "../../utils/cssUtils";
 
 type TextNodeProps = {
-  node: ResponsiveNode;
-  viewportBreakpoints: Viewport[];
+  nodeId: string;
 };
 
-export const TextNode: React.FC<TextNodeProps> = ({
-  node,
-  viewportBreakpoints,
-}) => {
+export const TextNode: React.FC<TextNodeProps> = ({ nodeId }) => {
+  const { nodeTree, viewportBreakpoints, transformNode } = usePreview();
+
+  // Find this node from the context
+  const node = useMemo(
+    () => findNodeById(nodeTree, nodeId),
+    [nodeTree, nodeId]
+  );
+
+  if (!node) return null;
+
   const { src, text, backgroundImage, backgroundVideo, ...styleProps } =
     node.style;
 
@@ -23,20 +30,36 @@ export const TextNode: React.FC<TextNodeProps> = ({
     viewportBreakpoints
   );
 
+  // Handle click for dynamic nodes
+  const handleClick = () => {
+    if (node.isDynamic) {
+      transformNode(nodeId, "click");
+    }
+  };
+
   return (
     <React.Fragment>
       {responsiveCSS && <style>{responsiveCSS}</style>}
       {mediaQueryContent && <style>{mediaQueryContent}</style>}
 
       <div
-        id={`node-${node.id}`}
-        className="node node-text"
-        style={styleProps as React.CSSProperties}
+        id={`node-${nodeId}`}
+        data-node-id={nodeId}
+        data-node-type={node.type}
+        data-is-dynamic={node.isDynamic ? "true" : undefined}
+        className={`node node-${node.type} ${
+          node.isDynamic ? "node-dynamic" : ""
+        }`}
+        style={{
+          ...(styleProps as React.CSSProperties),
+          cursor: node.isDynamic ? "pointer" : undefined,
+        }}
+        onClick={node.isDynamic ? handleClick : undefined}
       >
         {/* Primary text content */}
         {text && (
           <div
-            id={`node-${node.id}-content`}
+            id={`node-${nodeId}-content`}
             dangerouslySetInnerHTML={{ __html: text }}
             style={{ width: "100%", height: "100%" }}
           />
@@ -48,7 +71,7 @@ export const TextNode: React.FC<TextNodeProps> = ({
           .map(([viewport, styles]) => (
             <div
               key={`content-${viewport}`}
-              id={`node-${node.id}-content-${viewport}`}
+              id={`node-${nodeId}-content-${viewport}`}
               style={{ display: "none", width: "100%", height: "100%" }}
               dangerouslySetInnerHTML={{ __html: styles.text || "" }}
             />

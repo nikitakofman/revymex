@@ -19,6 +19,14 @@ const ConnectionTypeModal: React.FC = () => {
       setIsVisible(true);
     }, 10);
 
+    // Ensure the source node stays selected
+    if (
+      connectionTypeModal.sourceId &&
+      !dragState.selectedIds.includes(connectionTypeModal.sourceId)
+    ) {
+      dragDisp.selectNode(connectionTypeModal.sourceId);
+    }
+
     const handleClickOutside = (e: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
         handleClose();
@@ -35,7 +43,12 @@ const ConnectionTypeModal: React.FC = () => {
       clearTimeout(animationTimeout);
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [connectionTypeModal.show, dragDisp]);
+  }, [
+    connectionTypeModal.show,
+    connectionTypeModal.sourceId,
+    dragState.selectedIds,
+    dragDisp,
+  ]);
 
   // Reset visibility when modal is hidden
   useEffect(() => {
@@ -47,6 +60,14 @@ const ConnectionTypeModal: React.FC = () => {
   if (!connectionTypeModal.show) return null;
 
   const handleClose = () => {
+    // Before closing, make sure the source node remains selected
+    if (
+      connectionTypeModal.sourceId &&
+      !dragState.selectedIds.includes(connectionTypeModal.sourceId)
+    ) {
+      dragDisp.selectNode(connectionTypeModal.sourceId);
+    }
+
     dragDisp.hideConnectionTypeModal();
   };
 
@@ -64,6 +85,11 @@ const ConnectionTypeModal: React.FC = () => {
         type,
         dragState.dynamicModeNodeId
       );
+
+      // Ensure the source node stays selected
+      if (!dragState.selectedIds.includes(sourceId)) {
+        dragDisp.selectNode(sourceId);
+      }
     }
 
     // Hide the modal

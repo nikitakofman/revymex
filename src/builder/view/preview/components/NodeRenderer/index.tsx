@@ -1,65 +1,46 @@
 import React, { useMemo } from "react";
-import { ResponsiveNode, Viewport } from "../../types";
+import { usePreview } from "../../preview-context";
+import { findNodeById } from "../../utils/nodeUtils";
 import { ImageNode } from "./ImageNode";
 import { VideoNode } from "./VideoNode";
 import { TextNode } from "./TextNode";
 import { FrameNode } from "./FrameNode";
+import { DynamicNode } from "./dynamic-node";
 
 type NodeRendererProps = {
-  node: ResponsiveNode;
-  currentViewport: number;
-  viewportBreakpoints: Viewport[];
+  nodeId: string;
 };
 
-export const NodeRenderer: React.FC<NodeRendererProps> = ({
-  node,
-  currentViewport,
-  viewportBreakpoints,
-}) => {
-  // Create a recursive render function
-  const renderNode = useMemo(() => {
-    const renderer = (nodeToRender: ResponsiveNode) => {
-      switch (nodeToRender.type) {
-        case "image":
-          return (
-            <ImageNode
-              key={nodeToRender.id}
-              node={nodeToRender}
-              viewportBreakpoints={viewportBreakpoints}
-            />
-          );
-        case "video":
-          return (
-            <VideoNode
-              key={nodeToRender.id}
-              node={nodeToRender}
-              currentViewport={currentViewport}
-              viewportBreakpoints={viewportBreakpoints}
-            />
-          );
-        case "text":
-          return (
-            <TextNode
-              key={nodeToRender.id}
-              node={nodeToRender}
-              viewportBreakpoints={viewportBreakpoints}
-            />
-          );
-        case "frame":
-        default:
-          return (
-            <FrameNode
-              key={nodeToRender.id}
-              node={nodeToRender}
-              currentViewport={currentViewport}
-              viewportBreakpoints={viewportBreakpoints}
-              renderNode={renderer}
-            />
-          );
-      }
-    };
-    return renderer;
-  }, [currentViewport, viewportBreakpoints]);
+export const NodeRenderer: React.FC<NodeRendererProps> = ({ nodeId }) => {
+  const { nodeTree, dynamicVariants } = usePreview();
 
-  return <>{renderNode(node)}</>;
+  const node = useMemo(() => {
+    // First, check active variants' children.
+    for (const [sourceId, variant] of Object.entries(dynamicVariants)) {
+      if (variant.children && findNodeById(variant.children, nodeId)) {
+        return findNodeById(variant.children, nodeId);
+      }
+    }
+    return findNodeById(nodeTree, nodeId);
+  }, [nodeTree, dynamicVariants, nodeId]);
+
+  if (!node) return null;
+
+  // If node is dynamic and not a child of a dynamic parent, wrap it.
+  if (node.isDynamic && !node.dynamicParentId) {
+    return <DynamicNode nodeId={nodeId} />;
+  }
+
+  // Otherwise, render based on node type.
+  switch (node.type) {
+    case "image":
+      return <ImageNode nodeId={nodeId} />;
+    case "video":
+      return <VideoNode nodeId={nodeId} />;
+    case "text":
+      return <TextNode nodeId={nodeId} />;
+    case "frame":
+    default:
+      return <FrameNode nodeId={nodeId} />;
+  }
 };
