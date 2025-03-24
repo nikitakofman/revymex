@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { BackgroundWrapper } from "../BackgroundWrapper";
 import { NodeRenderer } from ".";
 import { usePreview } from "../../preview-context";
@@ -7,6 +7,7 @@ import {
   generateResponsiveCSS,
   generateBackgroundImageCSS,
   generateMediaQueryContent,
+  debugResponsiveNode,
 } from "../../utils/cssUtils";
 
 type FrameNodeProps = {
@@ -41,6 +42,20 @@ export const FrameNode: React.FC<FrameNodeProps> = ({ nodeId }) => {
   // Check if this node has children to render
   const hasChildren = node.children && node.children.length > 0;
 
+  // Check if frame has both text content and a child text node
+  // If so, we'll only render the child text node to avoid duplication
+  const hasTextContent = Boolean(text);
+  const hasTextChild =
+    hasChildren && node.children.some((child) => child.type === "text");
+  const shouldRenderOwnText = hasTextContent && !hasTextChild;
+
+  useEffect(() => {
+    if (node) {
+      // Debug the responsive styles for this node
+      debugResponsiveNode(node);
+    }
+  }, [node]);
+
   return (
     <React.Fragment>
       {responsiveCSS && <style>{responsiveCSS}</style>}
@@ -53,19 +68,21 @@ export const FrameNode: React.FC<FrameNodeProps> = ({ nodeId }) => {
         data-node-type={node.type}
         data-has-children={hasChildren ? "true" : undefined}
         className={`node node-${node.type}`}
-        style={{
-          ...(styleProps as React.CSSProperties),
-          // Force background color to be visible
-          backgroundColor: styleProps.backgroundColor || "transparent",
-        }}
+        style={
+          {
+            // ...(styleProps as React.CSSProperties),
+            // // Force background color to be visible
+            // backgroundColor: styleProps.backgroundColor || "transparent",
+          }
+        }
       >
         {/* Background wrapper for image/video backgrounds */}
         {(backgroundImage || backgroundVideo) && (
           <BackgroundWrapper nodeId={nodeId} />
         )}
 
-        {/* Primary text content if present */}
-        {text && (
+        {/* Only render text content if there's no child text node */}
+        {shouldRenderOwnText && (
           <div
             id={`node-${nodeId}-content`}
             dangerouslySetInnerHTML={{ __html: text }}
@@ -73,16 +90,17 @@ export const FrameNode: React.FC<FrameNodeProps> = ({ nodeId }) => {
         )}
 
         {/* Render all viewport-specific text versions (hidden by default) */}
-        {Object.entries(node.responsiveStyles)
-          .filter(([_, styles]) => styles.text && styles.text !== text)
-          .map(([viewport, styles]) => (
-            <div
-              key={`content-${viewport}`}
-              id={`node-${nodeId}-content-${viewport}`}
-              style={{ display: "none" }}
-              dangerouslySetInnerHTML={{ __html: styles.text || "" }}
-            />
-          ))}
+        {shouldRenderOwnText &&
+          Object.entries(node.responsiveStyles || {})
+            .filter(([_, styles]) => styles.text && styles.text !== text)
+            .map(([viewport, styles]) => (
+              <div
+                key={`content-${viewport}`}
+                id={`node-${nodeId}-content-${viewport}`}
+                style={{ display: "none" }}
+                dangerouslySetInnerHTML={{ __html: styles.text || "" }}
+              />
+            ))}
 
         {/* Render children */}
         {hasChildren &&

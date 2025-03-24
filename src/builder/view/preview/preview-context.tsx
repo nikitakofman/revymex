@@ -20,6 +20,9 @@ type PreviewContextType = {
   nodeTree: ResponsiveNode[];
   dynamicVariants: { [nodeId: string]: ResponsiveNode };
   transformNode: (sourceId: string, type: string) => void;
+  setDynamicVariants: React.Dispatch<
+    React.SetStateAction<{ [nodeId: string]: ResponsiveNode }>
+  >;
 };
 
 const defaultContextValue: PreviewContextType = {
@@ -30,6 +33,7 @@ const defaultContextValue: PreviewContextType = {
   nodeTree: [],
   dynamicVariants: {},
   transformNode: () => {},
+  setDynamicVariants: () => {},
 };
 
 const PreviewContext = createContext<PreviewContextType>(defaultContextValue);
@@ -81,23 +85,78 @@ export const PreviewProvider: React.FC<{
   // The transformNode function:
   const transformNode = useMemo(() => {
     return (sourceId: string, type: string) => {
-      console.log(`transformNode: sourceId=${sourceId}, type=${type}`);
+      // Find the current viewport in breakpoints
+      const getActiveBreakpoint = (width, breakpoints) => {
+        const sortedBreakpoints = [...breakpoints].sort(
+          (a, b) => b.width - a.width
+        );
 
-      // Check if we're dealing with an already transformed node
-      // This is the critical part for cycling from parent variant to parent variant
+        for (let i = 0; i < sortedBreakpoints.length - 1; i++) {
+          const current = sortedBreakpoints[i];
+          const next = sortedBreakpoints[i + 1];
+
+          if (width > next.width && width <= current.width) {
+            return current;
+          }
+        }
+
+        if (width <= sortedBreakpoints[sortedBreakpoints.length - 1].width) {
+          return sortedBreakpoints[sortedBreakpoints.length - 1];
+        }
+
+        return sortedBreakpoints[0];
+      };
+
+      const currentViewportObj = getActiveBreakpoint(
+        currentViewport,
+        viewportBreakpoints
+      );
+
+      if (!currentViewportObj) {
+        return;
+      }
+
+      // First, find the node for this ID
+      let sourceNode = findNodeById(nodeTree, sourceId);
+      let isResponsiveNode = false;
+      let isChildTrigger = false;
+
+      if (!sourceNode) {
+        sourceNode = originalNodes.find((n) => n.id === sourceId);
+        if (!sourceNode) {
+          return;
+        }
+
+        isChildTrigger = Boolean(sourceNode.dynamicParentId);
+      } else {
+        // If found in nodeTree, it's a responsive node
+        isResponsiveNode = true;
+        isChildTrigger = Boolean(sourceNode.dynamicParentId);
+      }
+
+      // If this node has a sharedId, find the version for the current viewport
+      if (sourceNode.sharedId && !isChildTrigger) {
+        // Try to find a version of this node with the same sharedId that's in the current viewport
+        const viewportNode = originalNodes.find(
+          (n) =>
+            n.sharedId === sourceNode.sharedId &&
+            n.parentId === currentViewportObj.id
+        );
+
+        if (viewportNode && viewportNode.id !== sourceNode.id) {
+          sourceNode = viewportNode;
+        }
+      }
+
+      // Check if we're dealing with an already transformed node (variant cycling)
       const existingVariant = dynamicVariants[sourceId];
       if (existingVariant) {
-        console.log(`Source is already a variant: ${sourceId}`);
-
         // Check if the variant has connections for this specific event type
         const hasConnectionsForEventType =
           existingVariant.dynamicConnections &&
           existingVariant.dynamicConnections.some((conn) => conn.type === type);
 
         if (!hasConnectionsForEventType) {
-          console.log(
-            `Variant has no connections for event type: ${type}, skipping transformation`
-          );
           return; // Important: exit early if no connections for this event type
         }
 
@@ -106,18 +165,12 @@ export const PreviewProvider: React.FC<{
           existingVariant.dynamicConnections &&
           existingVariant.dynamicConnections.length > 0
         ) {
-          console.log(`Using connections from active variant for cycling`);
-
           // Look for connection in the active variant
           const connection = existingVariant.dynamicConnections.find(
             (conn) => conn.type === type
           );
 
           if (connection) {
-            console.log(
-              `Found connection in active variant: ${connection.sourceId} -> ${connection.targetId}`
-            );
-
             // Find target node
             let targetNode = findNodeById(initialNodeTree, connection.targetId);
             if (!targetNode) {
@@ -128,13 +181,8 @@ export const PreviewProvider: React.FC<{
             }
 
             if (!targetNode) {
-              console.log(
-                `Target node not found for variant connection: ${connection.targetId}`
-              );
               return;
             }
-
-            console.log(`Found target for variant cycling: ${targetNode.id}`);
 
             // Create enhanced variant with preserved connections
             const nextVariant = {
@@ -153,56 +201,31 @@ export const PreviewProvider: React.FC<{
 
             return; // Exit early - we've handled the variant cycling
           } else {
-            console.log(
-              `No matching connection found in variant for event type: ${type}`
-            );
             return; // Exit early - no connection for this event type
           }
         }
       }
 
-      // Standard processing for first-time transformations
-      // Find the source node from nodeTree; fallback to originalNodes for child nodes.
-      let sourceNode = findNodeById(nodeTree, sourceId);
-      let isChildTrigger = false;
-
-      if (!sourceNode) {
-        const originalNode = originalNodes.find((n) => n.id === sourceId);
-        if (originalNode && originalNode.dynamicConnections) {
-          sourceNode = originalNode;
-          isChildTrigger = Boolean(originalNode.dynamicParentId);
-          console.log("Found in original nodes:", sourceNode);
-        } else {
-          console.log("Node not found or no connections");
-          return;
-        }
-      } else {
-        // If found in nodeTree, check if it's a child node
-        isChildTrigger = Boolean(sourceNode.dynamicParentId);
-      }
-
+      // Check if this node has connections
       if (
         !sourceNode.dynamicConnections ||
         sourceNode.dynamicConnections.length === 0
       ) {
-        console.log("Node has no dynamic connections:", sourceId);
         return;
       }
 
-      // Find the connection that matches the event type.
+      // Find the connection that matches the event type
       const connection = sourceNode.dynamicConnections.find(
         (conn) => conn.type === type
       );
+
       if (!connection) {
-        console.log("No matching connection for type:", type);
         return;
       }
-      console.log("Found connection:", connection);
 
-      // Try to find the target node in the initial tree.
+      // Try to find the target node in the initial tree
       let targetNode = findNodeById(initialNodeTree, connection.targetId);
       if (!targetNode) {
-        console.log("Not found in initial tree, building sub-tree...");
         const subtree = buildResponsiveSubtree(
           connection.targetId,
           originalNodes
@@ -211,16 +234,52 @@ export const PreviewProvider: React.FC<{
           targetNode = subtree;
         }
       }
+
       if (!targetNode) {
-        console.log("Target node not found anywhere:", connection.targetId);
         return;
       }
-      console.log("Found target node:", targetNode);
 
       // Determine the key for variant storage
-      const variantKey = isChildTrigger ? sourceNode.dynamicParentId : sourceId;
-      console.log(`Using variant key for storage: ${variantKey}`);
+      let variantKey = sourceId;
 
+      // If this is a child trigger, we need to ensure it's stored under the correct parent ID
+      if (isChildTrigger && sourceNode.dynamicParentId) {
+        // Verify if this parent ID actually exists as a dynamic node in the tree
+        const parentExists = nodeTree.some(
+          (node) => node.id === sourceNode.dynamicParentId
+        );
+
+        if (parentExists) {
+          variantKey = sourceNode.dynamicParentId;
+          console.log(
+            `Child trigger: storing variant under parent ID: ${variantKey}`
+          );
+        } else {
+          // Maybe the parent has a different ID in different viewports?
+          // Try to find a matching parent node
+          console.log(
+            `Parent ID ${sourceNode.dynamicParentId} not found in nodeTree, searching for alternative...`
+          );
+          const possibleParent = originalNodes.find(
+            (node) =>
+              node.isDynamic &&
+              // Either the node has the same ID as dynamicParentId
+              (node.id === sourceNode.dynamicParentId ||
+                // Or the node has the same shared ID as the parent referenced in dynamicParentId
+                (node.sharedId &&
+                  originalNodes.some(
+                    (n) =>
+                      n.id === sourceNode.dynamicParentId &&
+                      n.sharedId === node.sharedId
+                  )))
+          );
+
+          if (possibleParent) {
+            variantKey = possibleParent.id;
+            console.log(`Found alternative parent ID: ${variantKey}`);
+          }
+        }
+      }
       // IMPORTANT: Store a modified variant with additional information
       // that will help the DynamicNode component find children
       const enhancedVariant = {
@@ -235,19 +294,19 @@ export const PreviewProvider: React.FC<{
         // This single line is what enables cycling through variants
         dynamicConnections: targetNode.dynamicConnections || [],
       };
-
-      console.log(
-        `Storing variant with _originalTargetId: ${connection.targetId}`
-      );
-      console.log(
-        `Preserving ${enhancedVariant.dynamicConnections.length} connections for cycling`
-      );
       setDynamicVariants((prev) => ({
         ...prev,
         [variantKey]: enhancedVariant,
       }));
     };
-  }, [nodeTree, initialNodeTree, originalNodes, dynamicVariants]);
+  }, [
+    nodeTree,
+    initialNodeTree,
+    originalNodes,
+    dynamicVariants,
+    currentViewport,
+    viewportBreakpoints,
+  ]);
 
   const contextValue = useMemo(
     () => ({
@@ -258,6 +317,7 @@ export const PreviewProvider: React.FC<{
       nodeTree,
       dynamicVariants,
       transformNode,
+      setDynamicVariants,
     }),
     [
       originalNodes,
@@ -267,6 +327,7 @@ export const PreviewProvider: React.FC<{
       nodeTree,
       dynamicVariants,
       transformNode,
+      setDynamicVariants,
     ]
   );
 

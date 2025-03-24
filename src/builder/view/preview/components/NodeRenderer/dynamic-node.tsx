@@ -1,16 +1,54 @@
-import React, { useMemo, useEffect, useState } from "react";
+import React, { useMemo, useEffect, useState, useRef } from "react";
 import { usePreview } from "../../preview-context";
 import { findNodeById } from "../../utils/nodeUtils";
 import { BackgroundWrapper } from "../BackgroundWrapper";
+import {
+  generateResponsiveCSS,
+  generateBackgroundImageCSS,
+  generateMediaQueryContent,
+} from "../../utils/cssUtils";
 
 type DynamicNodeProps = {
   nodeId: string;
 };
 
+const getActiveBreakpoint = (width, breakpoints) => {
+  // Sort breakpoints by width (largest to smallest)
+  const sortedBreakpoints = [...breakpoints].sort((a, b) => b.width - a.width);
+
+  // For each pair of breakpoints, check if width falls between them
+  for (let i = 0; i < sortedBreakpoints.length - 1; i++) {
+    const current = sortedBreakpoints[i];
+    const next = sortedBreakpoints[i + 1];
+
+    // If width is between current breakpoint (exclusive) and next breakpoint (inclusive)
+    if (width > next.width && width <= current.width) {
+      return current;
+    }
+  }
+
+  // If width is smaller than or equal to the smallest breakpoint
+  if (width <= sortedBreakpoints[sortedBreakpoints.length - 1].width) {
+    return sortedBreakpoints[sortedBreakpoints.length - 1];
+  }
+
+  // Default to largest breakpoint
+  return sortedBreakpoints[0];
+};
+
 export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
-  const { nodeTree, dynamicVariants, transformNode, originalNodes } =
-    usePreview();
+  const {
+    nodeTree,
+    dynamicVariants,
+    transformNode,
+    originalNodes,
+    viewportBreakpoints,
+    currentViewport,
+    setDynamicVariants,
+  } = usePreview();
   const [forceRender, setForceRender] = useState(0);
+
+  const prevViewportRef = useRef<number>(currentViewport);
 
   // Find the base node from the tree
   const baseNode = useMemo(
@@ -25,6 +63,75 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
   // Use the active variant if it exists, otherwise use the base node
   const currentVariant = activeVariant || baseNode;
 
+  const isBreakpointChange = (prevWidth, currentWidth, breakpoints) => {
+    // Find the matching breakpoints for previous and current widths
+    const prevBreakpoint = breakpoints.find((bp) => prevWidth >= bp.width);
+    const currentBreakpoint = breakpoints.find(
+      (bp) => currentWidth >= bp.width
+    );
+
+    // If either breakpoint is not found, assume no change (this should rarely happen)
+    if (!prevBreakpoint || !currentBreakpoint) return false;
+
+    // Return true if breakpoint IDs are different (we've crossed a boundary)
+    return prevBreakpoint.id !== currentBreakpoint.id;
+  };
+
+  // Update your useEffect with this improved logic
+  useEffect(() => {
+    // Don't just check if viewport changed, check if we crossed a breakpoint boundary
+    if (prevViewportRef.current !== currentViewport) {
+      // Check if this viewport change crosses a breakpoint boundary
+      const prevBreakpoint = getActiveBreakpoint(
+        prevViewportRef.current,
+        viewportBreakpoints
+      );
+      const currentBreakpoint = getActiveBreakpoint(
+        currentViewport,
+        viewportBreakpoints
+      );
+      const crossedBreakpoint = prevBreakpoint.id !== currentBreakpoint.id;
+
+      if (crossedBreakpoint && activeVariant) {
+        console.log(
+          `Breakpoint change detected from ${prevViewportRef.current}px to ${currentViewport}px`
+        );
+        console.log(
+          `Resetting active variant for node ${nodeId} due to breakpoint change`
+        );
+
+        setDynamicVariants((prev) => {
+          const newVariants = { ...prev };
+          delete newVariants[nodeId];
+          return newVariants;
+        });
+      } else {
+        console.log(
+          `Viewport changed from ${prevViewportRef.current}px to ${currentViewport}px but still in same breakpoint - keeping variant`
+        );
+      }
+
+      // Always update the ref with current viewport
+      prevViewportRef.current = currentViewport;
+    }
+  }, [
+    currentViewport,
+    nodeId,
+    activeVariant,
+    setDynamicVariants,
+    viewportBreakpoints,
+  ]);
+
+  // Generate CSS for responsive styling
+  const responsiveCSS = generateResponsiveCSS(baseNode, viewportBreakpoints);
+  const backgroundImageCSS = baseNode.style.backgroundImage
+    ? generateBackgroundImageCSS(baseNode, viewportBreakpoints)
+    : "";
+  const mediaQueryContent = generateMediaQueryContent(
+    baseNode,
+    viewportBreakpoints
+  );
+
   // Debug active variant changes
   useEffect(() => {
     if (activeVariant) {
@@ -34,6 +141,26 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
       setForceRender((prev) => prev + 1);
     }
   }, [activeVariant, nodeId]);
+
+  // Code to update transformNode to handle viewport-specific connections
+  const updateTransformNodeForViewport = () => {
+    // This function would be used if we needed to modify how transformNode works with viewport connections
+    // For now, this is left empty as the transformNode in preview-context already handles connections
+  };
+
+  // Monitor viewport changes for debugging
+  useEffect(() => {
+    const currentViewportObj = getActiveBreakpoint(
+      currentViewport,
+      viewportBreakpoints
+    );
+
+    if (!currentViewportObj) return;
+
+    console.log(
+      `Dynamic node ${nodeId} - Current viewport width: ${currentViewport}, matching breakpoint: ${currentViewportObj.width}`
+    );
+  }, [currentViewport, viewportBreakpoints, nodeId]);
 
   // Important layout style properties that should be preserved from variant
   const LAYOUT_PROPERTIES = [
@@ -66,10 +193,33 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     "overflowY",
   ];
 
-  // Merge styles: base style + variant style, preserving layout properties
+  // Merge styles: base style + variant style + responsive styles
   const mergedStyle = useMemo(() => {
+    // Start with base style
     const baseStyle = { ...baseNode.style };
 
+    // Apply responsive styles if available
+    if (baseNode.responsiveStyles) {
+      const currentViewportWidth = currentViewport;
+
+      // Find the appropriate responsive style based on current viewport width
+      const viewportBreakpoint = getActiveBreakpoint(
+        currentViewportWidth,
+        viewportBreakpoints
+      );
+
+      if (
+        viewportBreakpoint &&
+        baseNode.responsiveStyles[viewportBreakpoint.width]
+      ) {
+        // Apply responsive styles for the current viewport
+        const responsiveStyle =
+          baseNode.responsiveStyles[viewportBreakpoint.width];
+        Object.assign(baseStyle, responsiveStyle);
+      }
+    }
+
+    // If we have an active variant, merge its styles with the base styles
     if (activeVariant) {
       const variantStyle = { ...activeVariant.style };
 
@@ -109,7 +259,55 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     }
 
     return baseStyle;
-  }, [baseNode.style, activeVariant, nodeId]);
+  }, [
+    baseNode.style,
+    baseNode.responsiveStyles,
+    activeVariant,
+    currentViewport,
+    viewportBreakpoints,
+  ]);
+
+  // Function to get the appropriate connection based on current viewport
+  const getViewportSpecificConnection = (node, eventType) => {
+    if (!node.dynamicConnections || node.dynamicConnections.length === 0) {
+      return null;
+    }
+
+    // Get the current viewport ID from breakpoints
+    const currentViewportObj = viewportBreakpoints.find(
+      (vp) => currentViewport >= vp.width
+    );
+
+    if (!currentViewportObj) return null;
+
+    // First, try to find a connection specific to this viewport
+    const connections = node.dynamicConnections;
+
+    // Look for connections with viewportId matching the current viewport
+    for (let i = 0; i < connections.length; i++) {
+      const conn = connections[i];
+      if (
+        conn.type === eventType &&
+        conn.viewportId === currentViewportObj.id
+      ) {
+        console.log(
+          `Found viewport-specific connection for ${eventType} at viewport ${currentViewportObj.id}`
+        );
+        return conn;
+      }
+    }
+
+    // Fallback: find a regular connection with the matching event type
+    const regularConnection = connections.find(
+      (conn) => conn.type === eventType && !conn.viewportId
+    );
+    if (regularConnection) {
+      console.log(`Using fallback regular connection for ${eventType}`);
+      return regularConnection;
+    }
+
+    return null;
+  };
 
   // Find if a node has dynamic connections or is part of a dynamic system
   const isNodeInteractive = (node) => {
@@ -329,9 +527,15 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     return activeVariant.id;
   };
 
-  // Get original children for the active parent (variant or base)
+  // Get direct children of the current variant
   const parentId = activeVariant ? findCorrectParentId() : baseNode.id;
   console.log(`Using parentId for children: ${parentId}`);
+
+  // Get direct children of the current variant
+  const directChildren = originalNodes.filter((n) => n.parentId === parentId);
+  console.log(
+    `Found ${directChildren.length} direct children for parentId ${parentId} in current viewport`
+  );
 
   // Recursive function to render a node and its children
   const renderNode = (nodeId) => {
@@ -521,12 +725,6 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     }
   };
 
-  // Get direct children of the current variant
-  const directChildren = originalNodes.filter((n) => n.parentId === parentId);
-  console.log(
-    `Found ${directChildren.length} direct children for parentId ${parentId}`
-  );
-
   // Force-render children directly using the recursive function
   const renderDirectChildren = () => {
     if (directChildren.length === 0) {
@@ -629,67 +827,74 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     mergedStyle;
 
   return (
-    <div
-      id={`dynamic-node-${nodeId}`}
-      data-node-id={nodeId}
-      data-node-type={currentVariant.type}
-      data-is-dynamic={baseNode.isDynamic ? "true" : undefined}
-      data-variant-id={activeVariant ? activeVariant.id : undefined}
-      data-render-key={forceRender}
-      style={{
-        ...containerStyle,
-        cursor: baseNode.isDynamic ? "pointer" : undefined,
-        transition: "all 0.3s ease-in-out",
-        position: "relative",
-        backgroundColor: containerStyle.backgroundColor || "transparent",
-      }}
-      onClick={(e) => handleClick(e, nodeId)}
-      onMouseEnter={(e) => handleMouseEnter(e, nodeId)}
-      onMouseLeave={(e) => handleMouseLeave(e, nodeId)}
-    >
-      {/* Background wrapper if present */}
-      {hasBackground && (
-        <div
-          className="dynamic-node-background"
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 0,
-            overflow: "hidden",
-          }}
-        >
-          {mergedStyle.backgroundImage && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                backgroundImage: `url(${mergedStyle.backgroundImage})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }}
-            />
-          )}
-          {mergedStyle.backgroundVideo && (
-            <video
-              autoPlay
-              loop
-              muted
-              playsInline
-              src={mergedStyle.backgroundVideo}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
-            />
-          )}
-        </div>
-      )}
+    <>
+      {/* Add responsive CSS */}
+      {responsiveCSS && <style>{responsiveCSS}</style>}
+      {backgroundImageCSS && <style>{backgroundImageCSS}</style>}
+      {mediaQueryContent && <style>{mediaQueryContent}</style>}
 
-      {/* Main node content based on type */}
-      {renderMainContent()}
-    </div>
+      <div
+        id={`dynamic-node-${nodeId}`}
+        data-node-id={nodeId}
+        data-node-type={currentVariant.type}
+        data-is-dynamic={baseNode.isDynamic ? "true" : undefined}
+        data-variant-id={activeVariant ? activeVariant.id : undefined}
+        data-render-key={forceRender}
+        style={{
+          ...containerStyle,
+          // cursor: baseNode.isDynamic ? "pointer" : undefined,
+          transition: activeVariant ? "all 0.3s ease-in-out" : "none",
+          position: "relative",
+          backgroundColor: containerStyle.backgroundColor || "transparent",
+        }}
+        onClick={(e) => handleClick(e, nodeId)}
+        onMouseEnter={(e) => handleMouseEnter(e, nodeId)}
+        onMouseLeave={(e) => handleMouseLeave(e, nodeId)}
+      >
+        {/* Background wrapper if present */}
+        {hasBackground && (
+          <div
+            className="dynamic-node-background"
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 0,
+              overflow: "hidden",
+            }}
+          >
+            {mergedStyle.backgroundImage && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  backgroundImage: `url(${mergedStyle.backgroundImage})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              />
+            )}
+            {mergedStyle.backgroundVideo && (
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                src={mergedStyle.backgroundVideo}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Main node content based on type */}
+        {renderMainContent()}
+      </div>
+    </>
   );
 };

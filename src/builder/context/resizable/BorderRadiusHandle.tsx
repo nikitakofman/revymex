@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 
@@ -32,13 +32,31 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
   const startPosRef = useRef<number>(0);
   const startRadiusRef = useRef<number>(0);
 
+  // Add state to track whether the handle is interactive
+  const [isInteractive, setIsInteractive] = useState(false);
+
+  // Start timer when the component mounts
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInteractive(true);
+    }, 200); // 100ms delay before making it interactive
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
   const handleMouseDown = (e: React.MouseEvent) => {
+    // If not yet interactive, don't process the event
+    if (!isInteractive) return;
+
     e.preventDefault();
     e.stopPropagation();
 
     const sessionId = startRecording();
     setIsAdjustingBorderRadius(true);
-    // Get current radius in pixels - use the primary node as reference
+
+    // Get current radius in pixels
     let currentRadius = 0;
     if (node.style.borderRadius) {
       const match = node.style.borderRadius.toString().match(/(\d+)/);
@@ -126,6 +144,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
 
   return (
     <div
+      data-border-radius-handle="true"
       onMouseDown={handleMouseDown}
       style={{
         ...handlePosition,
@@ -139,7 +158,10 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
         border: `${borderWidth}px solid white`,
         cursor: "ns-resize",
         zIndex: 1001,
-        pointerEvents: "auto",
+        // Critically, no pointer events until it becomes interactive
+        pointerEvents: isInteractive ? "auto" : "none",
+        // Optional: add a subtle fade-in for visual polish
+        transition: "opacity 0s ease-out",
       }}
     />
   );

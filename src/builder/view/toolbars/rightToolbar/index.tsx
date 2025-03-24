@@ -11,6 +11,7 @@ import { Node } from "@/builder/reducer/nodeDispatcher";
 import { FillTool } from "@/builder/tools/FillTool";
 import Button from "@/components/ui/button";
 import StylesTool from "@/builder/tools/StylesTool";
+import InteractionsTool from "@/builder/tools/InteractionsTool";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -78,6 +79,13 @@ const ElementToolbar = () => {
 
   return (
     <div className="w-64 fixed right-toolbar scrollbar-hide pt-3 border-l pb-[80px] border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
+      {dragState.dynamicModeNodeId && (
+        <>
+          <InteractionsTool />
+          <ToolbarDivider />
+        </>
+      )}
+
       {toolTypes.hasDimensionTools && (
         <>
           <DimensionsTool />

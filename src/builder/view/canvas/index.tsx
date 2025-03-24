@@ -25,10 +25,12 @@ import { useCursorManager } from "../../context/hooks/useCursorManager";
 import LoadingScreen from "./loading-screen";
 import { useMoveCanvas } from "@/builder/context/hooks/useMoveCanvas";
 import { DynamicToolbar } from "../toolbars/dynamicToolbar";
-import { AddVariantsUI } from "@/builder/context/canvasHelpers/AddVariantUI";
 import ConnectionTypeModal from "@/builder/context/canvasHelpers/ConnectionTypeModal";
-import ResponsivePreview from "../preview/combineViewports";
 import IframePreview from "../preview/iframePreview";
+import AddViewportModal from "@/builder/context/canvasHelpers/AddViewportModal";
+import EditViewportModal from "@/builder/context/canvasHelpers/EditViewportModal";
+import ViewportContextMenu from "@/builder/context/canvasHelpers/ViewportContextMenu";
+import AddVariantsUI from "@/builder/context/canvasHelpers/AddVariantUI";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -86,7 +88,6 @@ const Canvas = () => {
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
       eventHandlersAttached.current = true;
-      console.log("Event handlers attached");
     }
   };
 
@@ -96,7 +97,6 @@ const Canvas = () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
       eventHandlersAttached.current = false;
-      console.log("Event handlers detached");
     }
   };
 
@@ -257,6 +257,9 @@ const Canvas = () => {
             <BottomToolbar />
             <ElementToolbar />
             <ConnectionTypeModal />
+            <AddViewportModal />
+            <EditViewportModal />
+            <ViewportContextMenu />
           </>
         )}
       </div>

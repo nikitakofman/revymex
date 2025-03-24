@@ -26,17 +26,22 @@ const DimensionsTool = () => {
     }
   }, [dragState.selectedIds]);
 
+  const isViewport = !dragState.selectedIds[0].includes("viewport");
+
   return (
     <ToolbarContainer>
-      <ToolbarSection title="Dimensions">
-        <ToolInput
-          type="number"
-          label="Width"
-          name="width"
-          showUnit
-          unit={widthUnit}
-          onUnitChange={setWidthUnit}
-        />
+      <ToolbarSection solo={!isViewport} title="Dimensions">
+        {isViewport && (
+          <ToolInput
+            type="number"
+            label="Width"
+            name="width"
+            showUnit
+            unit={widthUnit}
+            onUnitChange={setWidthUnit}
+          />
+        )}
+
         <ToolInput
           type="number"
           label="Height"

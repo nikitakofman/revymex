@@ -14,15 +14,16 @@ export const PreviewStyles = () => (
       box-sizing: border-box;
     }
     
-    .viewport-container {
-      width: 100%;
-      box-sizing: border-box;
-      min-height: 100vh;
-    }
+   .viewport-container {
+  width: 100%;
+  box-sizing: border-box;
+  /* Remove or change min-height: 100vh to min-height: auto */
+  min-height: auto;
+}
     
     /* Enhanced styles for dynamic elements */
     .node-dynamic {
-      cursor: pointer !important;
+      // cursor: pointer !important;
       position: relative;
       transition: all 0.5s ease;
     }

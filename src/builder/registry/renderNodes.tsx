@@ -41,11 +41,17 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     };
   }, []);
 
-  // Get basic filtered nodes based on viewport status
+  // Get the active viewport ID from dragState
+  const activeViewportId = dragState.activeViewportInDynamicMode;
+
+  console.log("activeViewportId", activeViewportId);
+
+  // Pass the active viewport to getFilteredNodes
   const viewportFilteredNodes = getFilteredNodes(
     nodeState.nodes,
     filter,
-    dragState.dynamicModeNodeId
+    dragState.dynamicModeNodeId,
+    activeViewportId
   );
 
   // Further filter out nodes with display: none
@@ -64,6 +70,17 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
     // Skip rendering hidden nodes
     if (node.style.display === "none") {
+      return null;
+    }
+
+    // Skip rendering variants that don't match the active viewport
+    if (
+      filter === "dynamicMode" &&
+      node.isVariant &&
+      activeViewportId &&
+      node.dynamicViewportId &&
+      node.dynamicViewportId !== activeViewportId
+    ) {
       return null;
     }
 

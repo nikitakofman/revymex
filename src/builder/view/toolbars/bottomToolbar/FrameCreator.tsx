@@ -38,18 +38,30 @@ export const FrameCreator: React.FC = () => {
 
     const findTargetFrame = (e: MouseEvent) => {
       const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
+      console.log("Elements under cursor:", elementsUnder);
+
       for (const el of elementsUnder) {
         const frameEl = el.closest('[data-node-type="frame"]');
-        if (frameEl && !frameEl.closest(".viewport-header")) {
-          const frameId = frameEl.getAttribute("data-node-id");
-          if (frameId) {
-            const node = nodeState.nodes.find((n) => n.id === frameId);
-            if (node) {
-              return { id: frameId, element: frameEl };
+        console.log("Found frame element:", frameEl);
+
+        if (frameEl) {
+          const isViewport = frameEl.hasAttribute("data-viewport");
+          const isHeader = frameEl.closest(".viewport-header");
+          console.log("Is viewport:", isViewport, "Is header:", !!isHeader);
+
+          if (isViewport && !isHeader) {
+            const frameId = frameEl.getAttribute("data-node-id");
+            console.log("Found valid viewport frame:", frameId);
+            if (frameId) {
+              const node = nodeState.nodes.find((n) => n.id === frameId);
+              if (node) {
+                return { id: frameId, element: frameEl };
+              }
             }
           }
         }
       }
+      console.log("No target frame found");
       return null;
     };
 
@@ -325,6 +337,9 @@ export const FrameCreator: React.FC = () => {
             inViewport: mediaElement.node.inViewport,
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
+            ...(inDynamicMode && {
+              dynamicViewportId: dragState.activeViewportInDynamicMode,
+            }),
           };
 
           // Use the centralized transformation utility
@@ -405,6 +420,9 @@ export const FrameCreator: React.FC = () => {
             inViewport: true,
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
+            ...(inDynamicMode && {
+              dynamicViewportId: dragState.activeViewportInDynamicMode,
+            }),
           };
 
           const dropIndicator = computeFrameDropIndicator(
@@ -477,6 +495,7 @@ export const FrameCreator: React.FC = () => {
             ...(inDynamicMode && {
               dynamicParentId,
               dynamicPosition: { x: canvasX, y: canvasY },
+              dynamicViewportId: dragState.activeViewportInDynamicMode,
             }),
           };
 

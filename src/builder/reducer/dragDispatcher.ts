@@ -69,11 +69,13 @@ export interface DragState {
   originalParentId: string | number | null;
   styleHelper: StyleHelper;
   dynamicModeNodeId?: string | number | null;
-  contextMenu: {
+  activeViewportInDynamicMode?: string | number | null;
+  contextMenu?: {
     show: boolean;
     x: number;
     y: number;
     nodeId: string | null;
+    isViewportHeader?: boolean;
   } | null;
   gripHandleDirection: "horizontal" | "vertical" | null;
   hoverNodeId: string | number | null;
@@ -102,6 +104,29 @@ export interface DragState {
     position: { x: number; y: number };
     sourceId: string | number | null;
     targetId: string | number | null;
+  };
+  viewportModal: {
+    show: boolean;
+    position: {
+      x: number;
+      y: number;
+    };
+  };
+  editViewportModal: {
+    show: boolean;
+    viewportId: string | number | null;
+    position: {
+      x: number;
+      y: number;
+    };
+  };
+  viewportContextMenu: {
+    show: boolean;
+    viewportId: string | number | null;
+    position: {
+      x: number;
+      y: number;
+    };
   };
 }
 
@@ -275,10 +300,15 @@ export class DragDispatcher {
     );
   }
 
-  setContextMenu(x: number, y: number, nodeId: string | null) {
+  setContextMenu(
+    x: number,
+    y: number,
+    nodeId: string | null,
+    isViewportHeader: boolean = false
+  ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        draft.contextMenu = { show: true, x, y, nodeId };
+        draft.contextMenu = { show: true, x, y, nodeId, isViewportHeader };
       })
     );
   }
@@ -394,12 +424,18 @@ export class DragDispatcher {
 
   setDynamicModeNodeId(
     nodeId: string | number | null,
-    resetNodePositions?: () => void
+    resetNodePositions?: () => void,
+    defaultViewportId?: string | number
   ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
         if (!nodeId && resetNodePositions) {
           resetNodePositions();
+          // Clear active viewport when exiting dynamic mode
+          draft.activeViewportInDynamicMode = null;
+        } else if (nodeId && defaultViewportId) {
+          // Set default viewport when entering dynamic mode
+          draft.activeViewportInDynamicMode = defaultViewportId;
         }
         draft.dynamicModeNodeId = nodeId;
       })
@@ -507,11 +543,96 @@ export class DragDispatcher {
     );
   }
 
+  /**
+   * Sets the active viewport in dynamic mode
+   * @param viewportId The ID of the viewport to switch to
+   */
+  switchDynamicViewport(viewportId: string | number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.activeViewportInDynamicMode = viewportId;
+
+        // If we have a selection, maintain it
+        // This ensures UI elements stay selected when switching viewports
+        if (draft.selectedIds.length > 0) {
+          const currentSelection = [...draft.selectedIds];
+          draft.selectedIds = currentSelection;
+        }
+      })
+    );
+  }
+
   // Method to hide the connection type modal
   hideConnectionTypeModal() {
     this.setState((prev) =>
       produce(prev, (draft) => {
         draft.connectionTypeModal.show = false;
+      })
+    );
+  }
+
+  showViewportModal(position: { x: number; y: number }) {
+    this.setState(
+      produce((draft) => {
+        draft.viewportModal = {
+          show: true,
+          position,
+        };
+      })
+    );
+  }
+
+  // Hide the viewport modal
+  hideViewportModal() {
+    this.setState(
+      produce((draft) => {
+        draft.viewportModal.show = false;
+      })
+    );
+  }
+
+  showEditViewportModal(
+    viewportId: string | number,
+    position: { x: number; y: number }
+  ) {
+    this.setState(
+      produce((draft) => {
+        draft.editViewportModal = {
+          show: true,
+          viewportId,
+          position,
+        };
+      })
+    );
+  }
+
+  hideEditViewportModal() {
+    this.setState(
+      produce((draft) => {
+        draft.editViewportModal.show = false;
+      })
+    );
+  }
+
+  showViewportContextMenu(
+    viewportId: string | number,
+    position: { x: number; y: number }
+  ) {
+    this.setState(
+      produce((draft) => {
+        draft.viewportContextMenu = {
+          show: true,
+          viewportId,
+          position,
+        };
+      })
+    );
+  }
+
+  hideViewportContextMenu() {
+    this.setState(
+      produce((draft) => {
+        draft.viewportContextMenu.show = false;
       })
     );
   }
@@ -540,6 +661,7 @@ export class DragDispatcher {
         draft.additionalDraggedNodes = undefined;
         draft.placeholderInfo = null;
         draft.nodeDimensions = {};
+        // draft.activeViewportInDynamicMode = null;
       })
     );
   }

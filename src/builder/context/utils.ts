@@ -967,7 +967,8 @@ export const calculateRotationOffset = (node: Node) => {
 export function getFilteredNodes(
   nodes: Node[],
   mode: "dynamicMode" | "inViewport" | "outOfViewport",
-  dynamicModeNodeId: string | number | null | undefined
+  dynamicModeNodeId: string | number | null | undefined,
+  activeViewportId?: string | number | null
 ): Node[] {
   // First, create a map to deduplicate nodes with the same ID
   const nodesMap = new Map<string | number, Node>();
@@ -982,12 +983,39 @@ export function getFilteredNodes(
 
   if (mode === "dynamicMode" && dynamicModeNodeId) {
     // First pass: collect all nodes that should be in dynamic mode
-    const dynamicModeNodes = deduplicatedNodes.filter(
-      (node: Node) =>
-        node.id === dynamicModeNodeId ||
-        node.dynamicParentId === dynamicModeNodeId ||
-        (node.isVariant && node.variantParentId === dynamicModeNodeId)
-    );
+    const dynamicModeNodes = deduplicatedNodes.filter((node: Node) => {
+      // Always include the main dynamic node
+      if (node.id === dynamicModeNodeId) return true;
+
+      // For variants, filter by the active viewport
+      if (node.isVariant && node.variantParentId === dynamicModeNodeId) {
+        // If we have an active viewport ID, only show variants for that viewport
+        if (activeViewportId) {
+          return (
+            node.dynamicViewportId === activeViewportId ||
+            !node.dynamicViewportId
+          );
+        }
+        // If no active viewport specified, show all variants
+        return true;
+      }
+
+      // For normal nodes with dynamicParentId, filter by viewport too
+      if (node.dynamicParentId === dynamicModeNodeId) {
+        // If we have an active viewport ID and the node has a viewportId, check if they match
+        if (activeViewportId && node.dynamicViewportId) {
+          return node.dynamicViewportId === activeViewportId;
+        }
+        // If node has no viewportId, show it in the default viewport (desktop)
+        if (activeViewportId && !node.dynamicViewportId) {
+          return activeViewportId === "viewport-1440";
+        }
+        // If no active viewport specified, show all
+        return true;
+      }
+
+      return false; // Exclude everything else
+    });
 
     // Group nodes by sharedId (only for nodes that have sharedId)
     const nodesBySharedId = new Map<string, Node[]>();
@@ -1006,12 +1034,33 @@ export function getFilteredNodes(
         !node.sharedId || nodesBySharedId.get(node.sharedId)?.length === 1
     );
 
-    // For duplicates, only keep the one in viewport-1440 if available, otherwise the first one
+    // For duplicates, prioritize the ones matching the active viewport
     const filteredDuplicates: Node[] = [];
 
     nodesBySharedId.forEach((nodesGroup, sharedId) => {
       if (nodesGroup.length > 1) {
-        // Check if any node is in viewport-1440
+        // First check if any node matches the active viewport
+        if (activeViewportId) {
+          const viewportNode = nodesGroup.find((node) => {
+            let current = node;
+            while (current.parentId) {
+              const parent = deduplicatedNodes.find(
+                (n) => n.id === current.parentId
+              );
+              if (!parent) break;
+              if (parent.id === activeViewportId) return true;
+              current = parent;
+            }
+            return false;
+          });
+
+          if (viewportNode) {
+            filteredDuplicates.push(viewportNode);
+            return; // Skip to next group
+          }
+        }
+
+        // Fallback to desktop viewport if no match for active viewport
         const desktopNode = nodesGroup.find((node) => {
           let current = node;
           while (current.parentId) {

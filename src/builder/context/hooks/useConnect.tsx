@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useBuilder } from "@/builder/context/builderState";
 import { useDragStart } from "../dnd/useDragStart";
+import { findParentViewport } from "../utils";
 
 export const useConnect = () => {
   const {
@@ -65,17 +66,17 @@ export const useConnect = () => {
 
         interfaceDisp.toggleLayers();
 
-        // First check for explicit resize handles
-        const resizeHandle = target.closest('[data-resize-handle="true"]');
+        // // First check for explicit resize handles
+        // const resizeHandle = target.closest('[data-resize-handle="true"]');
 
-        // Then check if we're near an edge
-        const isEdgeClick = isNearEdge(e, target);
+        // // Then check if we're near an edge
+        // const isEdgeClick = isNearEdge(e, target);
 
-        if (resizeHandle || isEdgeClick) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
+        // if (resizeHandle || isEdgeClick) {
+        //   e.preventDefault();
+        //   e.stopPropagation();
+        //   return;
+        // }
 
         e.preventDefault();
         e.stopPropagation();
@@ -236,6 +237,15 @@ export const useConnect = () => {
             if (!node.dynamicPosition) {
               nodeDisp.updateNode(node.id, { dynamicPosition: { x: 0, y: 0 } });
             }
+
+            // Find the parent viewport and switch to it
+            const parentViewportId = findParentViewport(
+              node.id,
+              nodeState.nodes
+            );
+            if (parentViewportId) {
+              dragDisp.switchDynamicViewport(parentViewportId);
+            }
           }
           dragDisp.setDynamicModeNodeId(
             dragState.dynamicModeNodeId ? null : node.id
@@ -263,6 +273,15 @@ export const useConnect = () => {
               nodeDisp.updateNode(dynamicNode.id, {
                 dynamicPosition: { x: 0, y: 0 },
               });
+            }
+
+            // Find the parent viewport and switch to it
+            const parentViewportId = findParentViewport(
+              dynamicNode.id,
+              nodeState.nodes
+            );
+            if (parentViewportId) {
+              dragDisp.switchDynamicViewport(parentViewportId);
             }
           }
           dragDisp.setDynamicModeNodeId(

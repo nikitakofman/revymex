@@ -48,6 +48,7 @@ export interface Node {
   viewportWidth?: number;
   isDynamic?: boolean;
   dynamicParentId?: string | number;
+  dynamicViewportId?: string | number;
   dynamicConnections?: {
     sourceId: string | number;
     targetId: string | number;
@@ -760,6 +761,72 @@ export class NodeDispatcher {
     );
   }
 
+  editViewport(viewportId: string | number, width: number, name: string) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const viewport = draft.nodes.find(
+          (n) => n.id === viewportId && n.isViewport
+        );
+        if (!viewport) return;
+
+        // Update viewport properties
+        viewport.viewportWidth = width;
+        viewport.viewportName = name;
+
+        // Update style width to match
+        this.updateNodeStyle([viewportId], { width: `${width}px` });
+      })
+    );
+  }
+
+  alignViewports() {
+    // First get all viewports and their info
+    const viewportsInfo: { id: string | number; width: number }[] = [];
+
+    this.setState((prev) => {
+      // Get all viewports sorted by width (largest to smallest)
+      const viewports = prev.nodes
+        .filter((node) => node.isViewport)
+        .sort((a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0));
+
+      // Store the viewport info we need for the next steps
+      viewports.forEach((viewport) => {
+        const width =
+          viewport.viewportWidth ||
+          parseFloat(viewport.style.width as string) ||
+          0;
+
+        viewportsInfo.push({
+          id: viewport.id,
+          width,
+        });
+      });
+
+      // Return unmodified state - we'll apply updates using the provided methods
+      return prev;
+    });
+
+    // If we have less than 2 viewports, no need to align
+    if (viewportsInfo.length <= 1) return;
+
+    // Calculate and apply positions for each viewport
+    let currentLeft = 0;
+
+    viewportsInfo.forEach((viewport) => {
+      // Update style using the existing method
+      this.updateNodeStyle([viewport.id], {
+        left: `${currentLeft}px`,
+        top: "0px",
+      });
+
+      // Update position data separately
+      this.updateNodePosition(viewport.id, { x: currentLeft, y: 100 });
+
+      // Calculate position for next viewport
+      currentLeft += viewport.width + 160; // 160px gap between viewports
+    });
+  }
+
   syncViewports() {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -775,24 +842,43 @@ export class NodeDispatcher {
           const oldSubtree = getSubtree(draft.nodes, viewport.id);
           const oldNodesBySharedId = new Map<string, Node>();
 
+          // Track dynamic nodes to preserve them
+          const dynamicNodesToPreserve = new Set<string | number>();
+
+          // Identify dynamic nodes that should be preserved
           for (const oldNode of oldSubtree) {
             if (oldNode.isViewport) continue;
+
+            // Preserve isDynamic nodes and their children
+            if (oldNode.isDynamic || oldNode.dynamicParentId) {
+              dynamicNodesToPreserve.add(oldNode.id);
+            }
+
             if (oldNode.sharedId) {
               oldNodesBySharedId.set(oldNode.sharedId, oldNode);
             }
           }
 
+          // Only remove non-dynamic nodes
           for (const oldNode of oldSubtree) {
             if (oldNode.isViewport) continue;
-            const removeIdx = draft.nodes.findIndex((n) => n.id === oldNode.id);
-            if (removeIdx !== -1) {
-              draft.nodes.splice(removeIdx, 1);
+            if (!dynamicNodesToPreserve.has(oldNode.id)) {
+              const removeIdx = draft.nodes.findIndex(
+                (n) => n.id === oldNode.id
+              );
+              if (removeIdx !== -1) {
+                draft.nodes.splice(removeIdx, 1);
+              }
             }
           }
 
           const idMap = new Map<string | number, string | number>();
 
+          // Only clone nodes that are not dynamic
           for (const desktopNode of desktopSubtree) {
+            // Skip dynamic nodes - don't recreate them
+            if (desktopNode.isDynamic || desktopNode.dynamicParentId) continue;
+
             const oldNode = oldNodesBySharedId.get(desktopNode.sharedId || "");
             const cloned: Node = {
               ...desktopNode,
@@ -814,7 +900,11 @@ export class NodeDispatcher {
             draft.nodes.push(cloned);
           }
 
+          // Update parent references for new nodes
           for (const dNode of desktopSubtree) {
+            // Skip dynamic nodes
+            if (dNode.isDynamic || dNode.dynamicParentId) continue;
+
             const newId = idMap.get(dNode.id);
             if (!newId) continue;
 

@@ -34,8 +34,6 @@ export const useMouseUp = () => {
 
     stopAutoScroll();
 
-    console.log("SEL IDS REF", selectedIdsRef.current);
-
     // dragDisp.setSelectedIds(selectedIdsRef.current);
 
     const draggedNode = dragState.draggedNode.node;
@@ -252,6 +250,8 @@ export const useMouseUp = () => {
       const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
       const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
 
+      const activeViewportId = dragState.activeViewportInDynamicMode;
+
       if (dragState.draggedItem) {
         console.log("dragState", dragState.draggedItem, draggedNode);
         const newNode = {
@@ -299,6 +299,21 @@ export const useMouseUp = () => {
               nodeDisp.moveNode(info.node.id, true, {
                 targetId: previousNodeId,
                 position: "after",
+              });
+            }
+
+            if (
+              targetFrame?.dynamicParentId &&
+              dragState.dynamicModeNodeId &&
+              activeViewportId
+            ) {
+              nodeDisp.updateNode(info.node.id, {
+                dynamicParentId: targetFrame.dynamicParentId,
+                dynamicViewportId: activeViewportId,
+              });
+            } else if (targetFrame?.dynamicParentId) {
+              nodeDisp.updateNode(info.node.id, {
+                dynamicParentId: targetFrame.dynamicParentId,
               });
             }
 
@@ -596,6 +611,11 @@ export const useMouseUp = () => {
       if (dragState.dynamicModeNodeId) {
         newNode.dynamicPosition = { x: centeredX, y: centeredY };
         newNode.dynamicParentId = dragState.dynamicModeNodeId;
+
+        // Add the dynamicViewportId when in dynamic mode with active viewport
+        if (dragState.activeViewportInDynamicMode) {
+          newNode.dynamicViewportId = dragState.activeViewportInDynamicMode;
+        }
       }
 
       nodeDisp.addNode(newNode, null, null, false);

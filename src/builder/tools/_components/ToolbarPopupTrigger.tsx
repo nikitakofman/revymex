@@ -15,6 +15,7 @@ export const ToolPopupTrigger = ({
   onTriggerPopup,
   children,
   className = "",
+  noTitle = false,
 }) => {
   const triggerRef = useRef(null);
 
@@ -28,9 +29,12 @@ export const ToolPopupTrigger = ({
     <div
       className={`flex items-center  justify-between bg-[var(--bg-default)]  rounded-md transition-colors ${className}`}
     >
-      <div className="w-full">
-        <Label>{title}</Label>
-      </div>
+      {!noTitle && (
+        <div className="w-full">
+          <Label>{title}</Label>
+        </div>
+      )}
+
       <div
         ref={triggerRef}
         onClick={handleClick}

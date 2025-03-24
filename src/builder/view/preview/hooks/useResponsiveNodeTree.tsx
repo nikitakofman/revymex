@@ -13,12 +13,9 @@ export const useResponsiveNodeTree = (
 };
 
 // Extract the tree building logic to a separate function outside of any hooks
-export const buildResponsiveNodeTree = (
-  nodes: Node[],
-  viewportBreakpoints: Viewport[]
-): ResponsiveNode[] => {
+export const buildResponsiveNodeTree = (nodes, viewportBreakpoints) => {
   // First identify all unique shared components
-  const sharedIdMap = new Map<string, string[]>();
+  const sharedIdMap = new Map();
 
   // Map sharedIds to arrays of node ids
   nodes.forEach((node) => {
@@ -26,12 +23,12 @@ export const buildResponsiveNodeTree = (
       if (!sharedIdMap.has(node.sharedId)) {
         sharedIdMap.set(node.sharedId, []);
       }
-      sharedIdMap.get(node.sharedId)!.push(node.id);
+      sharedIdMap.get(node.sharedId).push(node.id);
     }
   });
 
   // Create a mapping of nodes by ID
-  const nodesById = new Map<string, Node>();
+  const nodesById = new Map();
   nodes.forEach((node) => {
     nodesById.set(node.id, node);
   });
@@ -45,19 +42,19 @@ export const buildResponsiveNodeTree = (
   );
 
   // Process each primary node and build the responsive tree
-  const processNode = (node: Node): ResponsiveNode => {
+  const processNode = (node) => {
     // Initialize the responsive node
-    const responsiveNode: ResponsiveNode = {
+    const responsiveNode = {
       ...node,
       responsiveStyles: {},
       children: [],
     };
 
-    // If this node has a sharedId, collect styles from all viewports
+    // If this node has a sharedId, collect complete styles from all viewports
     if (node.sharedId) {
       const sharedNodeIds = sharedIdMap.get(node.sharedId) || [];
 
-      // For each viewport, find the correct node instance and collect styles
+      // For each viewport, find the correct node instance and collect ALL styles
       viewportBreakpoints.forEach((viewport) => {
         // Find the node for this viewport and sharedId
         const nodeForViewport = sharedNodeIds
@@ -66,7 +63,7 @@ export const buildResponsiveNodeTree = (
             if (!n) return false;
 
             // Find its parent viewport
-            let currentNode: Node | undefined = n;
+            let currentNode = n;
             while (currentNode && currentNode.parentId) {
               const parent = nodesById.get(currentNode.parentId);
               if (parent?.isViewport && parent.id === viewport.id) {
@@ -77,27 +74,12 @@ export const buildResponsiveNodeTree = (
             return false;
           });
 
-        // If we found a node for this viewport
+        // If we found a node for this viewport, store ALL its styles
         if (nodeForViewport) {
-          // For primary viewport, collect all styles
-          // For other viewports, only collect independent styles
-          const isPrimaryViewport = viewport.id === primaryViewportId;
-          const styles = {};
-
-          Object.entries(nodeForViewport.style).forEach(([key, value]) => {
-            if (
-              isPrimaryViewport ||
-              !nodeForViewport.independentStyles ||
-              nodeForViewport.independentStyles[key]
-            ) {
-              styles[key] = value;
-            }
-          });
-
-          // Store styles for this viewport
-          if (Object.keys(styles).length > 0) {
-            responsiveNode.responsiveStyles[viewport.width] = styles;
-          }
+          // Store the complete style object for this viewport
+          responsiveNode.responsiveStyles[viewport.width] = {
+            ...nodeForViewport.style,
+          };
         }
       });
     }

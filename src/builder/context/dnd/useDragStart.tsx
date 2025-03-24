@@ -36,15 +36,18 @@ export const useDragStart = () => {
     // Check if the click is on a resize handle or its parent resize handle container
     const target = e.target as HTMLElement;
     const resizeHandle = target.closest('[data-resize-handle="true"]');
+    const borderRadiusHandle = target.closest(
+      '[data-border-radius-handle="true"]'
+    );
 
     selectedIdsRef.current = [...dragState.selectedIds];
 
     const selectedIds = dragState.selectedIds;
-    if (resizeHandle) {
-      e.preventDefault();
-      e.stopPropagation();
-      return; // Exit early if clicking on a resize handle
-    }
+    // if (resizeHandle || borderRadiusHandle) {
+    //   e.preventDefault();
+    //   e.stopPropagation();
+    //   return; // Exit early if clicking on a resize handle
+    // }
 
     e.preventDefault();
     dragDisp.setIsDragging(true);

@@ -193,6 +193,9 @@ export const TextCreator: React.FC = () => {
             inViewport: mediaElement.node.inViewport || false,
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
+            ...(inDynamicMode && {
+              dynamicViewportId: dragState.activeViewportInDynamicMode,
+            }),
           };
 
           newNodeId = newText.id;
@@ -232,6 +235,9 @@ export const TextCreator: React.FC = () => {
             inViewport: true,
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
+            ...(inDynamicMode && {
+              dynamicViewportId: dragState.activeViewportInDynamicMode,
+            }),
           };
 
           newNodeId = newText.id;
@@ -271,6 +277,7 @@ export const TextCreator: React.FC = () => {
             ...(inDynamicMode && {
               dynamicParentId,
               dynamicPosition: { x: canvasX, y: canvasY },
+              dynamicViewportId: dragState.activeViewportInDynamicMode,
             }),
           };
 

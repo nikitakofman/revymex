@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, RefObject } from "react";
+import React, { useState, useLayoutEffect, RefObject, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "@/builder/context/builderState";
 import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
@@ -294,6 +294,19 @@ export const VisualHelpers = ({
   const [localComputedStyle, setLocalComputedStyle] =
     useState<CSSStyleDeclaration | null>(null);
 
+  const [isInteractiveAid, setIsInteractiveAid] = useState(false);
+
+  // Add useEffect to delay handle interactivity
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInteractiveAid(true);
+    }, 100); // 100ms delay before making handles interactive
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
   // For group (multi-selection) bounding box
   const [groupBoundsState, setGroupBoundsState] = useState<{
     left: number;
@@ -547,24 +560,30 @@ export const VisualHelpers = ({
           {/* Hover border */}
           {showHelpers && !isSelected && isHovered && (
             <div
-              style={getBorderStyle(
-                node.isDynamic || dragState.dynamicModeNodeId
-                  ? "var(--accent-secondary)"
-                  : "var(--accent)",
-                998
-              )}
+              style={{
+                ...getBorderStyle(
+                  node.isDynamic || dragState.dynamicModeNodeId
+                    ? "var(--accent-secondary)"
+                    : "var(--accent)",
+                  998
+                ),
+                pointerEvents: "none",
+              }}
             />
           )}
 
           {/* Temp selection border */}
           {dragState.tempSelectedIds.includes(node.id) && (
             <div
-              style={getBorderStyle(
-                node.isDynamic || dragState.dynamicModeNodeId
-                  ? "var(--accent-secondary)"
-                  : "var(--accent)",
-                999
-              )}
+              style={{
+                ...getBorderStyle(
+                  node.isDynamic || dragState.dynamicModeNodeId
+                    ? "var(--accent-secondary)"
+                    : "var(--accent)",
+                  999
+                ),
+                pointerEvents: "none",
+              }}
             />
           )}
 
@@ -579,6 +598,7 @@ export const VisualHelpers = ({
                       : "#3b82f6",
                     1000
                   ),
+                  pointerEvents: "none",
                 }}
               />
               {!isLocked && (
@@ -626,8 +646,10 @@ export const VisualHelpers = ({
                     )}
 
                   {/* Connection handle */}
-                  <ConnectionHandle node={node} transform={transform} />
-                  {/* <AddVariantsUI node={node} transform={transform} /> */}
+                  {dragState.dynamicModeNodeId !== null && (
+                    <ConnectionHandle node={node} transform={transform} />
+                  )}
+                  <AddVariantsUI node={node} transform={transform} />
                 </>
               )}
             </>

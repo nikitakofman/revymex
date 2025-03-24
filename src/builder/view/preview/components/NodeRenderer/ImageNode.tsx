@@ -37,11 +37,20 @@ export const ImageNode: React.FC<ImageNodeProps> = ({ nodeId }) => {
     }
   };
 
+  // Only apply positioning and interaction styles inline
+  const nonResponsiveStyles = {
+    cursor: node.isDynamic ? "pointer" : undefined,
+    position: styleProps.position || "relative",
+    objectFit: styleProps.objectFit || "cover",
+    // Don't include width, height, or other responsive properties
+  };
+
   return (
     <React.Fragment>
       {responsiveCSS && <style>{responsiveCSS}</style>}
       {mediaQueryContent && <style>{mediaQueryContent}</style>}
 
+      {/* Use unoptimized Image with fill to work better with responsive sizing */}
       <Image
         id={`node-${nodeId}`}
         data-node-id={nodeId}
@@ -49,14 +58,13 @@ export const ImageNode: React.FC<ImageNodeProps> = ({ nodeId }) => {
         data-is-dynamic={node.isDynamic ? "true" : undefined}
         className={`node node-image ${node.isDynamic ? "node-dynamic" : ""}`}
         src={src}
-        width={parseFloat(styleProps.width)}
-        height={parseFloat(styleProps.height)}
         alt=""
+        fill={false}
+        width={1000}
+        height={1000}
         style={
           {
-            ...styleProps,
             objectFit: styleProps.objectFit || "cover",
-            cursor: node.isDynamic ? "pointer" : undefined,
           } as React.CSSProperties
         }
         onClick={node.isDynamic ? handleClick : undefined}

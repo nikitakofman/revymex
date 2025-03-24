@@ -8,6 +8,7 @@ export interface InterfaceState {
   isPagesOpen: boolean;
   isComponentsOpen: boolean;
   isTyping: boolean;
+  previewWidth: number | null;
 }
 
 export class InterfaceDispatcher {
@@ -109,6 +110,14 @@ export class InterfaceDispatcher {
     this.setState(
       produce((draft) => {
         draft.isTyping = !draft.isTyping;
+      })
+    );
+  }
+
+  setPreviewWidth(width: number | null) {
+    this.setState(
+      produce((draft) => {
+        draft.previewWidth = width;
       })
     );
   }

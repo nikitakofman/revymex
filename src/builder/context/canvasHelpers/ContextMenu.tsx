@@ -14,6 +14,7 @@ import {
   Combine,
   CornerUpLeft,
   Zap,
+  Settings,
 } from "lucide-react";
 import { useNodeActions } from "../hooks/useNodeActions";
 
@@ -136,7 +137,60 @@ export const ContextMenu = () => {
   // Check if something is copied and can be pasted
   const canPaste = true; // Replace with your actual clipboard check logic
 
+  const isViewportHeaderMenu = dragState.contextMenu?.isViewportHeader;
+
   const getMenuItems = () => {
+    if (isViewportHeaderMenu) {
+      const node = nodeState.nodes.find(
+        (n) => n.id === dragState.contextMenu?.nodeId
+      );
+
+      return [
+        {
+          label: "Add Viewport",
+          icon: Plus,
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            dragDisp.hideContextMenu();
+            dragDisp.showViewportModal({
+              x: dragState.contextMenu?.x,
+              y: dragState.contextMenu?.y,
+            });
+          },
+        },
+        {
+          label: "Edit Viewport",
+          icon: Settings,
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            dragDisp.hideContextMenu();
+            dragDisp.showEditViewportModal(dragState.contextMenu?.nodeId, {
+              x: dragState.contextMenu?.x,
+              y: dragState.contextMenu?.y,
+            });
+          },
+        },
+        {
+          label: node?.isLocked ? "Unlock" : "Lock",
+          icon: Lock,
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            nodeDisp.toggleNodeLock([node.id]);
+            dragDisp.hideContextMenu();
+          },
+        },
+        {
+          label: "Delete",
+          icon: Trash2,
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            handleDelete();
+            dragDisp.hideContextMenu();
+          },
+        },
+      ];
+    }
+
     if (isCanvasMenu) {
       return [
         {

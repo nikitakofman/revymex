@@ -8,7 +8,7 @@ export const BorderTool = () => {
   return (
     <ToolbarSection title="Border">
       <div className="space-y-4">
-        <ToolInput type="number" label="Width" name="borderWidth" showUnit />
+        <ToolInput type="number" label="Width" name="borderWidth" />
         <ToolSelect
           label="Style"
           name="borderStyle"
@@ -24,7 +24,7 @@ export const BorderTool = () => {
           usePseudoElement
           pseudoElement="::after"
         />
-        <ToolInput type="number" label="Radius" name="borderRadius" showUnit />
+        <ToolInput type="number" label="Radius" name="borderRadius" />
       </div>
     </ToolbarSection>
   );

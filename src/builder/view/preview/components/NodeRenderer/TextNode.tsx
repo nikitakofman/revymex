@@ -50,10 +50,10 @@ export const TextNode: React.FC<TextNodeProps> = ({ nodeId }) => {
         className={`node node-${node.type} ${
           node.isDynamic ? "node-dynamic" : ""
         }`}
-        style={{
-          ...(styleProps as React.CSSProperties),
-          cursor: node.isDynamic ? "pointer" : undefined,
-        }}
+        // style={{
+        //   ...(styleProps as React.CSSProperties),
+        //   cursor: node.isDynamic ? "pointer" : undefined,
+        // }}
         onClick={node.isDynamic ? handleClick : undefined}
       >
         {/* Primary text content */}

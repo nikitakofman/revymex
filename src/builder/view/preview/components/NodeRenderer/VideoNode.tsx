@@ -92,9 +92,7 @@ export const VideoNode: React.FC<VideoNodeProps> = ({ nodeId }) => {
         controls={styleProps.controls || false}
         style={
           {
-            ...styleProps,
             objectFit: styleProps.objectFit || "cover",
-            cursor: node.isDynamic ? "pointer" : undefined,
           } as React.CSSProperties
         }
         onClick={node.isDynamic ? handleClick : undefined}

@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState, useRef } from "react";
+import React, { useLayoutEffect, useState, useRef, useEffect } from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Direction, getHandleCursor } from "../utils";
 import { useBuilder } from "../builderState";
@@ -260,6 +260,19 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   const { dragState, transform, nodeState } = useBuilder();
   const { scale } = transform;
 
+  const [isInteractive, setIsInteractive] = useState(false);
+
+  // Add useEffect to delay handle interactivity
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInteractive(true);
+    }, 200); // 100ms delay before making handles interactive
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
   // Determine if width/height are set to auto
   const isWidthAuto = node.style.width === "auto";
   const isHeightAuto = node.style.height === "auto";
@@ -493,6 +506,10 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
         <>
           {["topLeft", "topRight", "bottomRight", "bottomLeft"].map(
             (direction) => {
+              if (node.isViewport) {
+                return null;
+              }
+
               if (cornerPositions && targetRef?.current) {
                 const corner =
                   cornerPositions[direction as keyof typeof cornerPositions];
@@ -517,7 +534,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
                       }`,
-                      pointerEvents: "all",
+                      pointerEvents: isInteractive ? "all" : "none",
                     }}
                     onClick={handleBorderClick}
                     onMouseDown={handleBorderClick}
@@ -543,7 +560,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
                       }`,
-                      pointerEvents: "all",
+                      pointerEvents: isInteractive ? "all" : "none",
                     }}
                     onClick={handleBorderClick}
                     onMouseDown={handleBorderClick}
@@ -582,7 +599,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                   }`,
                   cursor: getHandleCursor(direction as Direction),
                   zIndex: 1000,
-                  pointerEvents: "all",
+                  pointerEvents: isInteractive ? "all" : "none",
                 }}
                 onClick={handleBorderClick}
                 onMouseDown={handleBorderClick}
@@ -593,36 +610,38 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             );
           } else {
             return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                className={`absolute bg-white rounded-full`}
-                style={{
-                  position: "absolute",
-                  [direction]: 0,
-                  left: "50%",
-                  transform:
-                    direction === "top"
-                      ? "translate(-50%, -50%)"
-                      : "translate(-50%, 50%)",
-                  width: `${handleSize}px`,
-                  height: `${handleSize}px`,
-                  border: `${1 / scale}px solid ${
-                    node.isDynamic || dragState.dynamicModeNodeId
-                      ? "var(--accent-secondary)"
-                      : "var(--accent)"
-                  }`,
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 1000,
-                  pointerEvents: "all",
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
+              isInteractive && (
+                <div
+                  key={direction}
+                  data-resize-handle="true"
+                  data-direct-resize="true"
+                  className={`absolute bg-white rounded-full`}
+                  style={{
+                    position: "absolute",
+                    [direction]: 0,
+                    left: "50%",
+                    transform:
+                      direction === "top"
+                        ? "translate(-50%, -50%)"
+                        : "translate(-50%, 50%)",
+                    width: `${handleSize}px`,
+                    height: `${handleSize}px`,
+                    border: `${1 / scale}px solid ${
+                      node.isDynamic || dragState.dynamicModeNodeId
+                        ? "var(--accent-secondary)"
+                        : "var(--accent)"
+                    }`,
+                    cursor: getHandleCursor(direction as Direction),
+                    zIndex: 1000,
+                    pointerEvents: "all",
+                  }}
+                  onClick={handleBorderClick}
+                  onMouseDown={handleBorderClick}
+                  onPointerDown={(e) =>
+                    handlePointerDown(e, direction as Direction)
+                  }
+                />
+              )
             );
           }
         })
@@ -633,70 +652,96 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             const edge =
               cornerPositions[direction as keyof typeof cornerPositions];
             return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                className={`absolute bg-white rounded-full`}
-                style={{
-                  position: "absolute",
-                  top: `${edge.y * 100}%`,
-                  left: `${edge.x * 100}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: `${handleSize}px`,
-                  height: `${handleSize}px`,
-                  border: `${1 / scale}px solid ${
-                    node.isDynamic || dragState.dynamicModeNodeId
-                      ? "var(--accent-secondary)"
-                      : "var(--accent)"
-                  }`,
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 1000,
-                  pointerEvents: "all",
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
+              isInteractive && (
+                <div
+                  key={direction}
+                  data-resize-handle="true"
+                  data-direct-resize="true"
+                  className={`absolute bg-white rounded-full`}
+                  style={{
+                    position: "absolute",
+                    top: `${edge.y * 100}%`,
+                    left: `${edge.x * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: `${handleSize}px`,
+                    height: `${handleSize}px`,
+                    border: `${1 / scale}px solid ${
+                      node.isDynamic || dragState.dynamicModeNodeId
+                        ? "var(--accent-secondary)"
+                        : "var(--accent)"
+                    }`,
+                    cursor: getHandleCursor(direction as Direction),
+                    zIndex: 1000,
+                    pointerEvents: "all",
+                  }}
+                  onClick={handleBorderClick}
+                  onMouseDown={handleBorderClick}
+                  onPointerDown={(e) =>
+                    handlePointerDown(e, direction as Direction)
+                  }
+                />
+              )
             );
           } else {
             return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                className={`absolute bg-white rounded-full`}
-                style={{
-                  position: "absolute",
-                  [direction]: 0,
-                  top: "50%",
-                  transform:
-                    direction === "left"
-                      ? "translate(-50%, -50%)"
-                      : "translate(50%, -50%)",
-                  width: `${handleSize}px`,
-                  height: `${handleSize}px`,
-                  border: `${1 / scale}px solid ${
-                    node.isDynamic || dragState.dynamicModeNodeId
-                      ? "var(--accent-secondary)"
-                      : "var(--accent)"
-                  }`,
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 1000,
-                  pointerEvents: "all",
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
+              isInteractive && (
+                <div
+                  key={direction}
+                  data-resize-handle="true"
+                  data-direct-resize="true"
+                  className={`absolute bg-white rounded-full`}
+                  style={{
+                    position: "absolute",
+                    [direction]: 0,
+                    top: "50%",
+                    transform:
+                      direction === "left"
+                        ? "translate(-50%, -50%)"
+                        : "translate(50%, -50%)",
+                    width: `${handleSize}px`,
+                    height: `${handleSize}px`,
+                    border: `${1 / scale}px solid ${
+                      node.isDynamic || dragState.dynamicModeNodeId
+                        ? "var(--accent-secondary)"
+                        : "var(--accent)"
+                    }`,
+                    cursor: getHandleCursor(direction as Direction),
+                    zIndex: 1000,
+                    pointerEvents: "all",
+                  }}
+                  onClick={handleBorderClick}
+                  onMouseDown={handleBorderClick}
+                  onPointerDown={(e) =>
+                    handlePointerDown(e, direction as Direction)
+                  }
+                />
+              )
             );
           }
         })
       ) : null}
+
+      {node.isViewport && (
+        <div
+          data-resize-handle="true"
+          data-direct-resize="true"
+          className="absolute bg-white rounded-full"
+          style={{
+            bottom: 0,
+            left: "50%",
+            width: `${handleSize}px`,
+            height: `${handleSize}px`,
+            transform: "translate(-50%, 50%)",
+            border: `${1 / scale}px solid var(--accent)`,
+            cursor: "ns-resize",
+            zIndex: 1000,
+            pointerEvents: "all",
+          }}
+          onClick={handleBorderClick}
+          onMouseDown={handleBorderClick}
+          onPointerDown={(e) => handlePointerDown(e, "bottom" as Direction)}
+        />
+      )}
 
       {/* Edge Resize Handles */}
       {!isWidthAuto && !isHeightAuto ? (
@@ -712,6 +757,11 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
           {/* Use a container with the calculated matrix transform */}
           {["top", "right", "bottom", "left"].map((direction) => {
             // Skip edges that should be disabled based on auto dimensions
+
+            if (node.isViewport && direction !== "bottom") {
+              return null;
+            }
+
             if (
               (isWidthAuto &&
                 (direction === "left" || direction === "right")) ||
@@ -724,54 +774,56 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
 
             // Create standard edges that will be properly transformed by the parent container
             return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                style={{
-                  position: "absolute",
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 999,
-                  backgroundColor: "transparent",
-                  pointerEvents: "all",
-                  ...(direction === "top"
-                    ? {
-                        top: 0,
-                        left: "5%",
-                        width: "90%",
-                        height: borderSize,
-                        transform: "translateY(-50%)",
-                      }
-                    : direction === "right"
-                    ? {
-                        top: "5%",
-                        right: 0,
-                        height: "90%",
-                        width: borderSize,
-                        transform: "translateX(50%)",
-                      }
-                    : direction === "bottom"
-                    ? {
-                        bottom: 0,
-                        left: "5%",
-                        width: "90%",
-                        height: borderSize,
-                        transform: "translateY(50%)",
-                      }
-                    : {
-                        top: "5%",
-                        left: 0,
-                        height: "90%",
-                        width: borderSize,
-                        transform: "translateX(-50%)",
-                      }),
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
+              isInteractive && (
+                <div
+                  key={direction}
+                  data-resize-handle="true"
+                  data-direct-resize="true"
+                  style={{
+                    position: "absolute",
+                    cursor: getHandleCursor(direction as Direction),
+                    zIndex: 999,
+                    backgroundColor: "transparent",
+                    pointerEvents: "all",
+                    ...(direction === "top"
+                      ? {
+                          top: 0,
+                          left: "5%",
+                          width: "90%",
+                          height: borderSize,
+                          transform: "translateY(-50%)",
+                        }
+                      : direction === "right"
+                      ? {
+                          top: "5%",
+                          right: 0,
+                          height: "90%",
+                          width: borderSize,
+                          transform: "translateX(50%)",
+                        }
+                      : direction === "bottom"
+                      ? {
+                          bottom: 0,
+                          left: "5%",
+                          width: "90%",
+                          height: borderSize,
+                          transform: "translateY(50%)",
+                        }
+                      : {
+                          top: "5%",
+                          left: 0,
+                          height: "90%",
+                          width: borderSize,
+                          transform: "translateX(-50%)",
+                        }),
+                  }}
+                  onClick={handleBorderClick}
+                  onMouseDown={handleBorderClick}
+                  onPointerDown={(e) =>
+                    handlePointerDown(e, direction as Direction)
+                  }
+                />
+              )
             );
           })}
         </div>
@@ -798,54 +850,56 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             const borderSize = 4 / scale;
 
             return (
-              <div
-                key={direction}
-                data-resize-handle="true"
-                data-direct-resize="true"
-                style={{
-                  position: "absolute",
-                  cursor: getHandleCursor(direction as Direction),
-                  zIndex: 999,
-                  backgroundColor: "transparent",
-                  pointerEvents: "all",
-                  ...(direction === "top"
-                    ? {
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: borderSize,
-                        transform: "translateY(-50%)",
-                      }
-                    : direction === "right"
-                    ? {
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        width: borderSize,
-                        transform: "translateX(50%)",
-                      }
-                    : direction === "bottom"
-                    ? {
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: borderSize,
-                        transform: "translateY(50%)",
-                      }
-                    : {
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        width: borderSize,
-                        transform: "translateX(-50%)",
-                      }),
-                }}
-                onClick={handleBorderClick}
-                onMouseDown={handleBorderClick}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, direction as Direction)
-                }
-              />
+              isInteractive && (
+                <div
+                  key={direction}
+                  data-resize-handle="true"
+                  data-direct-resize="true"
+                  style={{
+                    position: "absolute",
+                    cursor: getHandleCursor(direction as Direction),
+                    zIndex: 999,
+                    backgroundColor: "transparent",
+                    pointerEvents: "all",
+                    ...(direction === "top"
+                      ? {
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: borderSize,
+                          transform: "translateY(-50%)",
+                        }
+                      : direction === "right"
+                      ? {
+                          top: 0,
+                          right: 0,
+                          bottom: 0,
+                          width: borderSize,
+                          transform: "translateX(50%)",
+                        }
+                      : direction === "bottom"
+                      ? {
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: borderSize,
+                          transform: "translateY(50%)",
+                        }
+                      : {
+                          top: 0,
+                          left: 0,
+                          bottom: 0,
+                          width: borderSize,
+                          transform: "translateX(-50%)",
+                        }),
+                  }}
+                  onClick={handleBorderClick}
+                  onMouseDown={handleBorderClick}
+                  onPointerDown={(e) =>
+                    handlePointerDown(e, direction as Direction)
+                  }
+                />
+              )
             );
           })}
         </div>

@@ -312,9 +312,17 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
       if (targetIds.length > 0) {
         // Pass the current dynamicState to updateNodeStyle
-        nodeDisp.updateNodeStyle(targetIds, styles, dragState.dynamicState);
+        nodeDisp.updateNodeStyle(
+          targetIds,
+          styles,
+          dragState.dynamicState,
+          dragState.dynamicModeNodeId
+        );
         if (sync) {
-          nodeDisp.syncViewports();
+          nodeDisp.syncViewports(
+            dragState.activeViewportInDynamicMode,
+            dragState.dynamicModeNodeId
+          );
         }
       }
     },

@@ -125,7 +125,6 @@ export const ShadowToolPopup = () => {
             name="shadowX"
             customValue={x}
             onCustomChange={(value) => setX(parseInt(value.toString(), 10))}
-            showUnit
             unit="px"
           />
           <ToolInput
@@ -134,7 +133,6 @@ export const ShadowToolPopup = () => {
             name="shadowY"
             customValue={y}
             onCustomChange={(value) => setY(parseInt(value.toString(), 10))}
-            showUnit
             unit="px"
           />
           <ToolInput
@@ -144,7 +142,6 @@ export const ShadowToolPopup = () => {
             min={0}
             customValue={blur}
             onCustomChange={(value) => setBlur(parseInt(value.toString(), 10))}
-            showUnit
             unit="px"
           />
           <ToolInput
@@ -155,7 +152,6 @@ export const ShadowToolPopup = () => {
             onCustomChange={(value) =>
               setSpread(parseInt(value.toString(), 10))
             }
-            showUnit
             unit="px"
           />
           <div className="flex items-center justify-between">

@@ -84,7 +84,6 @@ export const PositionTool = () => {
           }
         }
       } else {
-        // For regular dragged nodes, use the dragPositions
         setRealTimePosition({
           x: Math.round(dragState.dragPositions.x),
           y: Math.round(dragState.dragPositions.y),

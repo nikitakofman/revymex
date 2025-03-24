@@ -242,6 +242,29 @@ export const dragInitialState: DragState = {
     sourceId: null,
     targetId: null,
   },
+  viewportModal: {
+    show: false,
+    position: {
+      x: 0,
+      y: 0,
+    },
+  },
+  editViewportModal: {
+    show: false,
+    viewportId: null,
+    position: {
+      x: 0,
+      y: 0,
+    },
+  },
+  viewportContextMenu: {
+    show: false,
+    viewportId: null,
+    position: {
+      x: 0,
+      y: 0,
+    },
+  },
 };
 
 export const interfaceInitialState: InterfaceState = {
@@ -252,4 +275,5 @@ export const interfaceInitialState: InterfaceState = {
   isPagesOpen: false,
   isComponentsOpen: false,
   isTyping: false,
+  previewWidth: null,
 };

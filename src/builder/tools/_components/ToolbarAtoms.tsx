@@ -18,6 +18,7 @@ interface ToolbarContainerProps {
 interface ToolbarSectionProps {
   children: React.ReactNode;
   title?: string;
+  solo?: boolean;
 }
 
 interface ButtonOption {
@@ -92,7 +93,11 @@ export const ToolbarContainer = ({ children }: ToolbarContainerProps) => {
   );
 };
 
-export const ToolbarSection = ({ children, title }: ToolbarSectionProps) => {
+export const ToolbarSection = ({
+  children,
+  title,
+  solo = false,
+}: ToolbarSectionProps) => {
   return (
     <div className="px-3">
       {title && (
@@ -100,7 +105,7 @@ export const ToolbarSection = ({ children, title }: ToolbarSectionProps) => {
           <ToolbarLabel>{title}</ToolbarLabel>
         </div>
       )}
-      <div className="flex flex-col py-1 gap-3 px-3">
+      <div className={`flex flex-col ${solo ? "" : "py-1 gap-3"} px-3`}>
         {React.Children.map(children, (child, index) => (
           <div className={index !== 0 ? "mt-1" : ""}>{child}</div>
         ))}

@@ -230,11 +230,11 @@ export const ToolbarPopup = ({
   const popupContent = (
     <div
       ref={popupRef}
-      className="fixed z-50 w-72 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-default)]"
+      className="fixed z-50 w-72 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
       style={popupStyle}
     >
       {title && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-light)]">
           <h3 className="text-xs font-bold">{title}</h3>
           <button
             onClick={onClose}

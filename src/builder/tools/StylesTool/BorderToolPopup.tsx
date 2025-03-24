@@ -82,7 +82,7 @@ export const BorderToolPopup = () => {
       >
         {/* Main border settings panel - always rendered */}
         <div className="w-1/2 space-y-4 p-1 flex-shrink-0">
-          <ToolInput type="number" label="Width" name="borderWidth" showUnit />
+          <ToolInput type="number" label="Width" name="borderWidth" />
 
           <ToolSelect
             label="Style"
@@ -110,12 +110,7 @@ export const BorderToolPopup = () => {
             </button>
           </div>
 
-          <ToolInput
-            type="number"
-            label="Radius"
-            name="borderRadius"
-            showUnit
-          />
+          <ToolInput type="number" label="Radius" name="borderRadius" />
         </div>
 
         {/* Color picker panel - always rendered but slides in/out */}

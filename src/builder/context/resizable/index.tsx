@@ -482,7 +482,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         ref: elementRef,
         style: {
           ...children.props.style,
-          pointerEvents: dragState.isSelectionBoxActive ? "none" : "auto",
+          pointerEvents: "auto",
+          // pointerEvents: dragState.isSelectionBoxActive ? "none" : "auto",
         },
         "data-node-locked": isLocked ? "true" : "false", // Add data attribute for locked state
         children: children.props.children,

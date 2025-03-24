@@ -21,6 +21,19 @@ export const ConnectionHandle: React.FC<{
     rect: DOMRect;
   } | null>(null);
 
+  const [isInteractive, setIsInteractive] = useState(false);
+
+  // Add useEffect to delay handle interactivity
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInteractive(true);
+    }, 100); // 100ms delay before making handles interactive
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
   const cableIconRef = useRef<HTMLDivElement>(null);
 
   // Find the topmost parent of a node in the dynamic system
@@ -324,7 +337,7 @@ export const ConnectionHandle: React.FC<{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          pointerEvents: "auto",
+          pointerEvents: isInteractive ? "auto" : "none",
           zIndex: 2001, // Higher than selection borders
         }}
         onMouseDown={handleMouseDown}
@@ -344,7 +357,7 @@ export const ConnectionHandle: React.FC<{
               left: 0,
               width: "100%",
               height: "100%",
-              pointerEvents: "none",
+              pointerEvents: isInteractive ? "auto" : "none",
               zIndex: 9999,
             }}
           >
