@@ -537,6 +537,53 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     `Found ${directChildren.length} direct children for parentId ${parentId} in current viewport`
   );
 
+  const [visibleChildrenIds, setVisibleChildrenIds] = useState([]);
+  const [fadingChildrenIds, setFadingChildrenIds] = useState([]);
+  const fadeTimeout = useRef(null);
+
+  // Add this useEffect to detect changes in children
+  useEffect(() => {
+    // Get the current child IDs
+    const currentChildIds = directChildren.map((child) => child.id);
+
+    // Find children that weren't previously visible (to fade them in)
+    const newChildrenIds = currentChildIds.filter(
+      (id) => !visibleChildrenIds.includes(id)
+    );
+
+    // Find children that were previously visible but are no longer (to fade them out)
+    const removedChildrenIds = visibleChildrenIds.filter(
+      (id) => !currentChildIds.includes(id)
+    );
+
+    // Update the fading children state with both new and removed children
+    if (newChildrenIds.length > 0 || removedChildrenIds.length > 0) {
+      // Clear any existing timeout
+      if (fadeTimeout.current) {
+        clearTimeout(fadeTimeout.current);
+      }
+
+      // Set the fading children (both new appearing and old disappearing)
+      setFadingChildrenIds([...newChildrenIds, ...removedChildrenIds]);
+
+      // After animation is complete, update the visible children
+      fadeTimeout.current = setTimeout(() => {
+        setVisibleChildrenIds(currentChildIds);
+        setFadingChildrenIds([]);
+      }, 300); // Match this duration with your CSS transition time
+    } else {
+      // If no changes, just update the visible children
+      setVisibleChildrenIds(currentChildIds);
+    }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (fadeTimeout.current) {
+        clearTimeout(fadeTimeout.current);
+      }
+    };
+  }, [directChildren]); // Depend on directChildren to detect changes
+
   // Recursive function to render a node and its children
   const renderNode = (nodeId) => {
     const node = originalNodes.find((n) => n.id === nodeId);
@@ -560,12 +607,23 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
     // Check if this node is interactive (has dynamic properties or connections)
     const isInteractive = isNodeInteractive(node);
 
+    // Determine if this node is fading in/out
+    const isFading = fadingChildrenIds.includes(node.id);
+    const isNewChild =
+      !visibleChildrenIds.includes(node.id) &&
+      directChildren.some((child) => child.id === node.id);
+
+    // Fade classes for CSS transitions
+    const fadeClass = isNewChild ? "fade-in" : isFading ? "fade-out" : "";
+
     // Common event handlers for all node types
     const interactiveProps = {
       onClick: (e) => handleClick(e, node.id),
       onMouseEnter: (e) => handleMouseEnter(e, node.id),
       onMouseLeave: (e) => handleMouseLeave(e, node.id),
       "data-is-dynamic": isInteractive ? "true" : undefined,
+      "data-fade-state": fadeClass || undefined,
+      className: `dynamic-child ${fadeClass}`,
       style: {
         cursor: isInteractive ? "pointer" : undefined,
         ...node.style,
@@ -574,6 +632,8 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
         top: 0,
         right: "auto",
         bottom: "auto",
+        transition: "opacity 0.3s ease-in-out",
+        opacity: fadeClass === "fade-in" ? 0 : 1, // Start invisible for fade-in
       },
     };
 
@@ -826,9 +886,28 @@ export const DynamicNode: React.FC<DynamicNodeProps> = ({ nodeId }) => {
   const { src, text, backgroundImage, backgroundVideo, ...containerStyle } =
     mergedStyle;
 
+  const fadeCss = `
+  .fade-in {
+    animation: fadeIn 0.3s ease-in-out forwards;
+  }
+  .fade-out {
+    animation: fadeOut 0.3s ease-in-out forwards;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+`;
+
   return (
     <>
       {/* Add responsive CSS */}
+      <style>{fadeCss}</style>
+
       {responsiveCSS && <style>{responsiveCSS}</style>}
       {backgroundImageCSS && <style>{backgroundImageCSS}</style>}
       {mediaQueryContent && <style>{mediaQueryContent}</style>}
