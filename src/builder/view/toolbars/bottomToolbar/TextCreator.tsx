@@ -300,7 +300,10 @@ export const TextCreator: React.FC = () => {
         }
       }
 
-      nodeDisp.syncViewports();
+      if (!dragState.dynamicModeNodeId) {
+        // Only sync viewports if we're NOT in dynamic mode
+        nodeDisp.syncViewports();
+      }
 
       // Hide the style helper
       dragDisp.hideStyleHelper();
@@ -338,6 +341,7 @@ export const TextCreator: React.FC = () => {
     box?.startX,
     box?.startY,
     dragState.dynamicModeNodeId,
+    dragState.activeViewportInDynamicMode,
   ]);
 
   if (!box?.isDrawing) return null;

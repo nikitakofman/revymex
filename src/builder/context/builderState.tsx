@@ -151,14 +151,16 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const nodeDisp = useMemo(() => {
-    const dispatcher = new NodeDispatcher(setNodeState);
-    return createTrackedNodeDispatcher(
-      dispatcher,
-      onOperation,
-      process.env.NODE_ENV !== "production"
-    );
-  }, [setNodeState, onOperation]);
+  // const nodeDisp = useMemo(() => {
+  //   const dispatcher = new NodeDispatcher(setNodeState);
+  //   return createTrackedNodeDispatcher(
+  //     dispatcher,
+  //     onOperation,
+  //     process.env.NODE_ENV !== "production"
+  //   );
+  // }, [setNodeState, onOperation]);
+
+  const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
 
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
 
@@ -261,7 +263,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
     container.addEventListener("wheel", handleWheel, { passive: false });
     wheelHandlerAttached.current = true;
-    console.log("Wheel event handler attached");
   }, [handleWheel]);
 
   const detachWheelListener = useCallback(() => {
@@ -270,7 +271,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
     container.removeEventListener("wheel", handleWheel);
     wheelHandlerAttached.current = false;
-    console.log("Wheel event handler detached");
   }, [handleWheel]);
 
   // Attach/detach wheel listener based on preview state
@@ -311,22 +311,17 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       const targetIds = nodeIds || dragState.selectedIds;
 
       if (targetIds.length > 0) {
-        // Pass the current dynamicState to updateNodeStyle
-        nodeDisp.updateNodeStyle(
-          targetIds,
-          styles,
-          dragState.dynamicState,
-          dragState.dynamicModeNodeId
-        );
-        if (sync) {
-          nodeDisp.syncViewports(
-            dragState.activeViewportInDynamicMode,
-            dragState.dynamicModeNodeId
-          );
+        // Pass the current dynamicState and dynamicModeNodeId to updateNodeStyle
+        nodeDisp.updateNodeStyle(targetIds, styles);
+
+        // For backwards compatibility, conditionally call syncViewports
+        // But only if we're not in dynamic mode (avoid double-syncing)
+        if (sync && !dragState.dynamicModeNodeId) {
+          nodeDisp.syncViewports();
         }
       }
     },
-    [dragState.selectedIds, nodeDisp, dragState.dynamicState]
+    [dragState.selectedIds, nodeDisp, dragState.dynamicModeNodeId]
   );
 
   const value: BuilderContextType = {

@@ -16,6 +16,7 @@ export const useConnect = () => {
     isTextModeActive,
     interfaceDisp,
     isMoveCanvasMode,
+    setNodeStyle,
   } = useBuilder();
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -225,31 +226,39 @@ export const useConnect = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        // Find the dynamic parent node - either:
-        // 1. The node itself if it's dynamic
-        // 2. A node referenced by dynamicParentId
-        // 3. A dynamic node in the hierarchy
-
         // First check if this node is already dynamic
         if (node.isDynamic) {
           if (!dragState.dynamicModeNodeId) {
+            // Store dynamic state for this node
             nodeDisp.storeDynamicNodeState(node.id);
-            if (!node.dynamicPosition) {
-              nodeDisp.updateNode(node.id, { dynamicPosition: { x: 0, y: 0 } });
-            }
 
-            // Find the parent viewport and switch to it
-            const parentViewportId = findParentViewport(
-              node.id,
-              nodeState.nodes
+            setNodeStyle(
+              {
+                position: "absolute",
+              },
+              [node.id],
+              true
             );
+            // Determine the correct viewport ID
+            // Try dynamicViewportId first, then originalParentId, then parentId
+            const parentViewportId =
+              node.dynamicViewportId ||
+              findParentViewport(node.originalParentId, nodeState.nodes) ||
+              findParentViewport(node.parentId, nodeState.nodes);
+
             if (parentViewportId) {
+              console.log(`Setting active viewport to: ${parentViewportId}`);
               dragDisp.switchDynamicViewport(parentViewportId);
+            } else {
+              console.warn("Could not determine viewport for node:", node.id);
+              // Fallback to desktop viewport if no other viewport is found
+              dragDisp.switchDynamicViewport("viewport-1440");
             }
+            dragDisp.setDynamicModeNodeId(
+              dragState.dynamicModeNodeId ? null : node.id
+            );
           }
-          dragDisp.setDynamicModeNodeId(
-            dragState.dynamicModeNodeId ? null : node.id
-          );
+
           return;
         }
 
@@ -269,24 +278,31 @@ export const useConnect = () => {
         if (dynamicNode) {
           if (!dragState.dynamicModeNodeId) {
             nodeDisp.storeDynamicNodeState(dynamicNode.id);
-            if (!dynamicNode.dynamicPosition) {
-              nodeDisp.updateNode(dynamicNode.id, {
-                dynamicPosition: { x: 0, y: 0 },
-              });
-            }
 
-            // Find the parent viewport and switch to it
-            const parentViewportId = findParentViewport(
-              dynamicNode.id,
-              nodeState.nodes
-            );
+            // Determine the correct viewport ID using multiple fallbacks
+            const parentViewportId =
+              dynamicNode.dynamicViewportId ||
+              findParentViewport(
+                dynamicNode.originalParentId,
+                nodeState.nodes
+              ) ||
+              findParentViewport(dynamicNode.parentId, nodeState.nodes);
+
             if (parentViewportId) {
+              console.log(`Setting active viewport to: ${parentViewportId}`);
               dragDisp.switchDynamicViewport(parentViewportId);
+            } else {
+              console.warn(
+                "Could not determine viewport for node:",
+                dynamicNode.id
+              );
+              // Fallback to desktop viewport if no other viewport is found
+              dragDisp.switchDynamicViewport("viewport-1440");
             }
+            dragDisp.setDynamicModeNodeId(
+              dragState.dynamicModeNodeId ? null : dynamicNode.id
+            );
           }
-          dragDisp.setDynamicModeNodeId(
-            dragState.dynamicModeNodeId ? null : dynamicNode.id
-          );
         }
       };
 

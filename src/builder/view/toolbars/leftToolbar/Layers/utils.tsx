@@ -4,7 +4,7 @@ import {
   NodeDispatcher,
   NodeState,
 } from "@/builder/reducer/nodeDispatcher";
-import { Frame, Box, Type, ImageIcon } from "lucide-react";
+import { Frame, Box, Type, ImageIcon, Component } from "lucide-react";
 import { nanoid } from "nanoid";
 
 // Constants for DnD
@@ -13,29 +13,106 @@ export const DND_HOVER_TIMEOUT = 500; // ms until a hover opens a collapsed node
 export const buildTreeFromNodes = (
   nodes: Node[],
   isDynamicMode: boolean,
-  dynamicNodeId: string | number | null
+  dynamicNodeId: string | number | null,
+  activeViewportId: string | number | null
 ) => {
+  // Filter out placeholder nodes
   let filteredNodes = nodes.filter((node) => node.type !== "placeholder");
 
-  // Apply the same filtering logic regardless of viewport type
   if (isDynamicMode && dynamicNodeId) {
+    // Get the dynamic node
     const dynamicNode = filteredNodes.find((node) => node.id === dynamicNodeId);
-    if (dynamicNode) {
-      filteredNodes = filteredNodes.filter(
+    if (!dynamicNode) return [];
+
+    const familyId = dynamicNode.dynamicFamilyId;
+    if (!familyId) return [dynamicNode]; // If no family ID, just show the node itself
+
+    // Track nodes to keep
+    const nodesToKeep = new Set<string | number>();
+
+    // Step 1: Find the specific base node for this viewport
+    let baseNode;
+
+    if (activeViewportId === "viewport-1440") {
+      // For Desktop, use the main dynamic node or find one without viewportId
+      baseNode = filteredNodes.find(
         (node) =>
-          node.id === dynamicNodeId ||
-          node.dynamicParentId === dynamicNodeId ||
-          node.parentId === dynamicNodeId
+          node.isDynamic &&
+          node.dynamicFamilyId === familyId &&
+          (!node.dynamicViewportId ||
+            node.dynamicViewportId === activeViewportId)
+      );
+    } else {
+      // For other viewports, find the base node that matches this viewport exactly
+      baseNode = filteredNodes.find(
+        (node) =>
+          node.isDynamic &&
+          node.dynamicFamilyId === familyId &&
+          (node.dynamicViewportId === activeViewportId ||
+            node.parentId === activeViewportId)
       );
     }
+
+    // If we found a base node, add it and its children
+    if (baseNode) {
+      nodesToKeep.add(baseNode.id);
+
+      // FIRST FIX: Use a recursive function to collect all descendants
+      const addAllDescendants = (parentId: string | number) => {
+        filteredNodes.forEach((node) => {
+          if (node.parentId === parentId) {
+            nodesToKeep.add(node.id);
+            // Recursively add this node's children too
+            addAllDescendants(node.id);
+          }
+        });
+      };
+
+      // Add all descendants of this base node, not just direct children
+      addAllDescendants(baseNode.id);
+
+      // Find ALL variants for this base node (not just one)
+      const variants = filteredNodes.filter(
+        (node) =>
+          node.isVariant &&
+          (node.dynamicParentId === baseNode.id ||
+            node.variantParentId === baseNode.id) &&
+          (!node.dynamicViewportId ||
+            node.dynamicViewportId === activeViewportId)
+      );
+
+      // Add all variants and their children
+      variants.forEach((variant) => {
+        nodesToKeep.add(variant.id);
+
+        // Use the same recursive function to add all descendants
+        addAllDescendants(variant.id);
+      });
+
+      // SECOND FIX: Add any top-level nodes in the dynamic canvas
+      filteredNodes.forEach((node) => {
+        // If the node has no parent but has a dynamicParentId pointing to our base node
+        if (!node.parentId && node.dynamicParentId === baseNode.id) {
+          nodesToKeep.add(node.id);
+          // Also add any children it might have
+          addAllDescendants(node.id);
+        }
+      });
+    }
+
+    // Only keep nodes we explicitly marked
+    filteredNodes = filteredNodes.filter((node) => nodesToKeep.has(node.id));
   } else {
+    // For non-dynamic mode, filter out dynamic-related nodes
     filteredNodes = filteredNodes.filter((node) => {
       if (node.dynamicParentId) return false;
-      if (!node.originalState) return true;
-      return false;
+      if (node.isVariant) return false;
+      if (node.originalState) return false;
+      return true;
     });
   }
 
+  // Build tree from filtered nodes
   const nodeMap = new Map();
   let tree: Node[] = [];
 
@@ -53,35 +130,20 @@ export const buildTreeFromNodes = (
     }
   });
 
-  // Treat all viewports consistently in sorting
+  // Sort the tree
   tree = tree.sort((a, b) => {
     if (isDynamicMode) {
       if (a.id === dynamicNodeId) return -1;
       if (b.id === dynamicNodeId) return 1;
+
+      // Base nodes before variants
+      if (a.isDynamic && b.isVariant) return -1;
+      if (a.isVariant && b.isDynamic) return 1;
     }
 
-    // Consistently place all viewports at the top
+    // Viewports at top
     if (a.isViewport && !b.isViewport) return -1;
     if (!a.isViewport && b.isViewport) return 1;
-
-    const aHasChildren = nodeMap.get(a.id).children.length > 0;
-    const bHasChildren = nodeMap.get(b.id).children.length > 0;
-
-    if (
-      a.type === "frame" &&
-      aHasChildren &&
-      (b.type !== "frame" || !bHasChildren)
-    )
-      return -1;
-    if (
-      b.type === "frame" &&
-      bHasChildren &&
-      (a.type !== "frame" || !aHasChildren)
-    )
-      return 1;
-
-    if (a.type === "frame" && !aHasChildren && b.type !== "frame") return 1;
-    if (b.type === "frame" && !bHasChildren && a.type !== "frame") return -1;
 
     return 0;
   });
@@ -89,7 +151,24 @@ export const buildTreeFromNodes = (
   return tree;
 };
 
-export const getElementIcon = (type: string, isSelected: boolean) => {
+export const getElementIcon = (
+  type: string,
+  isSelected: boolean,
+  node?: any
+) => {
+  // Check if this is a top-level component (dynamic node or variant)
+  if (node && (node.isDynamic || (node.isVariant && !node.parentId))) {
+    // Return a special component icon
+    return (
+      <Component
+        className={`w-4 h-4 ${
+          isSelected ? "text-white" : "text-[var(--text-secondary)]"
+        } dark:group-hover:text-white`}
+      />
+    );
+  }
+
+  // Regular element icons (unchanged)
   switch (type) {
     case "frame":
       return (

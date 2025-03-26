@@ -46,7 +46,7 @@ export const SimplifiedToolSelect: React.FC<SimplifiedToolSelectProps> = ({
 };
 
 const Header = () => {
-  const { interfaceState, interfaceDisp, nodeState } = useBuilder();
+  const { interfaceState, interfaceDisp, nodeState, nodeDisp } = useBuilder();
   const [inputValue, setInputValue] = useState(
     interfaceState.previewWidth?.toString() || "1440"
   );

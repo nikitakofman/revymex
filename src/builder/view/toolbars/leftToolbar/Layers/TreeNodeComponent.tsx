@@ -105,7 +105,12 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       if (customName.trim() !== "") {
-        nodeDisp.setCustomName(node.id, customName.trim());
+        // Pass the dynamic mode state to setCustomName
+        nodeDisp.setCustomName(
+          node.id,
+          customName.trim(),
+          !!dragState.dynamicModeNodeId
+        );
       }
       setIsEditing(false);
     } else if (e.key === "Escape") {
@@ -116,7 +121,12 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
   const handleBlur = () => {
     if (customName.trim() !== "") {
-      nodeDisp.setCustomName(node.id, customName.trim());
+      // Pass the dynamic mode state to setCustomName
+      nodeDisp.setCustomName(
+        node.id,
+        customName.trim(),
+        !!dragState.dynamicModeNodeId
+      );
     }
     setIsEditing(false);
   };
@@ -847,35 +857,38 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             isSelected && "text-white"
           )}
         >
-          {node.isViewport ? (
-            node.viewportName === "Desktop" ? (
-              <Monitor
-                className={`w-4 h-4 ${
-                  isSelected ? "text-white" : "text-[var(--accent)]"
-                }`}
-              />
-            ) : node.viewportName === "Tablet" ? (
-              <Tablet
-                className={`w-4 h-4 ${
-                  isSelected ? "text-white" : "text-[var(--accent)]"
-                }`}
-              />
-            ) : node.viewportName === "Mobile" ? (
-              <Smartphone
-                className={`w-4 h-4 ${
-                  isSelected ? "text-white" : "text-[var(--accent)]"
-                }`}
-              />
+          <span
+            className={cn(
+              "text-[var(--text-secondary)]",
+              isSelected && "text-white"
+            )}
+          >
+            {node.isViewport ? (
+              // Use viewport width to determine which icon to show
+              node.viewportWidth! >= 768 ? (
+                <Monitor
+                  className={`w-4 h-4 ${
+                    isSelected ? "text-white" : "text-[var(--accent)]"
+                  }`}
+                />
+              ) : node.viewportWidth! >= 376 ? (
+                <Tablet
+                  className={`w-4 h-4 ${
+                    isSelected ? "text-white" : "text-[var(--accent)]"
+                  }`}
+                />
+              ) : (
+                <Smartphone
+                  className={`w-4 h-4 ${
+                    isSelected ? "text-white" : "text-[var(--accent)]"
+                  }`}
+                />
+              )
             ) : (
-              <Monitor
-                className={`w-4 h-4 ${
-                  isSelected ? "text-white" : "text-[var(--text-secondary)]"
-                }`}
-              />
-            )
-          ) : (
-            getElementIcon(node.type, isSelected)
-          )}
+              // Pass the entire node object to getElementIcon
+              getElementIcon(node.type, isSelected, node)
+            )}
+          </span>
         </span>
 
         {isEditing ? (

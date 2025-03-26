@@ -114,75 +114,80 @@ export const DynamicToolbar: React.FC = () => {
       // Store it in drag state
       dragDisp.switchDynamicViewport(viewportId);
 
-      // Get the target node ID from our mapping
+      // Get the node ID for this viewport from the mapping
       const targetNodeId = viewportNodeIds[viewportId];
 
+      // If we have a mapping for this viewport, use it
       if (targetNodeId) {
         console.log(`Using mapped node: ${targetNodeId}`);
-        dragDisp.setDynamicModeNodeId(targetNodeId);
-        return;
+
+        // Verify the target node exists
+        const targetNode = nodeState.nodes.find((n) => n.id === targetNodeId);
+        if (targetNode) {
+          dragDisp.setDynamicModeNodeId(targetNodeId);
+          return;
+        }
       }
 
-      // If no mapping found, perform a search
-      console.log(`No mapping for ${viewportId}, searching for shared ID`);
+      // No valid mapping, so we need to find the right node
+      console.log(`No valid mapping for ${viewportId}, searching by shared ID`);
 
-      // Use the initial node to find its sharedId
-      let sharedIdToFind;
-
-      if (initialNodeId) {
-        const initialNode = nodeState.nodes.find((n) => n.id === initialNodeId);
-        sharedIdToFind = initialNode?.sharedId;
-      } else {
-        // Fallback to current node
-        const currentNode = nodeState.nodes.find(
-          (n) => n.id === dragState.dynamicModeNodeId
-        );
-        sharedIdToFind = currentNode?.sharedId;
-      }
-
-      if (!sharedIdToFind) {
-        console.log("No shared ID to search for");
-        return;
-      }
-
-      // Remove the hardcoded fallback and make it generic
-      // Search for the corresponding node
-      const correspondingNode = nodeState.nodes.find(
-        (n) => n.sharedId === sharedIdToFind && n.parentId === viewportId
+      // Get the current dynamic node to find its sharedId
+      const currentDynamicNode = nodeState.nodes.find(
+        (n) => n.id === dragState.dynamicModeNodeId
       );
 
-      if (correspondingNode) {
-        console.log(`Found corresponding node: ${correspondingNode.id}`);
-        dragDisp.setDynamicModeNodeId(correspondingNode.id);
+      if (!currentDynamicNode?.sharedId) {
+        console.log("No shared ID to search with");
+        return;
+      }
+
+      // Try to find a node with the same sharedId and matching dynamicViewportId
+      const counterpart = nodeState.nodes.find(
+        (n) =>
+          n.sharedId === currentDynamicNode.sharedId &&
+          n.isDynamic &&
+          n.dynamicViewportId === viewportId
+      );
+
+      if (counterpart) {
+        console.log(
+          `Found counterpart by dynamicViewportId: ${counterpart.id}`
+        );
+        dragDisp.setDynamicModeNodeId(counterpart.id);
 
         // Update mapping for future use
         setViewportNodeIds((prev) => ({
           ...prev,
-          [viewportId]: correspondingNode.id as string,
+          [viewportId]: counterpart.id,
+        }));
+
+        return;
+      }
+
+      // Fallback to original search by parentId
+      console.log("Falling back to search by parentId");
+      const fallbackNode = nodeState.nodes.find(
+        (n) =>
+          n.sharedId === currentDynamicNode.sharedId &&
+          n.isDynamic &&
+          (n.originalParentId === viewportId || n.parentId === viewportId)
+      );
+
+      if (fallbackNode) {
+        console.log(`Found fallback node: ${fallbackNode.id}`);
+        dragDisp.setDynamicModeNodeId(fallbackNode.id);
+
+        // Update mapping for future use
+        setViewportNodeIds((prev) => ({
+          ...prev,
+          [viewportId]: fallbackNode.id,
         }));
       } else {
-        console.log(`No corresponding node found in ${viewportId}`);
-
-        // Special case for desktop viewport (initial node)
-        if (viewportId === "viewport-1440" && initialNodeId) {
-          console.log("DESKTOP FALLBACK: Using initial node");
-          dragDisp.setDynamicModeNodeId(initialNodeId);
-
-          // Update mapping for future use
-          setViewportNodeIds((prev) => ({
-            ...prev,
-            [viewportId]: initialNodeId,
-          }));
-        }
+        console.log(`No counterpart found for viewport ${viewportId}`);
       }
     },
-    [
-      dragDisp,
-      nodeState.nodes,
-      viewportNodeIds,
-      initialNodeId,
-      dragState.dynamicModeNodeId,
-    ]
+    [dragDisp, nodeState.nodes, viewportNodeIds, dragState.dynamicModeNodeId]
   );
 
   // Debug info

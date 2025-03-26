@@ -16,6 +16,8 @@ import {
 import { RotateHandle } from "./RotateHandle";
 import { BorderRadiusHandle } from "./BorderRadiusHandle";
 import AddVariantsUI from "../canvasHelpers/AddVariantUI";
+import NameDisplay from "./NameDisplay";
+import { AxeIcon } from "lucide-react";
 
 /* -------------------------------------------
    2D MATRIX HELPERS
@@ -550,6 +552,19 @@ export const VisualHelpers = ({
     };
   };
 
+  const copyNodeIdToClipboard = () => {
+    if (node.id) {
+      navigator.clipboard.writeText(node.id).then(
+        () => {
+          console.log(`Node ID ${node.id} copied to clipboard.`);
+        },
+        (err) => {
+          console.error("Could not copy text: ", err);
+        }
+      );
+    }
+  };
+
   return createPortal(
     <>
       {/* -------------------------
@@ -586,6 +601,8 @@ export const VisualHelpers = ({
               }}
             />
           )}
+
+          {!isMovingCanvas && <NameDisplay node={node} />}
 
           {/* Actual selection border + handles */}
           {showHelpers && isSelected && (

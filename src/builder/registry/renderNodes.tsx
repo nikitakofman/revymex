@@ -44,8 +44,6 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   // Get the active viewport ID from dragState
   const activeViewportId = dragState.activeViewportInDynamicMode;
 
-  console.log("activeViewportId", activeViewportId);
-
   // Pass the active viewport to getFilteredNodes
   const viewportFilteredNodes = getFilteredNodes(
     nodeState.nodes,
@@ -84,8 +82,22 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
       return null;
     }
 
+    if (
+      filter === "dynamicMode" &&
+      activeViewportId &&
+      node.dynamicViewportId &&
+      node.dynamicViewportId !== activeViewportId
+    ) {
+      return null;
+    }
+
     const isDragged =
       dragState.isDragging && dragState.draggedNode?.node.id === node.id;
+
+    // Add shared-id attribute for DOM consistency across variants
+    const sharedIdAttr = node.sharedId
+      ? { "data-shared-id": node.sharedId }
+      : {};
 
     const content = (() => {
       switch (node.type) {
@@ -97,24 +109,29 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
           );
 
           return (
-            <Frame key={node.id} node={node}>
+            <Frame key={node.id} node={node} {...sharedIdAttr}>
               {children.map((childNode) => renderNode(childNode))}
             </Frame>
           );
         }
 
         case "image":
-          return <ImageElement key={node.id} node={node} />;
+          return <ImageElement key={node.id} node={node} {...sharedIdAttr} />;
 
         case "text":
-          return <TextElement key={node.id} node={node} />;
+          return <TextElement key={node.id} node={node} {...sharedIdAttr} />;
 
         case "video":
-          return <VideoElement key={node.id} node={node} />;
+          return <VideoElement key={node.id} node={node} {...sharedIdAttr} />;
 
         default:
           return (
-            <div key={node.id} style={node.style} data-node-id={node.id}></div>
+            <div
+              key={node.id}
+              style={node.style}
+              data-node-id={node.id}
+              {...sharedIdAttr}
+            ></div>
           );
       }
     })();

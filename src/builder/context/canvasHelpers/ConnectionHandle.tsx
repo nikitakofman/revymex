@@ -131,8 +131,40 @@ export const ConnectionHandle: React.FC<{
 
   // Checks if the node should display the connection handle
   const shouldShowHandle = () => {
+    // Original checks - these still work for desktop
     if (node.id === dragState.dynamicModeNodeId) return true;
     if (node.dynamicParentId === dragState.dynamicModeNodeId) return true;
+
+    // NEW: Check for responsive counterparts in dynamic mode
+    if (dragState.dynamicModeNodeId) {
+      const mainNode = nodeState.nodes.find(
+        (n) => n.id === dragState.dynamicModeNodeId
+      );
+
+      // If this is a base responsive counterpart
+      if (
+        mainNode &&
+        mainNode.sharedId &&
+        node.sharedId === mainNode.sharedId &&
+        node.isDynamic
+      ) {
+        return true;
+      }
+
+      // If this is a variant of a responsive counterpart
+      if (node.dynamicParentId) {
+        const parentNode = nodeState.nodes.find(
+          (n) => n.id === node.dynamicParentId
+        );
+        if (
+          parentNode &&
+          parentNode.sharedId === mainNode?.sharedId &&
+          parentNode.isDynamic
+        ) {
+          return true;
+        }
+      }
+    }
 
     // Also check if this node has any connections
     if (node.dynamicConnections && node.dynamicConnections.length > 0)

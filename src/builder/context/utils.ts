@@ -963,7 +963,6 @@ export const calculateRotationOffset = (node: Node) => {
     offsetY: (effectiveHeight - height) * 0.5,
   };
 };
-
 export function getFilteredNodes(
   nodes: Node[],
   mode: "dynamicMode" | "inViewport" | "outOfViewport",
@@ -982,105 +981,129 @@ export function getFilteredNodes(
   const deduplicatedNodes = Array.from(nodesMap.values());
 
   if (mode === "dynamicMode" && dynamicModeNodeId) {
-    // First pass: collect all nodes that should be in dynamic mode
-    const dynamicModeNodes = deduplicatedNodes.filter((node: Node) => {
-      // Always include the main dynamic node
-      if (node.id === dynamicModeNodeId) return true;
+    // If we have an activeViewportId, find the right dynamic node
+    if (activeViewportId) {
+      // Try to find a dynamic node specific to this viewport
+      let mainNode: Node | undefined;
 
-      // For variants, filter by the active viewport
-      if (node.isVariant && node.variantParentId === dynamicModeNodeId) {
-        // If we have an active viewport ID, only show variants for that viewport
-        if (activeViewportId) {
-          return (
-            node.dynamicViewportId === activeViewportId ||
-            !node.dynamicViewportId
+      if (activeViewportId === "viewport-1440") {
+        // For desktop, use the primary dynamic node
+        mainNode = deduplicatedNodes.find(
+          (node) => node.id === dynamicModeNodeId
+        );
+      } else {
+        // For other viewports, find a responsive counterpart with matching dynamicViewportId
+        const mainDynamicNode = deduplicatedNodes.find(
+          (node) => node.id === dynamicModeNodeId
+        );
+
+        if (mainDynamicNode?.sharedId) {
+          // Find a counterpart with the right viewport ID
+          mainNode = deduplicatedNodes.find(
+            (node) =>
+              node.sharedId === mainDynamicNode.sharedId &&
+              node.dynamicViewportId === activeViewportId
           );
         }
-        // If no active viewport specified, show all variants
-        return true;
-      }
 
-      // For normal nodes with dynamicParentId, filter by viewport too
-      if (node.dynamicParentId === dynamicModeNodeId) {
-        // If we have an active viewport ID and the node has a viewportId, check if they match
-        if (activeViewportId && node.dynamicViewportId) {
-          return node.dynamicViewportId === activeViewportId;
+        // Fallback to main node if no counterpart found
+        if (!mainNode) {
+          mainNode = mainDynamicNode;
         }
-        // If node has no viewportId, show it in the default viewport (desktop)
-        if (activeViewportId && !node.dynamicViewportId) {
-          return activeViewportId === "viewport-1440";
+      }
+
+      if (!mainNode) return [];
+
+      // Get all direct variants of this node
+      const directVariants = deduplicatedNodes.filter(
+        (node) =>
+          node.variantParentId === mainNode!.id ||
+          node.dynamicParentId === mainNode!.id
+      );
+
+      // All top-level nodes we want to include
+      const topLevelNodes = [mainNode, ...directVariants];
+
+      // Build a set of all top-level node IDs for quick lookup
+      const topLevelNodeIds = new Set(topLevelNodes.map((node) => node.id));
+
+      // Final set of nodes to include
+      const result: Node[] = [...topLevelNodes];
+
+      // For each top-level node, include its children
+      topLevelNodes.forEach((parent) => {
+        // Get all children - using originalParentId to reconstruct relationships
+        const childrenOfParent = deduplicatedNodes.filter(
+          (node) => node.originalParentId === parent.id
+        );
+
+        // Add these children to the result
+        result.push(...childrenOfParent);
+
+        // Recursively get all descendants using originalParentId
+        let queue = [...childrenOfParent];
+        while (queue.length > 0) {
+          const currentNode = queue.shift()!;
+          const childrenOfCurrent = deduplicatedNodes.filter(
+            (node) => node.originalParentId === currentNode.id
+          );
+
+          result.push(...childrenOfCurrent);
+          queue.push(...childrenOfCurrent);
         }
-        // If no active viewport specified, show all
-        return true;
-      }
+      });
 
-      return false; // Exclude everything else
-    });
+      return result;
+    }
 
-    // Group nodes by sharedId (only for nodes that have sharedId)
-    const nodesBySharedId = new Map<string, Node[]>();
-
-    dynamicModeNodes.forEach((node) => {
-      if (node.sharedId) {
-        const existing = nodesBySharedId.get(node.sharedId) || [];
-        existing.push(node);
-        nodesBySharedId.set(node.sharedId, existing);
-      }
-    });
-
-    // Find nodes that don't have duplicates (either no sharedId or unique sharedId)
-    const singletonNodes = dynamicModeNodes.filter(
-      (node) =>
-        !node.sharedId || nodesBySharedId.get(node.sharedId)?.length === 1
+    // Default case if no activeViewportId specified
+    // Get the main dynamic node
+    const mainDynamicNode = deduplicatedNodes.find(
+      (node) => node.id === dynamicModeNodeId
     );
 
-    // For duplicates, prioritize the ones matching the active viewport
-    const filteredDuplicates: Node[] = [];
+    if (!mainDynamicNode) return [];
 
-    nodesBySharedId.forEach((nodesGroup, sharedId) => {
-      if (nodesGroup.length > 1) {
-        // First check if any node matches the active viewport
-        if (activeViewportId) {
-          const viewportNode = nodesGroup.find((node) => {
-            let current = node;
-            while (current.parentId) {
-              const parent = deduplicatedNodes.find(
-                (n) => n.id === current.parentId
-              );
-              if (!parent) break;
-              if (parent.id === activeViewportId) return true;
-              current = parent;
-            }
-            return false;
-          });
+    // Get all direct variants of the main dynamic node
+    const directVariants = deduplicatedNodes.filter(
+      (node) =>
+        node.variantParentId === dynamicModeNodeId ||
+        node.dynamicParentId === dynamicModeNodeId
+    );
 
-          if (viewportNode) {
-            filteredDuplicates.push(viewportNode);
-            return; // Skip to next group
-          }
-        }
+    // All top-level nodes we want to include
+    const topLevelNodes = [mainDynamicNode, ...directVariants];
 
-        // Fallback to desktop viewport if no match for active viewport
-        const desktopNode = nodesGroup.find((node) => {
-          let current = node;
-          while (current.parentId) {
-            const parent = deduplicatedNodes.find(
-              (n) => n.id === current.parentId
-            );
-            if (!parent) break;
-            if (parent.id === "viewport-1440") return true;
-            current = parent;
-          }
-          return false;
-        });
+    // Build a set of all top-level node IDs for quick lookup
+    const topLevelNodeIds = new Set(topLevelNodes.map((node) => node.id));
 
-        // Add either the desktop node or the first node in the group
-        filteredDuplicates.push(desktopNode || nodesGroup[0]);
+    // Final set of nodes to include
+    const result: Node[] = [...topLevelNodes];
+
+    // For each top-level node, include its children
+    topLevelNodes.forEach((parent) => {
+      // Get all children - using originalParentId since parentId is null in dynamic mode
+      const childrenOfParent = deduplicatedNodes.filter(
+        (node) => node.originalParentId === parent.id
+      );
+
+      // Add these children to the result
+      result.push(...childrenOfParent);
+
+      // Recursively get all descendants
+      let queue = [...childrenOfParent];
+      while (queue.length > 0) {
+        const currentNode = queue.shift()!;
+        const childrenOfCurrent = deduplicatedNodes.filter(
+          (node) => node.originalParentId === currentNode.id
+        );
+
+        result.push(...childrenOfCurrent);
+        queue.push(...childrenOfCurrent);
       }
     });
 
-    // Combine singleton nodes and filtered duplicates
-    return [...singletonNodes, ...filteredDuplicates];
+    return result;
   }
 
   // For non-dynamic modes, use the existing filtering logic

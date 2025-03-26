@@ -387,7 +387,10 @@ export const FrameCreator: React.FC = () => {
               }
             }
 
-            nodeDisp.syncViewports();
+            if (!dragState.dynamicModeNodeId) {
+              // Only sync viewports if we're NOT in dynamic mode
+              nodeDisp.syncViewports();
+            }
           }
         } else if (targetFrame) {
           // Drawing over a frame - insert as child
@@ -531,7 +534,10 @@ export const FrameCreator: React.FC = () => {
         }
       }
 
-      nodeDisp.syncViewports();
+      if (!dragState.dynamicModeNodeId) {
+        // Only sync viewports if we're NOT in dynamic mode
+        nodeDisp.syncViewports();
+      }
 
       // Hide the style helper
       dragDisp.hideStyleHelper();

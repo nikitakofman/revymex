@@ -207,7 +207,7 @@ export const ViewportDevTools: React.FC = () => {
 
   return createPortal(
     <>
-      <div className="fixed resize top-14 scale-75 right-[190px] flex gap-2  p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+      <div className="fixed resize bottom-14 scale-75 right-[190px] flex gap-2  p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
         {dragState.dynamicModeNodeId && (
           <button
             className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
@@ -220,6 +220,10 @@ export const ViewportDevTools: React.FC = () => {
             Exit Dynamic Mode
           </button>
         )}
+
+        <div className="absolute bottom-[-40px] z-[9999] cursor-pointer right-0 p-2">
+          {dragState.selectedIds[0]}
+        </div>
         <button
           className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleResetView}

@@ -15,10 +15,13 @@ const Layers: React.FC = () => {
     contentRef,
   } = useBuilder();
   const isDynamicMode = !!dragState.dynamicModeNodeId;
+
+  const activeViewportId = dragState.activeViewportInDynamicMode;
   const treeData = buildTreeFromNodes(
     nodeState.nodes,
     isDynamicMode,
-    dragState.dynamicModeNodeId as string | number | null
+    dragState.dynamicModeNodeId as string | number | null,
+    activeViewportId
   );
   const panelRef = useRef<HTMLDivElement>(null);
 
