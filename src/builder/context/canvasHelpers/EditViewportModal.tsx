@@ -5,7 +5,8 @@ import { useBuilder } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 
 const EditViewportModal: React.FC = () => {
-  const { nodeState, nodeDisp, dragState, dragDisp } = useBuilder();
+  const { nodeState, nodeDisp, dragState, dragDisp, setIsEditingText } =
+    useBuilder();
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -118,6 +119,8 @@ const EditViewportModal: React.FC = () => {
               type="number"
               value={widthValue}
               onChange={(e) => setWidthValue(e.target.value)}
+              onSelect={() => setIsEditingText(true)}
+              onBlur={() => setIsEditingText(false)}
               onKeyDown={handleKeyDown}
               min={1}
               className="w-[60px] h-7 px-2 text-xs 
@@ -144,6 +147,8 @@ const EditViewportModal: React.FC = () => {
             value={nameValue}
             onChange={(e) => setNameValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onSelect={() => setIsEditingText(true)}
+            onBlur={() => setIsEditingText(false)}
             placeholder="Viewport name"
             className="w-[140px] h-7 px-2 text-xs 
               bg-[var(--grid-line)] border border-[var(--control-border)] 

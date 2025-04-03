@@ -100,16 +100,16 @@ const ElementToolbar = () => {
         </>
       )}
 
-      {toolTypes.hasBackgroundTools && (
+      {toolTypes.hasLayoutTools && (
         <>
-          <FillTool />
+          <LayoutTool />
           <ToolbarDivider />
         </>
       )}
 
-      {toolTypes.hasLayoutTools && (
+      {toolTypes.hasBackgroundTools && (
         <>
-          <LayoutTool />
+          <FillTool />
           <ToolbarDivider />
         </>
       )}

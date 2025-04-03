@@ -17,6 +17,7 @@ export const useConnect = () => {
     interfaceDisp,
     isMoveCanvasMode,
     setNodeStyle,
+    isEditingText,
   } = useBuilder();
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -58,26 +59,16 @@ export const useConnect = () => {
           return;
         }
 
-        // Check if click is on a resize handle
-        const target = e.target as HTMLElement;
-
-        if (e.button === 2 || isFrameModeActive || isTextModeActive) {
+        if (
+          e.button === 2 ||
+          isFrameModeActive ||
+          isTextModeActive ||
+          isEditingText
+        ) {
           return;
         }
 
         interfaceDisp.toggleLayers();
-
-        // // First check for explicit resize handles
-        // const resizeHandle = target.closest('[data-resize-handle="true"]');
-
-        // // Then check if we're near an edge
-        // const isEdgeClick = isNearEdge(e, target);
-
-        // if (resizeHandle || isEdgeClick) {
-        //   e.preventDefault();
-        //   e.stopPropagation();
-        //   return;
-        // }
 
         e.preventDefault();
         e.stopPropagation();
@@ -462,6 +453,8 @@ export const useConnect = () => {
       isMoveCanvasMode,
       isTextModeActive,
       findDynamicParent,
+      setNodeStyle,
+      isEditingText,
     ]
   );
 };

@@ -38,30 +38,18 @@ export const FrameCreator: React.FC = () => {
 
     const findTargetFrame = (e: MouseEvent) => {
       const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-      console.log("Elements under cursor:", elementsUnder);
-
       for (const el of elementsUnder) {
         const frameEl = el.closest('[data-node-type="frame"]');
-        console.log("Found frame element:", frameEl);
-
-        if (frameEl) {
-          const isViewport = frameEl.hasAttribute("data-viewport");
-          const isHeader = frameEl.closest(".viewport-header");
-          console.log("Is viewport:", isViewport, "Is header:", !!isHeader);
-
-          if (isViewport && !isHeader) {
-            const frameId = frameEl.getAttribute("data-node-id");
-            console.log("Found valid viewport frame:", frameId);
-            if (frameId) {
-              const node = nodeState.nodes.find((n) => n.id === frameId);
-              if (node) {
-                return { id: frameId, element: frameEl };
-              }
+        if (frameEl && !frameEl.closest(".viewport-header")) {
+          const frameId = frameEl.getAttribute("data-node-id");
+          if (frameId) {
+            const node = nodeState.nodes.find((n) => n.id === frameId);
+            if (node) {
+              return { id: frameId, element: frameEl };
             }
           }
         }
       }
-      console.log("No target frame found");
       return null;
     };
 
@@ -445,6 +433,7 @@ export const FrameCreator: React.FC = () => {
               true
             );
           } else {
+            // This is the critical line that ensures the frame is added as a child of the target frame
             nodeDisp.addNode(newFrame, targetFrame.id, "inside", true);
           }
 
@@ -614,6 +603,7 @@ export const FrameCreator: React.FC = () => {
     box?.startX,
     box?.startY,
     dragState.dynamicModeNodeId,
+    dragState.activeViewportInDynamicMode,
   ]);
 
   if (!box?.isDrawing) return null;

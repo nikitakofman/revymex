@@ -55,7 +55,9 @@ interface BuilderContextType {
       backgroundImage?: string;
     } & { backgroundVideo?: string },
     nodeIds?: (string | number)[],
-    sync?: boolean
+    sync?: boolean,
+    preventUnsync?: boolean,
+    preventCascade?: boolean
   ) => void;
   nodeDisp: NodeDispatcher;
   dragDisp: DragDispatcher;
@@ -92,6 +94,13 @@ interface BuilderContextType {
   handleWheel: (e: WheelEvent) => void;
   attachWheelListener: () => void;
   detachWheelListener: () => void;
+  draggingOverCanvasRef: RefObject<boolean>;
+  hasLeftViewportRef: RefObject<boolean>;
+  isEditingText: boolean;
+  setIsEditingText: React.Dispatch<React.SetStateAction<boolean>>;
+  isFontSizeHandleActive: boolean;
+  setIsFontSizeHandleActive: React.Dispatch<React.SetStateAction<boolean>>;
+  isMiddleMouseDown: boolean;
 }
 
 export interface RecordingSession {
@@ -130,11 +139,15 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [isResizing, setIsResizing] = useState(false);
   const [isAdjustingGap, setIsAdjustingGap] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [isEditingText, setIsEditingText] = useState(false);
   const [isAdjustingBorderRadius, setIsAdjustingBorderRadius] = useState(false);
+  const [isFontSizeHandleActive, setIsFontSizeHandleActive] = useState(false);
   const dragDimensionsRef = useRef<DragDimensions>({});
   const selectedIdsRef = useRef(null);
   const popupRef = useRef(null);
   const wheelHandlerAttached = useRef(false);
+  const draggingOverCanvasRef = useRef(false);
+  const hasLeftViewportRef = useRef(false);
 
   const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
 
@@ -214,6 +227,73 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const [isMiddleMouseDown, setIsMiddleMouseDown] = useState(false);
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+
+  // Add these event handlers near your existing wheel handler
+  const handleMouseDown = useCallback(
+    (e) => {
+      // Check if it's the middle mouse button (button === 1)
+      if (e.button === 1) {
+        e.preventDefault();
+        setIsMiddleMouseDown(true);
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+
+        if (containerRef.current) {
+          containerRef.current.style.cursor = "grabbing";
+        }
+
+        // Use your existing startMoving function to set the state
+        startMoving();
+      }
+    },
+    [startMoving]
+  );
+
+  const handleMouseMove = useCallback(
+    (e) => {
+      if (
+        isMiddleMouseDown &&
+        containerRef.current &&
+        !interfaceState.isPreviewOpen
+      ) {
+        e.preventDefault();
+
+        // Calculate the delta from the last position
+        const deltaX = e.clientX - lastMousePosRef.current.x;
+        const deltaY = e.clientY - lastMousePosRef.current.y;
+
+        // Update the last position
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+
+        // Use the same transform logic as your wheel handler
+        setTransform((prev) => ({
+          ...prev,
+          x: prev.x + deltaX,
+          y: prev.y + deltaY,
+        }));
+
+        // Keep the canvas in moving state
+        startMoving();
+      }
+    },
+    [isMiddleMouseDown, startMoving, setTransform, interfaceState.isPreviewOpen]
+  );
+
+  const handleMouseUp = useCallback(
+    (e) => {
+      if (e.button === 1 || isMiddleMouseDown) {
+        e.preventDefault();
+        setIsMiddleMouseDown(false);
+
+        if (containerRef.current) {
+          containerRef.current.style.cursor = "";
+        }
+      }
+    },
+    [isMiddleMouseDown]
+  );
+
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
@@ -259,19 +339,33 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const attachWheelListener = useCallback(() => {
     const container = containerRef.current;
-    if (!container || wheelHandlerAttached.current) return;
+    if (!container) return;
 
+    // Attach your existing wheel handler
     container.addEventListener("wheel", handleWheel, { passive: false });
     wheelHandlerAttached.current = true;
-  }, [handleWheel]);
+
+    // Also attach the middle mouse handlers
+    container.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mouseleave", handleMouseUp);
+  }, [handleWheel, handleMouseDown, handleMouseMove, handleMouseUp]);
 
   const detachWheelListener = useCallback(() => {
     const container = containerRef.current;
-    if (!container || !wheelHandlerAttached.current) return;
+    if (!container) return;
 
+    // Detach wheel handler
     container.removeEventListener("wheel", handleWheel);
     wheelHandlerAttached.current = false;
-  }, [handleWheel]);
+
+    // Detach middle mouse handlers
+    container.removeEventListener("mousedown", handleMouseDown);
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", handleMouseUp);
+    window.removeEventListener("mouseleave", handleMouseUp);
+  }, [handleWheel, handleMouseDown, handleMouseMove, handleMouseUp]);
 
   // Attach/detach wheel listener based on preview state
   useEffect(() => {
@@ -306,22 +400,46 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     (
       styles: React.CSSProperties,
       nodeIds?: (string | number)[],
-      sync = false
+      sync = false,
+      preventUnsync = false,
+      preventCascade = preventUnsync
     ) => {
       const targetIds = nodeIds || dragState.selectedIds;
 
       if (targetIds.length > 0) {
-        // Pass the current dynamicState and dynamicModeNodeId to updateNodeStyle
-        nodeDisp.updateNodeStyle(targetIds, styles);
+        // NEW: Filter out text property if applying to non-text elements
+        const nodesToUpdate = targetIds.map((id) => {
+          const node = nodeState.nodes.find((n) => n.id === id);
+          if (node && node.type !== "text" && styles.hasOwnProperty("text")) {
+            // Create a new styles object without the text property
+            const { text, ...filteredStyles } = styles;
+            return { id, styles: filteredStyles };
+          }
+          return { id, styles };
+        });
 
-        // For backwards compatibility, conditionally call syncViewports
-        // But only if we're not in dynamic mode (avoid double-syncing)
+        // Update each node with appropriate styles
+        nodesToUpdate.forEach(({ id, styles }) => {
+          nodeDisp.updateNodeStyle(
+            [id],
+            styles,
+            dragState.dynamicModeNodeId,
+            preventUnsync,
+            preventCascade
+          );
+        });
+
         if (sync && !dragState.dynamicModeNodeId) {
           nodeDisp.syncViewports();
         }
       }
     },
-    [dragState.selectedIds, nodeDisp, dragState.dynamicModeNodeId]
+    [
+      dragState.selectedIds,
+      nodeDisp,
+      dragState.dynamicModeNodeId,
+      nodeState.nodes,
+    ]
   );
 
   const value: BuilderContextType = {
@@ -367,6 +485,13 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     handleWheel,
     attachWheelListener,
     detachWheelListener,
+    draggingOverCanvasRef,
+    hasLeftViewportRef,
+    isEditingText,
+    setIsEditingText,
+    isFontSizeHandleActive,
+    setIsFontSizeHandleActive,
+    isMiddleMouseDown,
   };
 
   return (

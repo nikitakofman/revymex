@@ -1303,26 +1303,31 @@ interface CalculateDimensionsParams {
   setNodeStyle: (
     styles: React.CSSProperties & { src?: string } & { text?: string },
     nodeIds?: (string | number)[],
-    sync?: boolean
+    sync?: boolean,
+    preventUnsync?: boolean
   ) => void;
+  preventUnsync?: boolean;
 }
 
 interface DimensionResult {
   finalWidth: string | number | undefined;
   finalHeight: string | number | undefined;
 }
-
 export const calculateAndUpdateDimensions = ({
   node,
   element,
   transform,
   setNodeStyle,
+  preventUnsync = false, // Parameter to prevent adding unsync flags
+  preventCascade = preventUnsync, // By default, prevent cascade if preventing unsync
 }: CalculateDimensionsParams): DimensionResult => {
   const style = element.style;
   const isWidthPercent = style.width?.includes("%");
   const isHeightPercent = style.height?.includes("%");
   const isWidthAuto = style.width === "auto";
   const isHeightAuto = style.height === "auto";
+  const isWidthVw = node.style.width?.includes("vw");
+  const isHeightVh = node.style.height?.includes("vh");
   const isFillMode = style.flex === "1 0 0px";
 
   let finalWidth = node.style.width;
@@ -1348,42 +1353,57 @@ export const calculateAndUpdateDimensions = ({
         height: finalHeight,
         flex: "0 0 auto",
       },
-      [node.id]
+      [node.id],
+      false, // Don't sync viewports
+      preventUnsync, // Prevent adding unsync flags
+      preventCascade // Prevent cascading styles to other viewports
     );
   } else {
     // Handle width calculations
-    if (isWidthPercent || isWidthAuto) {
+    if (isWidthPercent || isWidthAuto || isWidthVw) {
+      const widthUnit = isWidthPercent ? "%" : isWidthVw ? "vw" : "auto";
       const widthInPx = convertToNewUnit(
         parseFloat(style.width),
-        isWidthPercent ? "%" : "auto",
+        widthUnit,
         "px",
         "width",
         element
       );
       finalWidth = `${widthInPx}px`;
+
+      console.log("Converting width from", widthUnit, "to px:", finalWidth);
       setNodeStyle(
         {
           width: finalWidth,
         },
-        [node.id]
+        [node.id],
+        false, // Don't sync viewports
+        preventUnsync, // Prevent adding unsync flags
+        preventCascade // Prevent cascading styles to other viewports
       );
     }
 
     // Handle height calculations
-    if (isHeightPercent || isHeightAuto) {
+    if (isHeightPercent || isHeightAuto || isHeightVh) {
+      const heightUnit = isHeightPercent ? "%" : isHeightVh ? "vh" : "auto";
       const heightInPx = convertToNewUnit(
         parseFloat(style.height),
-        isHeightPercent ? "%" : "auto",
+        heightUnit,
         "px",
         "height",
         element
       );
       finalHeight = `${heightInPx}px`;
+
+      console.log("Converting height from", heightUnit, "to px:", finalHeight);
       setNodeStyle(
         {
           height: finalHeight,
         },
-        [node.id]
+        [node.id],
+        false, // Don't sync viewports
+        preventUnsync, // Prevent adding unsync flags
+        preventCascade // Prevent cascading styles to other viewports
       );
     }
   }
@@ -1596,6 +1616,21 @@ export const getSkewHierarchy = (
   }
 
   return skewHierarchy;
+};
+
+export const getNestedParentChain = (nodeId, nodes) => {
+  const parentChain = [];
+  let currentId = nodeId;
+
+  while (currentId) {
+    const node = nodes.find((n) => n.id === currentId);
+    if (!node) break;
+
+    parentChain.push(node);
+    currentId = node.parentId;
+  }
+
+  return parentChain;
 };
 
 /**

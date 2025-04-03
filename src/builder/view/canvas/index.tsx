@@ -31,6 +31,7 @@ import AddViewportModal from "@/builder/context/canvasHelpers/AddViewportModal";
 import EditViewportModal from "@/builder/context/canvasHelpers/EditViewportModal";
 import ViewportContextMenu from "@/builder/context/canvasHelpers/ViewportContextMenu";
 import AddVariantsUI from "@/builder/context/canvasHelpers/AddVariantUI";
+import PreviewPlay from "../preview/preview-play";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -53,13 +54,16 @@ const Canvas = () => {
     isAdjustingBorderRadius,
     nodeState,
     interfaceState,
+    isEditingText,
   } = useBuilder();
 
   // Use the cursor manager hook
   const { isDrawingMode, isMoveMode } = useCursorManager();
 
   useMoveCanvas();
-  useKeyboardDrag();
+
+  // With this approach:
+  useKeyboardDrag({ isEnabled: !isEditingText });
 
   const handleMouseMove = useMouseMove();
   const handleMouseUp = useMouseUp();
@@ -192,6 +196,8 @@ const Canvas = () => {
   const isAnyResize =
     !isResizing && !isAdjustingGap && !isRotating && !isAdjustingBorderRadius;
 
+  console.log("styleHelper", dragState.styleHelper);
+
   return (
     <>
       <LoadingScreen isLoading={isLoading} />
@@ -205,6 +211,7 @@ const Canvas = () => {
         {interfaceState.isPreviewOpen ? (
           <IframePreview nodes={nodeState.nodes} viewport={1440} />
         ) : (
+          // <PreviewPlay nodes={nodeState.nodes} />
           <>
             <ViewportDevTools />
             <InterfaceToolbar />

@@ -17,6 +17,7 @@ export const SelectionBox: React.FC = () => {
     transform,
     dragState,
     interfaceDisp,
+    isMiddleMouseDown,
   } = useBuilder();
   const [box, setBox] = useState<SelectionBoxState | null>(null);
 
@@ -211,6 +212,8 @@ export const SelectionBox: React.FC = () => {
   ]);
 
   if (!box?.isSelecting) return null;
+
+  if (isMiddleMouseDown) return null;
 
   const left = Math.min(box.startX, box.currentX);
   const top = Math.min(box.startY, box.currentY);

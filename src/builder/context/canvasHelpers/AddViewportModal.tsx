@@ -6,7 +6,7 @@ import Button from "@/components/ui/button";
 import { nanoid } from "nanoid";
 
 const AddViewportModal: React.FC = () => {
-  const { nodeDisp, dragState, dragDisp } = useBuilder();
+  const { nodeDisp, dragState, dragDisp, setIsEditingText } = useBuilder();
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [widthValue, setWidthValue] = useState("768");
@@ -132,6 +132,8 @@ const AddViewportModal: React.FC = () => {
               value={widthValue}
               onChange={(e) => setWidthValue(e.target.value)}
               onKeyDown={handleKeyDown}
+              onSelect={(e) => setIsEditingText(true)}
+              onBlur={(e) => setIsEditingText(false)}
               min={1}
               className="w-[60px] h-7 px-2 text-xs 
                 bg-[var(--grid-line)] border border-[var(--control-border)] 
@@ -156,6 +158,8 @@ const AddViewportModal: React.FC = () => {
             type="text"
             value={nameValue}
             onChange={(e) => setNameValue(e.target.value)}
+            onSelect={() => setIsEditingText(true)}
+            onBlur={() => setIsEditingText(false)}
             onKeyDown={handleKeyDown}
             placeholder="Viewport name"
             className="w-[140px] h-7 px-2 text-xs 

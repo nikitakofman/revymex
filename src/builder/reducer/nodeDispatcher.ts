@@ -1,7 +1,7 @@
 import { original, produce } from "immer";
 import { nanoid } from "nanoid";
 import { CSSProperties } from "react";
-import { findParentViewport } from "../context/utils";
+import { findIndexWithinParent, findParentViewport } from "../context/utils";
 
 export interface Position {
   x: number;
@@ -65,6 +65,7 @@ export interface Node {
   variantInfo?: VariantInfo;
   dynamicFamilyId?: string;
   originalParentId?: string;
+  unsyncFromParentViewport?: boolean;
 }
 
 export interface NodeState {
@@ -87,34 +88,33 @@ export class NodeDispatcher {
     position: "before" | "after" | "inside" | null,
     shouldBeInViewport: boolean
   ) {
-    // Track if we need to sync this node after adding
     let needsSync = false;
     let targetIsDynamic = false;
+    let exactIndex = -1;
 
     this.setState((prev) =>
       produce(prev, (draft) => {
-        // Ensure node has a sharedId if it's going to be in a viewport
         const newNode = {
           ...node,
           inViewport: shouldBeInViewport,
-          sharedId:
-            shouldBeInViewport && !node.sharedId ? nanoid() : node.sharedId,
+          sharedId: shouldBeInViewport
+            ? node.sharedId || nanoid()
+            : node.sharedId,
+          unsyncFromParentViewport: {},
+          independentStyles: {},
+          lowerSyncProps: {},
         };
 
-        // Continue with the existing logic...
         if (!targetId) {
           newNode.parentId = null;
           draft.nodes.push(newNode);
           return;
         }
 
-        // Clean up incompatible properties based on node type
         if (newNode.type === "image") {
-          // Remove text property from image nodes
           if (newNode.style.text) delete newNode.style.text;
           if (newNode.text) delete newNode.text;
         } else if (newNode.type === "text") {
-          // Remove src property from text nodes
           if (newNode.style.src) delete newNode.style.src;
           if (newNode.src) delete newNode.src;
         }
@@ -127,50 +127,67 @@ export class NodeDispatcher {
         }
 
         const targetNode = draft.nodes[targetIndex];
-
         targetIsDynamic =
           targetNode.isDynamic ||
           targetNode.isVariant ||
           targetNode.dynamicFamilyId ||
           (targetNode.isVariant && targetNode.dynamicParentId);
 
-        // Check if we're adding to a dynamic node or variant
         if (
           position === "inside" &&
           (targetNode.isDynamic ||
             (targetNode.isVariant && targetNode.dynamicParentId))
         ) {
-          // Mark for synchronization after state update
           needsSync = true;
         }
 
         if (position === "inside") {
           newNode.parentId = targetNode.id;
+          const existingChildren = draft.nodes.filter(
+            (n) => n.parentId === targetNode.id
+          );
+          exactIndex = existingChildren.length;
           draft.nodes.push(newNode);
-          return;
+        } else {
+          newNode.parentId = targetNode.parentId;
+          const siblings = draft.nodes.filter(
+            (n) => n.parentId === targetNode.parentId
+          );
+          const siblingIndex = siblings.findIndex(
+            (n) => n.id === targetNode.id
+          );
+          if (siblingIndex !== -1) {
+            exactIndex = position === "after" ? siblingIndex + 1 : siblingIndex;
+            const siblingInfo = draft.nodes
+              .map((n, idx) => ({ node: n, index: idx }))
+              .filter((obj) => obj.node.parentId === targetNode.parentId);
+            const targetSiblingInfo = siblingInfo.find(
+              (info) => info.node.id === targetId
+            );
+            if (targetSiblingInfo) {
+              const insertGlobalIndex =
+                position === "after"
+                  ? targetSiblingInfo.index + 1
+                  : targetSiblingInfo.index;
+              draft.nodes.splice(insertGlobalIndex, 0, newNode);
+              return;
+            }
+          }
+          draft.nodes.push(newNode);
         }
 
-        newNode.parentId = targetNode.parentId;
-
-        const siblingInfo = draft.nodes
-          .map((n, idx) => ({ node: n, index: idx }))
-          .filter((obj) => obj.node.parentId === targetNode.parentId);
-
-        const siblingIndex = siblingInfo.findIndex(
-          (obj) => obj.node.id === targetId
-        );
-
-        if (siblingIndex === -1) {
-          draft.nodes.push(newNode);
-          return;
-        }
-
-        const insertGlobalIndex =
-          position === "after"
-            ? siblingInfo[siblingIndex].index + 1
-            : siblingInfo[siblingIndex].index;
-
-        draft.nodes.splice(insertGlobalIndex, 0, newNode);
+        // Store the ordering info for later synchronization
+        draft._lastAddedNodeInfo = {
+          nodeId: newNode.id,
+          sharedId: newNode.sharedId,
+          parentId: newNode.parentId,
+          position,
+          targetId,
+          exactIndex,
+          viewportInfo: {
+            sourceViewport: findParentViewport(targetNode.id, draft.nodes),
+          },
+        };
       })
     );
   }
@@ -187,16 +204,147 @@ export class NodeDispatcher {
     return state;
   }
 
-  updateNodeStyle(nodeIds: (string | number)[], style: Partial<CSSProperties>) {
+  updateNodeStyle(
+    nodeIds: (string | number)[],
+    style: Partial<CSSProperties>,
+    dynamicModeNodeId?: string | null,
+    preventUnsync = false,
+    preventCascade = false
+  ) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        const nodesToUpdate = draft.nodes.filter((n) => nodeIds.includes(n.id));
-        if (nodesToUpdate.length === 0) return;
+        // ──────────────────────────────────────────────
+        // 1. Compute dynamic viewport ordering.
+        // Get all nodes flagged as viewports, sort by viewportWidth (largest first)
+        const viewportNodes = draft.nodes.filter((n) => n.isViewport);
+        viewportNodes.sort((a, b) => b.viewportWidth - a.viewportWidth);
+        const viewportOrder = viewportNodes.map((v) => v.id);
+        // viewportOrder is now a dynamic array (e.g. [ "vp-large", "vp-medium", "vp-small", ... ])
 
+        // Helper: Given a node, return its viewport id and its index in the dynamic ordering.
+        const getNodeViewport = (
+          node: any
+        ): { vpId: string; index: number } => {
+          const vpId =
+            findParentViewport(node.parentId, draft.nodes) ||
+            node.dynamicViewportId;
+          const index = viewportOrder.indexOf(vpId);
+          return { vpId, index };
+        };
+
+        // ──────────────────────────────────────────────
+        // 2. Helper: Initialize node flags if not already defined.
+        const initializeNodeFlags = (node: any) => {
+          node.independentStyles = node.independentStyles || {};
+          node.unsyncFromParentViewport = node.unsyncFromParentViewport || {};
+          node.variantIndependentSync = node.variantIndependentSync || {};
+          // Use a general flag to mark lower sync properties (replacing "tabletSyncProps")
+          node.lowerSyncProps = node.lowerSyncProps || {};
+        };
+
+        // ──────────────────────────────────────────────
+        // 3. Helper: Apply lower sync properties to a target node.
+        // This flag indicates that a given property should be preserved
+        // (i.e. not overwritten by a higher‑resolution sync).
+        const applyLowerSyncProps = (target: any, changedProps: string[]) => {
+          if (!target.lowerSyncProps) target.lowerSyncProps = {};
+          changedProps.forEach((prop) => {
+            if (!target.unsyncFromParentViewport?.[prop]) {
+              target.lowerSyncProps[prop] = true;
+            }
+          });
+        };
+
+        // ──────────────────────────────────────────────
+        // 4. Helper: Cascade sync flags from a higher‑resolution node to lower ones.
+        // For nodes sharing the same sharedId, if the source node is at a higher resolution
+        // (i.e. lower index) then mark the lower ones with a flag so that their property will not be overwritten.
+        const maintainHigherToLowerSync = (
+          sourceNode: any,
+          changedProps: string[]
+        ) => {
+          if (!sourceNode || changedProps.length === 0) return;
+          const { index: sourceIndex } = getNodeViewport(sourceNode);
+          // For all nodes sharing the same sharedId and in a lower resolution (higher index):
+          draft.nodes.forEach((n) => {
+            if (n.sharedId !== sourceNode.sharedId) return;
+            const { index } = getNodeViewport(n);
+            if (index > sourceIndex) {
+              applyLowerSyncProps(n, changedProps);
+            }
+          });
+          // Also, for dynamic nodes, cascade to direct children.
+          if (sourceNode.isDynamic) {
+            const children = draft.nodes.filter(
+              (n) => n.parentId === sourceNode.id
+            );
+            children.forEach((child) => {
+              if (!child.sharedId) return;
+              // For children with matching sharedId, mark lower ones
+              draft.nodes
+                .filter((n) => n.sharedId === child.sharedId)
+                .forEach((n) => {
+                  const { index } = getNodeViewport(n);
+                  if (index > getNodeViewport(child).index) {
+                    applyLowerSyncProps(n, changedProps);
+                  }
+                });
+            });
+          }
+          // For dynamic nodes with variants, cascade to variant nodes and their children.
+          if (sourceNode.isDynamic && sourceNode.dynamicFamilyId) {
+            const variantNodes = draft.nodes.filter(
+              (n) =>
+                n.isVariant && n.dynamicFamilyId === sourceNode.dynamicFamilyId
+            );
+            variantNodes.forEach((variant) => {
+              const { index: variantIndex } = getNodeViewport(variant);
+              if (variantIndex > sourceIndex) {
+                applyLowerSyncProps(variant, changedProps);
+                const variantChildren = draft.nodes.filter(
+                  (n) => n.parentId === variant.id
+                );
+                variantChildren.forEach((child) => {
+                  if (!child.sharedId) return;
+                  const { index: childIndex } = getNodeViewport(child);
+                  if (childIndex > variantIndex) {
+                    applyLowerSyncProps(child, changedProps);
+                  }
+                });
+              }
+            });
+          }
+        };
+
+        // ──────────────────────────────────────────────
+        // 5. Helper: Decide if a property should sync from a higher-resolution node to a lower one.
+        const shouldSync = (
+          sourceIndex: number,
+          target: any,
+          prop: string
+        ): boolean => {
+          // ALWAYS check unsyncFromParentViewport for ALL viewport indices, not just index 0
+          if (target.unsyncFromParentViewport?.[prop]) {
+            return false;
+          }
+
+          // For the highest resolution (index 0), also check lower-sync flags
+          if (sourceIndex === 0) {
+            if (target.isVariant && target.lowerSyncProps?.[prop]) {
+              return false;
+            }
+            if (target.lowerSyncProps?.[prop]) {
+              return false;
+            }
+          }
+          return true;
+        };
+
+        // ──────────────────────────────────────────────
+        // 6. Group style properties by type.
         const positioningStyles: Partial<CSSProperties> = {};
         const dimensionStyles: Partial<CSSProperties> = {};
         const otherStyles: Partial<CSSProperties> = {};
-
         Object.entries(style).forEach(([key, value]) => {
           if (["left", "top", "right", "bottom", "position"].includes(key)) {
             positioningStyles[key] = value;
@@ -206,175 +354,647 @@ export class NodeDispatcher {
             otherStyles[key] = value;
           }
         });
+        const changedPropsArr = [
+          ...Object.keys(positioningStyles),
+          ...Object.keys(dimensionStyles),
+          ...Object.keys(otherStyles),
+        ];
 
+        // ──────────────────────────────────────────────
+        // 7. Prepare nodes to update and track processed ones.
         const processedNodes = new Set<string | number>();
+        const nodesToUpdate = draft.nodes.filter((n) => nodeIds.includes(n.id));
+        if (nodesToUpdate.length === 0) return;
 
-        // Set of viewports directly updated
-        const updatedViewportIds = new Set();
-        nodesToUpdate.forEach((node) => {
-          const viewportId =
-            findParentViewport(node.parentId, draft.nodes) ||
-            node.dynamicViewportId;
-          if (viewportId) {
-            updatedViewportIds.add(viewportId);
-          }
-        });
+        if (!dynamicModeNodeId) {
+          nodesToUpdate.forEach((node) => {
+            if (processedNodes.has(node.id)) return;
+            processedNodes.add(node.id);
 
-        nodesToUpdate.forEach((node) => {
-          if (processedNodes.has(node.id)) return;
-          processedNodes.add(node.id);
+            // Apply the style changes directly to this node
+            Object.assign(node.style, style);
 
-          const nodeViewportId =
-            findParentViewport(node.parentId, draft.nodes) ||
-            node.dynamicViewportId;
+            // Skip nodes without sharedId (no responsive counterparts)
+            if (!node.sharedId && !node.isViewport) return;
 
-          if (!node.independentStyles) {
-            node.independentStyles = {};
-          }
+            const { vpId: nodeViewportId, index: currentViewportIndex } =
+              node.isViewport
+                ? { vpId: node.id, index: viewportOrder.indexOf(node.id) }
+                : getNodeViewport(node);
 
-          const isBaseNode = node.isDynamic;
-          const isVariant = node.isVariant && node.variantInfo?.id;
+            // Initialize flags if they don't exist
+            node.unsyncFromParentViewport = node.unsyncFromParentViewport || {};
+            node.lowerSyncProps = node.lowerSyncProps || {};
+            node.independentStyles = node.independentStyles || {};
 
-          // Mark as independent if in a non-desktop viewport
-          if (nodeViewportId && nodeViewportId !== "viewport-1440") {
-            [
-              ...Object.keys(positioningStyles),
-              ...Object.keys(dimensionStyles),
-              ...Object.keys(otherStyles),
-            ].forEach((prop) => {
-              node.independentStyles![prop] = true;
+            console.log(
+              "updateNodeStyle called with preventUnsync:",
+              preventUnsync
+            );
+
+            // If not in the highest resolution viewport AND not preventing unsync,
+            // mark changed properties with protection flags
+            if (currentViewportIndex > 0 && !preventUnsync) {
+              Object.keys(style).forEach((prop) => {
+                node.unsyncFromParentViewport[prop] = true;
+                node.independentStyles[prop] = true;
+              });
+            }
+
+            // Define positioning properties to skip for viewports
+            const positioningProps = [
+              "left",
+              "top",
+              "right",
+              "bottom",
+              "position",
+              "x",
+              "y",
+            ];
+
+            // ──────────────────────────────────────────────
+            // CRITICAL: Handle Cascade Chain Logic
+            // ──────────────────────────────────────────────
+
+            // Modified cascade check that will only block cascading if a property has both
+            // independentStyles AND unsyncFromParentViewport flags set
+            const cascadeIsBlocked = (targetVpIndex, prop) => {
+              // Skip integrity check if editing from desktop
+              if (currentViewportIndex === 0) return false;
+
+              // Find all nodes in all viewports between current and target
+              const blockingNodes = [];
+
+              for (let i = currentViewportIndex + 1; i < targetVpIndex; i++) {
+                const vpId = viewportOrder[i];
+
+                // Find all nodes in this intervening viewport with the same sharedId
+                const vpNodes = node.isViewport
+                  ? [viewportNodes.find((vp) => vp.id === vpId)].filter(Boolean)
+                  : draft.nodes.filter(
+                      (n) =>
+                        n.id !== node.id &&
+                        n.sharedId === node.sharedId &&
+                        (n.dynamicViewportId === vpId ||
+                          findParentViewport(n.parentId, draft.nodes) === vpId)
+                    );
+
+                blockingNodes.push(...vpNodes);
+              }
+
+              // CRITICAL: Only block cascading if a node has EXPLICITLY customized the property
+              // by having BOTH independentStyles AND unsyncFromParentViewport set
+              return blockingNodes.some(
+                (n) =>
+                  n.independentStyles &&
+                  n.independentStyles[prop] &&
+                  n.unsyncFromParentViewport &&
+                  n.unsyncFromParentViewport[prop]
+              );
+            };
+
+            // ──────────────────────────────────────────────
+            // Handle Nodes in Same Viewport
+            // ──────────────────────────────────────────────
+
+            // First handle nodes in the same viewport
+            const sameViewportNodes = node.isViewport
+              ? []
+              : draft.nodes.filter(
+                  (n) =>
+                    n.id !== node.id &&
+                    n.sharedId === node.sharedId &&
+                    (n.dynamicViewportId === nodeViewportId ||
+                      findParentViewport(n.parentId, draft.nodes) ===
+                        nodeViewportId)
+                );
+
+            sameViewportNodes.forEach((relatedNode) => {
+              if (processedNodes.has(relatedNode.id)) return;
+
+              // Initialize flags
+              relatedNode.unsyncFromParentViewport =
+                relatedNode.unsyncFromParentViewport || {};
+              relatedNode.lowerSyncProps = relatedNode.lowerSyncProps || {};
+              relatedNode.independentStyles =
+                relatedNode.independentStyles || {};
+
+              // Apply all styles to nodes in the same viewport
+              Object.entries(style).forEach(([prop, value]) => {
+                // Skip positioning properties for viewports
+                if (relatedNode.isViewport && positioningProps.includes(prop))
+                  return;
+                relatedNode.style[prop] = value;
+
+                // If in a non-highest viewport, mark as protected
+                if (currentViewportIndex > 0) {
+                  relatedNode.unsyncFromParentViewport[prop] = true;
+                  relatedNode.independentStyles[prop] = true;
+                }
+              });
+
+              processedNodes.add(relatedNode.id);
             });
-          }
 
-          Object.assign(node.style, positioningStyles);
-          Object.assign(node.style, dimensionStyles);
-          Object.assign(node.style, otherStyles);
+            // ──────────────────────────────────────────────
+            // Process Nodes in Lower Viewports
+            // ──────────────────────────────────────────────
 
-          const changedProps = [
-            ...Object.keys(positioningStyles),
-            ...Object.keys(dimensionStyles),
-            ...Object.keys(otherStyles),
-          ];
+            // Get all viewport indices in ascending order
+            if (!preventCascade) {
+              // Get all viewport indices in ascending order
+              const sortedViewportIndices = viewportOrder
+                .map((_, i) => i)
+                .sort((a, b) => a - b);
 
-          if (nodeViewportId && nodeViewportId !== "viewport-1440") {
-            // Only proceed if there are same-width viewports
-            const sameWidthViewports = findSameWidthViewports(
-              nodeViewportId,
+              // Process only viewports with indices higher than current
+              const lowerViewportIndices = sortedViewportIndices.filter(
+                (idx) => idx > currentViewportIndex
+              );
+
+              // Process each lower viewport
+              lowerViewportIndices.forEach((vpIndex) => {
+                const vpId = viewportOrder[vpIndex];
+
+                // Find all nodes in this viewport with the same sharedId
+                const vpNodes = node.isViewport
+                  ? [viewportNodes.find((vp) => vp.id === vpId)].filter(Boolean)
+                  : draft.nodes.filter(
+                      (n) =>
+                        n.id !== node.id &&
+                        n.sharedId === node.sharedId &&
+                        (n.dynamicViewportId === vpId ||
+                          findParentViewport(n.parentId, draft.nodes) === vpId)
+                    );
+
+                vpNodes.forEach((targetNode) => {
+                  if (processedNodes.has(targetNode.id)) return;
+
+                  // Initialize flags
+                  targetNode.unsyncFromParentViewport =
+                    targetNode.unsyncFromParentViewport || {};
+                  targetNode.lowerSyncProps = targetNode.lowerSyncProps || {};
+                  targetNode.independentStyles =
+                    targetNode.independentStyles || {};
+
+                  // Process each property
+                  Object.entries(style).forEach(([prop, value]) => {
+                    // Skip positioning properties for viewports
+                    if (
+                      targetNode.isViewport &&
+                      positioningProps.includes(prop)
+                    ) {
+                      return;
+                    }
+
+                    // DESKTOP VIEWPORT CHANGES: Respect all protection flags
+                    if (currentViewportIndex === 0) {
+                      // Skip if property has ANY protection
+                      if (
+                        targetNode.unsyncFromParentViewport[prop] ||
+                        targetNode.lowerSyncProps[prop] ||
+                        targetNode.independentStyles[prop]
+                      ) {
+                        return;
+                      }
+
+                      // Apply property from desktop
+                      targetNode.style[prop] = value;
+                    }
+                    // MIDDLE VIEWPORT CHANGES: Check cascade blockage and respect independentStyles
+                    else {
+                      // Skip if this property is explicitly marked as independent in the target node
+                      if (
+                        targetNode.independentStyles &&
+                        targetNode.independentStyles[prop]
+                      ) {
+                        return;
+                      }
+
+                      // CRITICAL: Check if cascade is blocked by explicit customizations in between
+                      if (cascadeIsBlocked(vpIndex, prop)) {
+                        return;
+                      }
+
+                      // Apply the style property - cascade is allowed
+                      targetNode.style[prop] = value;
+
+                      // Mark as unsync from higher viewports but NOT as independent
+                      // This allows the cascade chain to continue while protecting from direct desktop changes
+                      targetNode.unsyncFromParentViewport[prop] = true;
+                    }
+                  });
+
+                  processedNodes.add(targetNode.id);
+                });
+              });
+            }
+          });
+        } else {
+          // Determine update flags.
+          const isUpdatingBaseNodeChild = nodesToUpdate.some((nodeId) => {
+            const node = draft.nodes.find((n) => n.id === nodeId);
+            return (
+              node &&
+              node.parentId &&
+              (this.isParentDynamic(node.parentId, draft.nodes) ||
+                this.isAncestorDynamic(node.parentId, draft.nodes))
+            );
+          });
+          const isUpdatingBaseNode = nodesToUpdate.some((nodeId) => {
+            const node = draft.nodes.find((n) => n.id === nodeId);
+            return node ? node.isDynamic : false;
+          });
+          const isUpdatingVariantOrChild = nodesToUpdate.some((nodeId) => {
+            const node = draft.nodes.find((n) => n.id === nodeId);
+            return (
+              node &&
+              (node.isVariant ||
+                (node.parentId &&
+                  (this.isParentVariant(node.parentId, draft.nodes) ||
+                    this.isAncestorVariant(node.parentId, draft.nodes))))
+            );
+          });
+
+          // Track updated viewports.
+          const updatedViewportIds = new Set();
+          nodesToUpdate.forEach((node) => {
+            const vp =
+              findParentViewport(node.parentId, draft.nodes) ||
+              node.dynamicViewportId;
+            if (vp) updatedViewportIds.add(vp);
+          });
+
+          // ──────────────────────────────────────────────
+          // 8. Process each node.
+          nodesToUpdate.forEach((node) => {
+            if (processedNodes.has(node.id)) return;
+            processedNodes.add(node.id);
+
+            const { vpId: nodeViewportId, index: currentViewportIndex } =
+              getNodeViewport(node);
+
+            initializeNodeFlags(node);
+
+            const isBaseNodeFlag = node.isDynamic;
+            const isVariant = node.isVariant && !!node.variantInfo?.id;
+            const isChildOfVariant = this.isParentVariant(
+              node.parentId,
               draft.nodes
             );
-            if (sameWidthViewports.length === 0) {
-              return;
+            const isDescendantOfVariant = this.isAncestorVariant(
+              node.parentId,
+              draft.nodes
+            );
+            const isChildOfBase = this.isParentDynamic(
+              node.parentId,
+              draft.nodes
+            );
+            const isDescendantOfBase = this.isAncestorDynamic(
+              node.parentId,
+              draft.nodes
+            );
+
+            // For nodes not in the highest-resolution viewport (i.e. index !== 0):
+            if (currentViewportIndex !== 0) {
+              // CRITICAL FIX: Only mark actually changed properties as unsyncFromParentViewport
+              Object.keys(style).forEach((prop) => {
+                node.unsyncFromParentViewport[prop] = true;
+              });
+
+              // Cascade sync flags to lower-resolution nodes.
+              maintainHigherToLowerSync(node, changedPropsArr);
+
+              if (isBaseNodeFlag && node.sharedId) {
+                const variantFamily = draft.nodes.filter((n) => {
+                  if (!n.isVariant) return false;
+                  if (n.dynamicFamilyId !== node.dynamicFamilyId) return false;
+                  // Sync variant nodes that share the same viewport as this node.
+                  const { vpId: nVp } = getNodeViewport(n);
+                  return nVp === nodeViewportId;
+                });
+                variantFamily.forEach((variant) => {
+                  // Only mark properties that are being changed
+                  Object.keys(style).forEach((prop) => {
+                    variant.unsyncFromParentViewport =
+                      variant.unsyncFromParentViewport || {};
+                    variant.unsyncFromParentViewport[prop] = true;
+                  });
+                });
+              }
+              if (!isBaseNodeFlag && node.sharedId) {
+                const childFamily = draft.nodes.filter((n) => {
+                  if (n.isDynamic) return false;
+                  const { vpId: nVp } = getNodeViewport(n);
+                  return n.sharedId === node.sharedId && nVp === nodeViewportId;
+                });
+                childFamily.forEach((child) => {
+                  // Only mark properties that are being changed
+                  Object.keys(style).forEach((prop) => {
+                    child.unsyncFromParentViewport =
+                      child.unsyncFromParentViewport || {};
+                    child.unsyncFromParentViewport[prop] = true;
+                  });
+                });
+              }
             }
-          }
 
-          if (node.sharedId) {
-            const sameTypeNodesAcrossViewports = draft.nodes.filter((n) => {
-              if (n.id === node.id) return false;
-              if (n.sharedId !== node.sharedId) return false;
+            if (
+              (isVariant || isChildOfVariant || isDescendantOfVariant) &&
+              !isUpdatingBaseNodeChild
+            ) {
+              changedPropsArr.forEach((prop) => {
+                node.independentStyles[prop] = true;
+                node.variantIndependentSync[prop] = true;
+              });
+            }
 
-              if (isBaseNode && !n.isDynamic) return false;
+            // Apply the style changes directly.
+            Object.assign(
+              node.style,
+              positioningStyles,
+              dimensionStyles,
+              otherStyles
+            );
 
-              if (isVariant) {
-                if (!n.isVariant) return false;
-                return n.variantInfo?.id === node.variantInfo?.id;
+            // ─────────────────────────────
+            // TOP‑LEVEL BASE NODE SYNC:
+            if (isBaseNodeFlag && node.sharedId) {
+              const baseNodeCounterparts = draft.nodes.filter(
+                (n) =>
+                  n.sharedId === node.sharedId &&
+                  n.isDynamic &&
+                  n.id !== node.id
+              );
+              const relevantBaseNodes = baseNodeCounterparts.filter((n) => {
+                const nVp =
+                  n.dynamicViewportId ||
+                  findParentViewport(n.parentId, draft.nodes);
+                const nVpIndex = viewportOrder.indexOf(nVp);
+                if (currentViewportIndex !== -1 && nVpIndex !== -1) {
+                  const isDownward = nVpIndex > currentViewportIndex;
+                  // CRITICAL FIX: Only check unsync for the specific properties being changed
+                  const cannotSync = Object.keys(style).some(
+                    (prop) => n.unsyncFromParentViewport?.[prop]
+                  );
+                  return isDownward && !cannotSync;
+                }
+                return false;
+              });
+
+              if (currentViewportIndex === 0) {
+                // When in the highest-resolution viewport, protect nodes in any lower viewport
+                // that have lowerSyncProps for properties we're changing
+                draft.nodes.forEach((n) => {
+                  const { vpId, index } = getNodeViewport(n);
+                  // Check if the node is in a lower viewport and has lowerSyncProps for any property we're changing
+                  if (index > 0 && n.lowerSyncProps) {
+                    const hasProtectedProps = Object.keys(style).some(
+                      (prop) => n.lowerSyncProps[prop]
+                    );
+                    if (hasProtectedProps) {
+                      processedNodes.add(n.id);
+                    }
+                  }
+                });
               }
 
-              // Skip nodes with independent styles when updating from desktop
-              if (nodeViewportId === "viewport-1440") {
-                const hasIndependentStyle = changedProps.some(
-                  (prop) => n.independentStyles && n.independentStyles[prop]
+              if (currentViewportIndex === 0) {
+                // When in the highest-resolution viewport, protect nodes in the lowest-resolution viewport.
+                const lowestViewportId =
+                  viewportOrder[viewportOrder.length - 1];
+                const nodesToProtect = draft.nodes.filter((n) => {
+                  const { vpId } = getNodeViewport(n);
+                  return (
+                    vpId === lowestViewportId &&
+                    n.lowerSyncProps &&
+                    Object.keys(n.lowerSyncProps).length > 0
+                  );
+                });
+                nodesToProtect.forEach((n) => processedNodes.add(n.id));
+              }
+
+              relevantBaseNodes.forEach((baseNode) => {
+                if (processedNodes.has(baseNode.id)) return;
+                processedNodes.add(baseNode.id);
+                changedPropsArr.forEach((prop) => {
+                  if (baseNode.unsyncFromParentViewport?.[prop]) return;
+                  if (style[prop] !== undefined) {
+                    baseNode.style[prop] = style[prop];
+                  }
+                });
+              });
+            }
+
+            // ─────────────────────────────
+            // SPECIAL HANDLING FOR BASE NODE CHILD/RESPONSIVE SYNCING:
+            if (
+              (isChildOfBase || isDescendantOfBase) &&
+              node.variantResponsiveId &&
+              currentViewportIndex < viewportOrder.length - 1
+            ) {
+              const childCounterparts = draft.nodes.filter(
+                (n) =>
+                  n.id !== node.id &&
+                  n.variantResponsiveId === node.variantResponsiveId
+              );
+              childCounterparts.forEach((counterpart) => {
+                if (processedNodes.has(counterpart.id)) return;
+                const { vpId: counterpartVp, index: counterpartVpIndex } =
+                  getNodeViewport(counterpart);
+                // CRITICAL FIX: Only sync to lower viewports if they don't have unsyncFromParentViewport
+                // Check for ANY property we're trying to change
+                if (counterpartVpIndex <= currentViewportIndex) return;
+
+                // ADD THIS CRITICAL CHECK RIGHT HERE:
+                const hasPropertyProtection = Object.keys(style).some(
+                  (prop) =>
+                    counterpart.unsyncFromParentViewport &&
+                    counterpart.unsyncFromParentViewport[prop]
                 );
-                if (hasIndependentStyle) return false;
-              }
 
-              // When updating from non-desktop, ONLY include nodes from the same viewport
-              if (nodeViewportId !== "viewport-1440") {
-                const nViewportId =
-                  findParentViewport(n.parentId, draft.nodes) ||
-                  n.dynamicViewportId;
-
-                // Only include if it's in the EXACT SAME viewport we're updating
-                return nViewportId === nodeViewportId;
-              }
-
-              return true;
-            });
-
-            sameTypeNodesAcrossViewports.forEach((relatedNode) => {
-              if (processedNodes.has(relatedNode.id)) return;
-              processedNodes.add(relatedNode.id);
-
-              const relatedViewportId =
-                findParentViewport(relatedNode.parentId, draft.nodes) ||
-                relatedNode.dynamicViewportId;
-
-              const shouldSkipPositioning =
-                isVariant && relatedViewportId === "viewport-1440";
-
-              const propsToSync = shouldSkipPositioning
-                ? changedProps.filter(
-                    (p) =>
-                      !["left", "top", "right", "bottom", "position"].includes(
-                        p
-                      )
-                  )
-                : changedProps;
-
-              propsToSync.forEach((prop) => {
-                if (
-                  relatedNode.independentStyles &&
-                  relatedNode.independentStyles[prop]
-                ) {
+                if (hasPropertyProtection) {
+                  processedNodes.add(counterpart.id);
                   return;
                 }
 
-                if (prop in style && style[prop] !== undefined) {
-                  relatedNode.style[prop] = style[prop];
-
-                  // Mark as independent ONLY if in a non-desktop viewport AND
-                  // only if the viewport is in our directly updated set
-                  if (
-                    relatedViewportId &&
-                    relatedViewportId !== "viewport-1440" &&
-                    updatedViewportIds.has(relatedViewportId)
-                  ) {
-                    if (!relatedNode.independentStyles) {
-                      relatedNode.independentStyles = {};
-                    }
-                    relatedNode.independentStyles[prop] = true;
+                processedNodes.add(counterpart.id);
+                changedPropsArr.forEach((prop) => {
+                  if (!shouldSync(currentViewportIndex, counterpart, prop))
+                    return;
+                  if (style[prop] !== undefined) {
+                    counterpart.style[prop] = style[prop];
                   }
+                });
+
+                // Sync responsive variants of this counterpart.
+                const counterpartParent = draft.nodes.find(
+                  (n) => n.id === counterpart.parentId
+                );
+                if (counterpartParent && counterpartParent.isDynamic) {
+                  const variantsInViewport = draft.nodes.filter(
+                    (n) =>
+                      n.isVariant &&
+                      n.dynamicFamilyId === counterpartParent.dynamicFamilyId &&
+                      (n.dynamicViewportId === counterpartVp ||
+                        findParentViewport(n.parentId, draft.nodes) ===
+                          counterpartVp)
+                  );
+                  variantsInViewport.forEach((variant) => {
+                    processedNodes.add(variant.id);
+                    const variantChild = draft.nodes.find(
+                      (n) =>
+                        n.parentId === variant.id &&
+                        n.sharedId === counterpart.sharedId
+                    );
+                    if (variantChild && !processedNodes.has(variantChild.id)) {
+                      processedNodes.add(variantChild.id);
+                      changedPropsArr.forEach((prop) => {
+                        if (
+                          !shouldSync(currentViewportIndex, variantChild, prop)
+                        )
+                          return;
+                        if (style[prop] !== undefined) {
+                          variantChild.style[prop] = style[prop];
+                        }
+                      });
+                    }
+                  });
                 }
               });
-            });
-          }
 
-          if (isBaseNode) {
-            const allRelatedVariants = draft.nodes.filter(
-              (n) =>
-                n.isVariant &&
-                n.dynamicFamilyId === node.dynamicFamilyId &&
-                (n.dynamicParentId === node.id ||
-                  n.variantParentId === node.id ||
-                  (node.sharedId &&
-                    n.dynamicParentId &&
-                    draft.nodes.some(
-                      (baseNode) =>
-                        baseNode.id === n.dynamicParentId &&
-                        baseNode.sharedId === node.sharedId
-                    )))
-            );
+              // NEW PASS: Sync variant counterparts by sharedId (ignoring variantResponsiveId).
+              const variantCounterparts = draft.nodes.filter(
+                (n) =>
+                  n.isVariant &&
+                  n.sharedId === node.sharedId &&
+                  viewportOrder.indexOf(
+                    n.dynamicViewportId ||
+                      findParentViewport(n.parentId, draft.nodes)
+                  ) > currentViewportIndex
+              );
+              variantCounterparts.forEach((variantNode) => {
+                if (processedNodes.has(variantNode.id)) return;
+                processedNodes.add(variantNode.id);
+                changedPropsArr.forEach((prop) => {
+                  if (!shouldSync(currentViewportIndex, variantNode, prop))
+                    return;
+                  if (style[prop] !== undefined) {
+                    variantNode.style[prop] = style[prop];
+                  }
+                });
+              });
+            }
 
-            allRelatedVariants.forEach((variant) => {
-              if (processedNodes.has(variant.id)) return;
-              processedNodes.add(variant.id);
+            // ─────────────────────────────
+            // FEATURE: For variants and their children, sync with responsive counterparts.
+            if (
+              (isVariant || isChildOfVariant || isDescendantOfVariant) &&
+              node.variantResponsiveId
+            ) {
+              const variantCounterparts = draft.nodes.filter(
+                (n) =>
+                  n.id !== node.id &&
+                  n.variantResponsiveId === node.variantResponsiveId
+              );
 
-              const variantViewportId =
-                findParentViewport(variant.parentId, draft.nodes) ||
-                variant.dynamicViewportId;
+              if (currentViewportIndex === 0) {
+                const lowestViewportId =
+                  viewportOrder[viewportOrder.length - 1];
+                const nodesToProtect = variantCounterparts.filter((n) => {
+                  const { vpId } = getNodeViewport(n);
+                  return (
+                    vpId === lowestViewportId &&
+                    n.lowerSyncProps &&
+                    Object.keys(n.lowerSyncProps).length > 0
+                  );
+                });
+                nodesToProtect.forEach((n) => {
+                  processedNodes.add(n.id);
+                });
+              }
 
-              const propsToSync =
-                !variantViewportId || variantViewportId === "viewport-1440"
-                  ? changedProps.filter(
+              const relevantCounterparts = variantCounterparts.filter((n) => {
+                const { index: nVpIndex } = getNodeViewport(n);
+                return nVpIndex >= currentViewportIndex;
+              });
+
+              relevantCounterparts.forEach((counterpart) => {
+                if (processedNodes.has(counterpart.id)) return;
+                processedNodes.add(counterpart.id);
+                changedPropsArr.forEach((prop) => {
+                  if (
+                    currentViewportIndex === 0 &&
+                    counterpart.lowerSyncProps?.[prop]
+                  ) {
+                    return;
+                  }
+                  if (style[prop] !== undefined) {
+                    if (counterpart.unsyncFromParentViewport?.[prop]) return;
+                    counterpart.style[prop] = style[prop];
+                    counterpart.independentStyles =
+                      counterpart.independentStyles || {};
+                    counterpart.independentStyles[prop] = true;
+                    counterpart.variantIndependentSync =
+                      counterpart.variantIndependentSync || {};
+                    counterpart.variantIndependentSync[prop] = true;
+                  }
+                });
+              });
+            }
+
+            // ─────────────────────────────
+            // STRICT DOWNWARD FLOW: Sync all nodes (by sharedId) in the same or lower viewports.
+            if (node.sharedId) {
+              const allRelevantNodes = draft.nodes.filter((n) => {
+                if (n.id === node.id || n.sharedId !== node.sharedId)
+                  return false;
+                if (isBaseNodeFlag && !n.isDynamic) return false;
+                if (isVariant) {
+                  if (!n.isVariant) return false;
+                  return n.variantInfo?.id === node.variantInfo?.id;
+                }
+                return true;
+              });
+              const relevantNodes = allRelevantNodes.filter((n) => {
+                const nVp =
+                  findParentViewport(n.parentId, draft.nodes) ||
+                  n.dynamicViewportId;
+                const nVpIndex = viewportOrder.indexOf(nVp);
+                if (nodeViewportId === viewportOrder[0]) {
+                  const hasIndependent = changedPropsArr.some(
+                    (prop) =>
+                      n.independentStyles?.[prop] ||
+                      n.unsyncFromParentViewport?.[prop]
+                  );
+                  return !hasIndependent;
+                } else if (currentViewportIndex !== -1) {
+                  if (nVpIndex === -1) return false;
+                  const isDownwardOrSame = nVpIndex >= currentViewportIndex;
+                  if (nVpIndex === currentViewportIndex) {
+                    const isFullyIndependent = changedPropsArr.some(
+                      (prop) => n.independentStyles?.[prop]
+                    );
+                    return isDownwardOrSame && !isFullyIndependent;
+                  } else {
+                    const cannotSync = changedPropsArr.some(
+                      (prop) =>
+                        n.independentStyles?.[prop] ||
+                        n.unsyncFromParentViewport?.[prop]
+                    );
+                    return isDownwardOrSame && !cannotSync;
+                  }
+                }
+                return false;
+              });
+              relevantNodes.forEach((relatedNode) => {
+                if (processedNodes.has(relatedNode.id)) return;
+                processedNodes.add(relatedNode.id);
+                const { vpId: relatedVp, index: relatedVpIndex } =
+                  getNodeViewport(relatedNode);
+                const shouldSkip = isVariant && relatedVp === viewportOrder[0];
+                const propsToSync = shouldSkip
+                  ? changedPropsArr.filter(
                       (p) =>
                         ![
                           "left",
@@ -384,243 +1004,395 @@ export class NodeDispatcher {
                           "position",
                         ].includes(p)
                     )
-                  : changedProps;
-
-              propsToSync.forEach((prop) => {
-                if (
-                  variant.independentStyles &&
-                  variant.independentStyles[prop]
-                ) {
-                  return;
-                }
-
-                if (prop in style && style[prop] !== undefined) {
-                  variant.style[prop] = style[prop];
-                }
-              });
-
-              const dimensionPropsUpdated =
-                Object.keys(dimensionStyles).length > 0;
-
-              if (dimensionPropsUpdated) {
-                const variantChildren = draft.nodes.filter(
-                  (n) => n.parentId === variant.id
-                );
-
-                variantChildren.forEach((child) => {
-                  if (!child.sharedId) return;
-
-                  const baseChild = draft.nodes.find(
-                    (n) =>
-                      n.parentId === node.id && n.sharedId === child.sharedId
-                  );
-
-                  if (baseChild && !processedNodes.has(child.id)) {
+                  : changedPropsArr;
+                propsToSync.forEach((prop) => {
+                  if (
+                    currentViewportIndex === 0 &&
+                    !shouldSync(currentViewportIndex, relatedNode, prop)
+                  )
+                    return;
+                  if (relatedNode.independentStyles?.[prop]) return;
+                  if (
+                    relatedVpIndex !== currentViewportIndex &&
+                    relatedNode.unsyncFromParentViewport?.[prop]
+                  )
+                    return;
+                  if (style[prop] !== undefined) {
+                    relatedNode.style[prop] = style[prop];
                     if (
-                      !(
-                        child.independentStyles && child.independentStyles.width
-                      ) &&
-                      !(
-                        child.independentStyles &&
-                        child.independentStyles.height
-                      )
+                      !isUpdatingBaseNodeChild &&
+                      !isUpdatingBaseNode &&
+                      relatedVp !== viewportOrder[0] &&
+                      relatedVpIndex > 0 &&
+                      !relatedNode.independentStyles?.[prop]
                     ) {
-                      if (child.style.width !== baseChild.style.width) {
-                        child.style.width = baseChild.style.width;
-                      }
-                      if (child.style.height !== baseChild.style.height) {
-                        child.style.height = baseChild.style.height;
-                      }
-
-                      // CRITICAL FIX: Make sure children maintain relative positioning
-                      // This ensures children don't get detached from their parent
-                      if (child.style.position !== "relative") {
-                        child.style.position = "relative";
-                        child.style.left = "";
-                        child.style.top = "";
-                      }
-
-                      processedNodes.add(child.id);
+                      relatedNode.unsyncFromParentViewport =
+                        relatedNode.unsyncFromParentViewport || {};
+                      relatedNode.unsyncFromParentViewport[prop] = true;
                     }
                   }
                 });
-              }
-            });
-          }
+              });
+            }
 
-          if (isVariant) {
-            changedProps.forEach((prop) => {
-              node.independentStyles![prop] = true;
-            });
-          }
+            // ─────────────────────────────
+            // For base nodes, sync with their variants.
+            if (isBaseNodeFlag) {
+              const allVariants = draft.nodes.filter(
+                (n) =>
+                  n.isVariant &&
+                  n.dynamicFamilyId === node.dynamicFamilyId &&
+                  (n.dynamicParentId === node.id ||
+                    n.variantParentId === node.id ||
+                    (node.sharedId &&
+                      n.dynamicParentId &&
+                      draft.nodes.some(
+                        (baseNode) =>
+                          baseNode.id === n.dynamicParentId &&
+                          baseNode.sharedId === node.sharedId
+                      )))
+              );
+              const relatedVariants = allVariants.filter((variant) => {
+                const variantVp =
+                  findParentViewport(variant.parentId, draft.nodes) ||
+                  variant.dynamicViewportId;
+                const variantVpIndex = viewportOrder.indexOf(variantVp);
+                return currentViewportIndex > 0
+                  ? variantVpIndex >= currentViewportIndex
+                  : true;
+              });
 
-          if (node.parentId) {
-            const parentNode = draft.nodes.find((n) => n.id === node.parentId);
-            if (!parentNode) return;
-
-            if (
-              (parentNode.isDynamic || parentNode.isVariant) &&
-              node.sharedId
-            ) {
-              if (parentNode.isVariant) {
-                changedProps.forEach((prop) => {
-                  node.independentStyles![prop] = true;
+              if (nodeViewportId === viewportOrder[0]) {
+                // Protect lower-resolution variants.
+                const lowestViewportId =
+                  viewportOrder[viewportOrder.length - 1];
+                const lowerVariantsToProtect = draft.nodes.filter((n) => {
+                  const { vpId } = getNodeViewport(n);
+                  return (
+                    vpId === lowestViewportId &&
+                    n.isVariant &&
+                    n.lowerSyncProps &&
+                    Object.keys(n.lowerSyncProps).length > 0
+                  );
+                });
+                lowerVariantsToProtect.forEach((n) => {
+                  processedNodes.add(n.id);
+                  const variantChildren = draft.nodes.filter(
+                    (child) => child.parentId === n.id
+                  );
+                  variantChildren.forEach((child) => {
+                    if (
+                      child.lowerSyncProps &&
+                      Object.keys(child.lowerSyncProps).length > 0
+                    ) {
+                      processedNodes.add(child.id);
+                    }
+                  });
                 });
               }
 
-              const relatedParents = draft.nodes.filter((n) => {
-                if (n.id === parentNode.id) return false;
-
-                if (parentNode.isDynamic) {
-                  return n.isDynamic && n.sharedId === parentNode.sharedId;
-                }
-
-                if (parentNode.isVariant && parentNode.variantInfo?.id) {
-                  return (
-                    n.isVariant &&
-                    n.variantInfo?.id === parentNode.variantInfo.id
-                  );
-                }
-
-                return false;
-              });
-
-              relatedParents.forEach((relatedParent) => {
-                const relatedChild = draft.nodes.find(
-                  (n) =>
-                    n.parentId === relatedParent.id &&
-                    n.sharedId === node.sharedId
+              relatedVariants.forEach((variant) => {
+                if (processedNodes.has(variant.id)) return;
+                const isIndep = changedPropsArr.some(
+                  (prop) => variant.variantIndependentSync?.[prop]
                 );
+                if (isIndep) return;
+                processedNodes.add(variant.id);
+                const variantVp =
+                  findParentViewport(variant.parentId, draft.nodes) ||
+                  variant.dynamicViewportId;
+                const propsToSync =
+                  !variantVp || variantVp === viewportOrder[0]
+                    ? changedPropsArr.filter(
+                        (p) =>
+                          ![
+                            "left",
+                            "top",
+                            "right",
+                            "bottom",
+                            "position",
+                          ].includes(p)
+                      )
+                    : changedPropsArr;
 
-                if (relatedChild && !processedNodes.has(relatedChild.id)) {
-                  processedNodes.add(relatedChild.id);
+                if (nodeViewportId === viewportOrder[0] && isVariant) {
+                  const lowerCounterparts = draft.nodes.filter(
+                    (n) =>
+                      n.isVariant &&
+                      n.variantInfo?.id === variant.variantInfo?.id &&
+                      (n.dynamicViewportId ===
+                        viewportOrder[viewportOrder.length - 1] ||
+                        findParentViewport(n.parentId, draft.nodes) ===
+                          viewportOrder[viewportOrder.length - 1]) &&
+                      n.lowerSyncProps &&
+                      Object.keys(n.lowerSyncProps).length > 0
+                  );
+                  lowerCounterparts.forEach((n) => {
+                    processedNodes.add(n.id);
+                    const lowerChildren = draft.nodes.filter(
+                      (child) => child.parentId === n.id
+                    );
+                    lowerChildren.forEach((child) => {
+                      if (
+                        child.lowerSyncProps &&
+                        Object.keys(child.lowerSyncProps).length > 0
+                      ) {
+                        processedNodes.add(child.id);
+                      }
+                    });
+                  });
+                }
 
-                  const childViewportId =
-                    findParentViewport(relatedChild.parentId, draft.nodes) ||
-                    relatedChild.dynamicViewportId;
-
+                propsToSync.forEach((prop) => {
                   if (
-                    nodeViewportId !== "viewport-1440" &&
-                    childViewportId !== nodeViewportId
+                    nodeViewportId === viewportOrder[0] &&
+                    variant.dynamicViewportId ===
+                      viewportOrder[viewportOrder.length - 1] &&
+                    variant.lowerSyncProps?.[prop]
                   ) {
                     return;
                   }
+                });
 
-                  const dimensionsShouldSync =
-                    !(relatedParent.isVariant && parentNode.isDynamic) &&
-                    !(relatedParent.isDynamic && parentNode.isVariant);
+                propsToSync.forEach((prop) => {
+                  if (variant.independentStyles?.[prop]) return;
+                  if (variant.variantIndependentSync?.[prop]) return;
+                  const variantVpIndex = viewportOrder.indexOf(variantVp);
+                  if (
+                    variantVpIndex !== currentViewportIndex &&
+                    variant.unsyncFromParentViewport?.[prop]
+                  )
+                    return;
+                  if (style[prop] !== undefined) {
+                    variant.style[prop] = style[prop];
+                  }
+                });
 
-                  const safeChildProps = dimensionsShouldSync
-                    ? changedProps
-                    : changedProps.filter(
-                        (p) => !["width", "height"].includes(p)
-                      );
+                if (Object.keys(dimensionStyles).length > 0) {
+                  const variantChildren = draft.nodes.filter(
+                    (n) => n.parentId === variant.id
+                  );
+                  variantChildren.forEach((child) => {
+                    if (!child.sharedId) return;
+                    const baseChild = draft.nodes.find(
+                      (n) =>
+                        n.parentId === node.id && n.sharedId === child.sharedId
+                    );
+                    if (baseChild && !processedNodes.has(child.id)) {
+                      const cannotSyncWidth =
+                        child.independentStyles?.width ||
+                        child.variantIndependentSync?.width ||
+                        (child.unsyncFromParentViewport?.width &&
+                          variant.dynamicViewportId !== nodeViewportId);
+                      const cannotSyncHeight =
+                        child.independentStyles?.height ||
+                        child.variantIndependentSync?.height ||
+                        (child.unsyncFromParentViewport?.height &&
+                          variant.dynamicViewportId !== nodeViewportId);
+                      if (!cannotSyncWidth && !cannotSyncHeight) {
+                        if (child.style.width !== baseChild.style.width) {
+                          child.style.width = baseChild.style.width;
+                        }
+                        if (child.style.height !== baseChild.style.height) {
+                          child.style.height = baseChild.style.height;
+                        }
+                        if (child.style.position !== "relative") {
+                          child.style.position = "relative";
+                          child.style.left = "";
+                          child.style.top = "";
+                        }
+                        processedNodes.add(child.id);
+                      }
+                    }
+                  });
+                }
+              });
+            }
 
-                  safeChildProps.forEach((prop) => {
+            // Replace your final sync code section with this more precise version
+            // It correctly handles variant syncing by checking variantResponsiveId
+
+            if (currentViewportIndex === 0 && Object.keys(style).length > 0) {
+              // Keep track of which properties were synced to which nodes
+              const syncedNodesMap = new Map();
+
+              // For each viewport from highest to lowest
+              for (let i = 1; i < viewportOrder.length; i++) {
+                const targetVpId = viewportOrder[i];
+
+                // Find all nodes with the same sharedId in this viewport
+                const vpCounterparts = draft.nodes.filter(
+                  (n) =>
+                    n.sharedId === node.sharedId &&
+                    (n.dynamicViewportId === targetVpId ||
+                      findParentViewport(n.parentId, draft.nodes) ===
+                        targetVpId)
+                );
+
+                // For each counterpart, check if it needs property updates
+                vpCounterparts.forEach((counterpart) => {
+                  // Skip if node is a variant and we're not updating a variant
+                  if (isVariant && !counterpart.isVariant) {
+                    return;
+                  }
+
+                  // Skip if node is not a variant and we're updating a variant
+                  if (!isVariant && counterpart.isVariant) {
+                    return;
+                  }
+
+                  // If we're dealing with variants, make sure they're the same variant type
+                  if (isVariant && counterpart.isVariant) {
+                    // CRITICAL FIX: Only sync between variants with the same variantResponsiveId
                     if (
-                      relatedChild.independentStyles &&
-                      relatedChild.independentStyles[prop]
+                      node.variantResponsiveId !==
+                      counterpart.variantResponsiveId
+                    ) {
+                      return;
+                    }
+                  }
+
+                  // Check each property being changed
+                  Object.entries(style).forEach(([prop, value]) => {
+                    // Skip if property has explicit protection
+                    if (
+                      counterpart.lowerSyncProps?.[prop] ||
+                      counterpart.unsyncFromParentViewport?.[prop]
                     ) {
                       return;
                     }
 
-                    if (prop in style && style[prop] !== undefined) {
-                      relatedChild.style[prop] = style[prop];
-
-                      // Mark as independent ONLY if in a viewport we're directly updating
-                      if (
-                        childViewportId &&
-                        childViewportId !== "viewport-1440" &&
-                        updatedViewportIds.has(childViewportId)
-                      ) {
-                        if (!relatedChild.independentStyles) {
-                          relatedChild.independentStyles = {};
-                        }
-                        relatedChild.independentStyles[prop] = true;
-                      }
+                    // Skip if property is already correctly set
+                    if (counterpart.style[prop] === value) {
+                      return;
                     }
+
+                    // Property should be synced and isn't protected - FORCE SYNC IT
+                    counterpart.style[prop] = value;
+
+                    // Record this sync for debugging
+                    if (!syncedNodesMap.has(counterpart.id)) {
+                      syncedNodesMap.set(counterpart.id, new Set());
+                    }
+                    syncedNodesMap.get(counterpart.id).add(prop);
                   });
+                });
 
-                  // CRITICAL FIX: Ensure children of variants maintain relative positioning
-                  // This prevents them from becoming detached from their parent
-                  if (
-                    relatedParent.isVariant &&
-                    relatedChild.style.position !== "relative"
-                  ) {
-                    relatedChild.style.position = "relative";
-                    relatedChild.style.left = "";
-                    relatedChild.style.top = "";
-                  }
+                // Do the same for variants if this is a base node
+                if (isBaseNodeFlag && node.dynamicFamilyId) {
+                  const vpVariants = draft.nodes.filter(
+                    (n) =>
+                      n.isVariant &&
+                      n.dynamicFamilyId === node.dynamicFamilyId &&
+                      (n.dynamicViewportId === targetVpId ||
+                        findParentViewport(n.parentId, draft.nodes) ===
+                          targetVpId)
+                  );
+
+                  vpVariants.forEach((variant) => {
+                    // Check each property being changed
+                    Object.entries(style).forEach(([prop, value]) => {
+                      // Skip positioning properties
+                      if (
+                        ["left", "top", "right", "bottom", "position"].includes(
+                          prop
+                        ) &&
+                        targetVpId === viewportOrder[0]
+                      ) {
+                        return;
+                      }
+
+                      // Skip if property has explicit protection
+                      if (
+                        variant.lowerSyncProps?.[prop] ||
+                        variant.unsyncFromParentViewport?.[prop] ||
+                        variant.independentStyles?.[prop] ||
+                        variant.variantIndependentSync?.[prop]
+                      ) {
+                        return;
+                      }
+
+                      // Skip if property is already correctly set
+                      if (variant.style[prop] === value) {
+                        return;
+                      }
+
+                      // Property should be synced and isn't protected - FORCE SYNC IT
+                      variant.style[prop] = value;
+
+                      // Record this sync for debugging
+                      if (!syncedNodesMap.has(variant.id)) {
+                        syncedNodesMap.set(variant.id, new Set());
+                      }
+                      syncedNodesMap.get(variant.id).add(prop);
+                    });
+                  });
                 }
-              });
+
+                // ADDITIONAL FIX: Handle syncing from a variant to its responsive variants
+                if (isVariant && node.variantResponsiveId) {
+                  const variantCounterparts = draft.nodes.filter(
+                    (n) =>
+                      n.isVariant &&
+                      n.variantResponsiveId === node.variantResponsiveId &&
+                      n.id !== node.id &&
+                      (n.dynamicViewportId === targetVpId ||
+                        findParentViewport(n.parentId, draft.nodes) ===
+                          targetVpId)
+                  );
+
+                  variantCounterparts.forEach((counterpart) => {
+                    // Check each property being changed
+                    Object.entries(style).forEach(([prop, value]) => {
+                      // Skip if property has explicit protection
+                      if (
+                        counterpart.lowerSyncProps?.[prop] ||
+                        counterpart.unsyncFromParentViewport?.[prop] ||
+                        counterpart.independentStyles?.[prop] ||
+                        counterpart.variantIndependentSync?.[prop]
+                      ) {
+                        return;
+                      }
+
+                      // Skip if property is already correctly set
+                      if (counterpart.style[prop] === value) {
+                        return;
+                      }
+
+                      // Property should be synced and isn't protected
+                      counterpart.style[prop] = value;
+
+                      // Record this sync for debugging
+                      if (!syncedNodesMap.has(counterpart.id)) {
+                        syncedNodesMap.set(counterpart.id, new Set());
+                      }
+                      syncedNodesMap.get(counterpart.id).add(prop);
+                    });
+                  });
+                }
+              }
+
+              // Log sync summary
+              if (syncedNodesMap.size > 0) {
+                syncedNodesMap.forEach((props, nodeId) => {});
+              } else {
+              }
             }
-          }
-        });
-
-        function findSameWidthViewports(
-          viewportId: string | number,
-          allNodes: Node[]
-        ): (string | number)[] {
-          const viewport = allNodes.find((n) => n.id === viewportId);
-          if (!viewport || !viewport.viewportWidth) return [];
-
-          return allNodes
-            .filter(
-              (n) =>
-                n.isViewport &&
-                n.viewportWidth === viewport.viewportWidth &&
-                n.id !== viewportId
-            )
-            .map((n) => n.id);
+          });
         }
 
-        function isParentVariant(
-          parentId: string | number,
-          allNodes: Node[]
-        ): boolean {
-          const parent = allNodes.find((n) => n.id === parentId);
-          return parent ? parent.isVariant : false;
-        }
-
-        function isParentDynamic(
-          parentId: string | number,
-          allNodes: Node[]
-        ): boolean {
-          const parent = allNodes.find((n) => n.id === parentId);
-          return parent ? parent.isDynamic : false;
-        }
-
-        function findParentViewport(
-          nodeId: string | number | null | undefined,
-          allNodes: Node[]
-        ): string | number | null {
-          if (!nodeId) return null;
-          const node = allNodes.find((n) => n.id === nodeId);
-          if (!node) return null;
-          if (node.isViewport) return node.id;
-          return node.parentId
-            ? findParentViewport(node.parentId, allNodes)
-            : null;
-        }
-
-        // CRITICAL FIX: Final pass to fix any detached children
+        // ──────────────────────────────────────────────
+        // Final pass: Fix any detached children (e.g. variant children with absolute positioning).
         draft.nodes.forEach((node) => {
-          // Only process nodes that are children of variants
           const parent = node.parentId
             ? draft.nodes.find((n) => n.id === node.parentId)
             : null;
           if (parent && parent.isVariant) {
-            // If this is a child of a variant but has absolute positioning
             if (node.style.position === "absolute" && node.sharedId) {
-              // Reset it to relative positioning
               node.style.position = "relative";
               node.style.left = "";
               node.style.top = "";
-
-              // Mark these properties as independent
-              if (!node.independentStyles) {
-                node.independentStyles = {};
-              }
+              node.independentStyles = node.independentStyles || {};
               node.independentStyles.position = true;
               node.independentStyles.left = true;
               node.independentStyles.top = true;
@@ -631,283 +1403,282 @@ export class NodeDispatcher {
     );
   }
 
-  syncVariants(nodeId) {
-    console.log("----------- SYNC VARIANTS START -----------");
-    console.log(`syncVariants called with nodeId: ${nodeId}`);
+  // Helper functions
+  findParentViewport(
+    nodeId: string | number | null | undefined,
+    allNodes: Node[]
+  ): string | number | null {
+    if (!nodeId) return null;
+    const node = allNodes.find((n) => n.id === nodeId);
+    if (!node) return null;
+    if (node.isViewport) return node.id;
+    return node.parentId ? findParentViewport(node.parentId, allNodes) : null;
+  }
 
-    // First, get the current state to analyze what needs to be done
+  isParentVariant(
+    parentId: string | number | null | undefined,
+    allNodes: Node[]
+  ): boolean {
+    if (!parentId) return false;
+    const parent = allNodes.find((n) => n.id === parentId);
+    return parent ? parent.isVariant : false;
+  }
+
+  isParentDynamic(
+    parentId: string | number | null | undefined,
+    allNodes: Node[]
+  ): boolean {
+    if (!parentId) return false;
+    const parent = allNodes.find((n) => n.id === parentId);
+    return parent ? parent.isDynamic : false;
+  }
+
+  isAncestorVariant(
+    parentId: string | number | null | undefined,
+    allNodes: Node[]
+  ): boolean {
+    if (!parentId) return false;
+
+    let current = parentId;
+    while (current) {
+      const node = allNodes.find((n) => n.id === current);
+      if (!node) break;
+
+      if (node.isVariant) return true;
+      current = node.parentId;
+    }
+
+    return false;
+  }
+
+  isAncestorDynamic(
+    parentId: string | number | null | undefined,
+    allNodes: Node[]
+  ): boolean {
+    if (!parentId) return false;
+
+    let current = parentId;
+    while (current) {
+      const node = allNodes.find((n) => n.id === current);
+      if (!node) break;
+
+      if (node.isDynamic) return true;
+      current = node.parentId;
+    }
+
+    return false;
+  }
+
+  findRootBaseNodeAncestor(
+    nodeId: string | number | null | undefined,
+    allNodes: Node[]
+  ): Node | null {
+    if (!nodeId) return null;
+
+    let current = nodeId;
+    let lastDynamic = null;
+
+    while (current) {
+      const node = allNodes.find((n) => n.id === current);
+      if (!node) break;
+
+      if (node.isDynamic) {
+        lastDynamic = node;
+      }
+
+      if (!node.parentId) break;
+      current = node.parentId;
+    }
+
+    return lastDynamic;
+  }
+
+  buildPathFromRoot(
+    rootId: string | number,
+    targetId: string | number,
+    allNodes: Node[]
+  ): Node[] {
+    const path: Node[] = [];
+    let current = targetId;
+
+    while (current && current !== rootId) {
+      const node = allNodes.find((n) => n.id === current);
+      if (!node) break;
+
+      path.unshift(node);
+      current = node.parentId;
+    }
+
+    // Add the root node
+    const rootNode = allNodes.find((n) => n.id === rootId);
+    if (rootNode) {
+      path.unshift(rootNode);
+    }
+
+    return path;
+  }
+
+  followPathInViewport(
+    rootId: string | number,
+    path: Node[],
+    allNodes: Node[]
+  ): Node | null {
+    if (path.length <= 1) return null;
+
+    let currentId = rootId;
+
+    // Skip the first node (root)
+    for (let i = 1; i < path.length; i++) {
+      const pathNode = path[i];
+
+      // Find child with matching sharedId
+      const matchingChild = allNodes.find(
+        (n) => n.parentId === currentId && n.sharedId === pathNode.sharedId
+      );
+
+      if (!matchingChild) return null;
+
+      currentId = matchingChild.id;
+
+      // If this is the last node, return it
+      if (i === path.length - 1) {
+        return matchingChild;
+      }
+    }
+
+    return null;
+  }
+
+  syncVariants(nodeId) {
+    // Get current state
     let currentState = this.getNodeState();
 
     // Find the node and its parent
     const node = currentState.nodes.find((n) => n.id === nodeId);
     if (!node) {
-      console.log("❌ Node not found:", nodeId);
       return;
     }
-    console.log(`🔍 Found node ${nodeId}:`, {
-      type: node.type,
-      sharedId: node.sharedId,
-      parentId: node.parentId,
-      isDynamic: node.isDynamic,
-      isVariant: node.isVariant,
-    });
 
-    const parentNode = currentState.nodes.find((n) => n.id === node.parentId);
-    if (!parentNode) {
-      console.log("❌ Parent node not found for:", node.id);
-      return;
-    }
-    console.log(`🔍 Found parent node ${parentNode.id}:`, {
-      type: parentNode.type,
-      sharedId: parentNode.sharedId,
-      parentId: parentNode.parentId,
-      isDynamic: parentNode.isDynamic,
-      isVariant: parentNode.isVariant,
-    });
-
-    // Find the dynamic root - the topmost dynamic parent in the hierarchy
-    let dynamicRoot = parentNode;
-    let ancestorChain = [];
-
-    // Traverse up to find the root dynamic node
-    console.log("🔍 Traversing up to find dynamic root...");
-    while (dynamicRoot && !dynamicRoot.isDynamic) {
-      console.log(
-        `  Checking node ${dynamicRoot.id} (isDynamic: ${dynamicRoot.isDynamic})`
+    // Ensure node has a sharedId
+    if (!node.sharedId) {
+      this.setState((prev) =>
+        produce(prev, (draft) => {
+          const draftNode = draft.nodes.find((n) => n.id === nodeId);
+          if (draftNode) {
+            draftNode.sharedId = nanoid();
+          }
+        })
       );
-      if (dynamicRoot.parentId) {
-        ancestorChain.push(dynamicRoot);
-        const parent = currentState.nodes.find(
-          (n) => n.id === dynamicRoot.parentId
-        );
-        if (!parent) {
-          console.log("  ❌ No parent found, breaking chain");
-          break;
-        }
-        console.log(`  Moving up to parent ${parent.id}`);
-        dynamicRoot = parent;
-      } else {
-        console.log("  ❌ No parentId, breaking chain");
-        break;
+
+      // Get updated state
+      currentState = this.getNodeState();
+      const updatedNode = currentState.nodes.find((n) => n.id === nodeId);
+      if (updatedNode) {
+        node.sharedId = updatedNode.sharedId;
       }
     }
 
-    // If we didn't find a dynamic root, use the immediate parent
-    if (!dynamicRoot.isDynamic) {
-      console.log(
-        `⚠️ No dynamic root found, using immediate parent ${parentNode.id}`
-      );
-      dynamicRoot = parentNode;
-      ancestorChain = [];
-    } else {
-      console.log(`✅ Found dynamic root: ${dynamicRoot.id}`);
-    }
-
-    // Get the dynamicFamilyId from the root
-    const familyId = dynamicRoot.dynamicFamilyId;
-    if (!familyId) {
-      console.log("❌ No dynamicFamilyId found, cannot sync");
+    const parentNode = currentState.nodes.find((n) => n.id === node.parentId);
+    if (!parentNode) {
       return;
     }
 
-    console.log(
-      `📊 Dynamic root: ${dynamicRoot.id} with familyId: ${familyId}`
-    );
-    console.log(`📊 Ancestor chain length: ${ancestorChain.length}`);
-    if (ancestorChain.length > 0) {
-      console.log(
-        "📊 Ancestor chain:",
-        ancestorChain.map((a) => ({
-          id: a.id,
-          sharedId: a.sharedId,
-          type: a.type,
-        }))
-      );
-    }
+    // Determine if parent is a base node, a variant, or a child of either
+    const isBaseNodeHierarchy = this.isInBaseNodeHierarchy(node.id);
+    const isVariantHierarchy = this.isInVariantHierarchy(node.id);
 
-    // Now do the actual state update with precise targeting
+    // Define viewport order for downward flow
+    const viewportOrder = ["viewport-1440", "viewport-768", "viewport-375"];
+
+    // Get the current viewport ID
+    const currentViewportId = this.getNodeViewportId(
+      parentNode,
+      this.getNodeState
+    );
+
     this.setState((prev) =>
       produce(prev, (draft) => {
-        console.log("🔄 Starting state update...");
-
-        // Ensure node has a sharedId
+        // Get the node and parent in draft state
         const draftNode = draft.nodes.find((n) => n.id === nodeId);
         if (!draftNode) {
-          console.log("❌ Node not found in draft state");
           return;
         }
 
-        if (!draftNode.sharedId) {
-          draftNode.sharedId = nanoid();
-          console.log(`✅ Generated new sharedId: ${draftNode.sharedId}`);
+        const draftParent = draft.nodes.find(
+          (n) => n.id === draftNode.parentId
+        );
+        if (!draftParent) {
+          return;
         }
 
-        // Helper function to find the parent viewport of a node
-        const findParentViewport = (nodeId, nodes) => {
-          // Start with the node itself
-          let current = nodes.find((n) => n.id === nodeId);
-          if (!current) return null;
-
-          // For variants, use their explicit dynamicViewportId if available
-          if (current.dynamicViewportId) {
-            return current.dynamicViewportId;
-          }
-
-          // Walk up the parent chain
-          while (current) {
-            if (current.parentId) {
-              const parent = nodes.find((n) => n.id === current.parentId);
-              if (!parent) break;
-
-              if (parent.isViewport) {
-                return parent.id;
-              }
-
-              current = parent;
-            } else {
-              break;
-            }
-          }
-
-          return null;
-        };
-
-        // Find all base dynamic and variant nodes in the family
-        const allDynamicRoots = draft.nodes.filter(
-          (n) => n.dynamicFamilyId === familyId && n.isDynamic
-        );
-        console.log(
-          `📊 Found ${allDynamicRoots.length} dynamic roots in family`
-        );
-        allDynamicRoots.forEach((root, i) => {
-          console.log(
-            `  Dynamic root ${i + 1}: ${root.id} (viewport: ${
-              root.dynamicViewportId || "none"
-            })`
-          );
-        });
-
-        const allVariants = draft.nodes.filter(
-          (n) =>
-            n.dynamicFamilyId === familyId && n.isVariant && n.parentId === null
-        );
-        console.log(`📊 Found ${allVariants.length} variants in family`);
-        allVariants.forEach((variant, i) => {
-          console.log(
-            `  Variant ${i + 1}: ${variant.id} (variantInfo: ${
-              variant.variantInfo?.id || "none"
-            })`
-          );
-        });
-
-        // CRITICAL FIX: Find and remove any incorrect duplicates before syncing again
-        // This ensures no incorrect nodes remain from previous syncs
-        const removeIncorrectDuplicates = () => {
-          // Find all nodes with the same sharedId
-          const nodesWithSameSharedId = draft.nodes.filter(
-            (n) => n.sharedId === draftNode.sharedId && n.id !== draftNode.id // Skip the original node
+        // CRITICAL: Ensure parent has a variantResponsiveId
+        if (!draftParent.variantResponsiveId) {
+          // Find all nodes with the same sharedId that might be responsive counterparts
+          const potentialCounterparts = draft.nodes.filter(
+            (n) =>
+              n.sharedId === draftParent.sharedId && n.id !== draftParent.id
           );
 
-          console.log(
-            `🔍 Found ${nodesWithSameSharedId.length} existing nodes with same sharedId`
-          );
+          // Generate a new responsiveId for this parent and its counterparts
+          const parentResponsiveId = nanoid();
+          draftParent.variantResponsiveId = parentResponsiveId;
 
-          // For each target (dynamic root or variant), there should be at most one node with this sharedId
-          [...allDynamicRoots, ...allVariants].forEach((target) => {
-            // Find all nodes with this sharedId that claim to be under this target's hierarchy
-            const nodesUnderTarget = nodesWithSameSharedId.filter(
-              (n) =>
-                n.dynamicParentId === target.id ||
-                n.variantParentId === target.id ||
-                // Or are children of any node under this target
-                (n.parentId &&
-                  draft.nodes.some(
-                    (parent) =>
-                      parent.id === n.parentId &&
-                      (parent.dynamicParentId === target.id ||
-                        parent.variantParentId === target.id)
-                  ))
-            );
-
-            if (nodesUnderTarget.length > 1) {
-              console.log(
-                `⚠️ Found ${nodesUnderTarget.length} duplicate nodes for target ${target.id}`
-              );
-
-              // Sort nodes by parentId, keeping nodes that are direct children of the target
-              const sortedNodes = [...nodesUnderTarget].sort((a, b) => {
-                // Direct children of target come first
-                if (a.parentId === target.id && b.parentId !== target.id)
-                  return -1;
-                if (a.parentId !== target.id && b.parentId === target.id)
-                  return 1;
-                // Otherwise sort by id for stable results
-                return a.id.localeCompare(b.id);
-              });
-
-              // Keep the first node (either a direct child of target or the first in the list)
-              const nodeToKeep = sortedNodes[0];
-              console.log(
-                `  ✅ Keeping node ${nodeToKeep.id} (parentId: ${nodeToKeep.parentId})`
-              );
-
-              // Remove all others
-              for (let i = 1; i < sortedNodes.length; i++) {
-                const nodeToRemove = sortedNodes[i];
-                console.log(
-                  `  ⚠️ Removing duplicate node ${nodeToRemove.id} (parentId: ${nodeToRemove.parentId})`
-                );
-                const index = draft.nodes.findIndex(
-                  (n) => n.id === nodeToRemove.id
-                );
-                if (index !== -1) {
-                  draft.nodes.splice(index, 1);
-                }
-              }
-            }
+          // Assign the same responsiveId to all counterparts
+          potentialCounterparts.forEach((counterpart) => {
+            counterpart.variantResponsiveId = parentResponsiveId;
           });
-        };
+        }
 
-        // First clean up any existing incorrect duplicates
-        removeIncorrectDuplicates();
+        // Generate a unique variantResponsiveId for this child
+        const childResponsiveId = nanoid();
 
-        // If we added to the root dynamic node directly, sync among all roots/variants
-        if (draftNode.parentId === dynamicRoot.id) {
-          console.log(`🔄 CASE: Direct child of dynamic root`);
+        // Set it on the original node
+        draftNode.variantResponsiveId = childResponsiveId;
 
-          // Find all target roots/variants except the original
-          const allTargets = [...allDynamicRoots, ...allVariants].filter(
-            (target) => target.id !== dynamicRoot.id
+        // CASE 1: In a base node hierarchy
+        if (isBaseNodeHierarchy) {
+          // First, find all responsive counterparts of the parent
+          const allParentCounterparts = draft.nodes.filter(
+            (n) =>
+              n.variantResponsiveId === draftParent.variantResponsiveId &&
+              n.id !== draftParent.id
           );
-          console.log(`  📊 Found ${allTargets.length} targets to sync to`);
 
-          allTargets.forEach((target, idx) => {
-            console.log(
-              `  🔄 Processing target ${idx + 1}: ${target.id} (${
-                target.isDynamic ? "dynamic" : "variant"
-              })`
-            );
+          // Apply downward flow filtering
+          const currentViewportIndex = viewportOrder.indexOf(currentViewportId);
 
-            // CRITICAL FIX: Make sure we're never targeting a node that's not a top-level root/variant
-            if (!target.isDynamic && !target.isVariant) {
-              console.log(
-                `    ⚠️ Target is neither dynamic nor variant, skipping`
-              );
-              return;
-            }
+          const parentCounterparts =
+            currentViewportIndex !== -1
+              ? allParentCounterparts.filter((n) => {
+                  const counterpartViewportId = this.getNodeViewportId(
+                    n,
+                    draft.nodes
+                  );
+                  const counterpartViewportIndex = viewportOrder.indexOf(
+                    counterpartViewportId
+                  );
+                  // Only include counterparts that are below the current viewport in the order
+                  return (
+                    counterpartViewportIndex !== -1 &&
+                    counterpartViewportIndex > currentViewportIndex
+                  );
+                })
+              : allParentCounterparts;
 
+          // Sync to responsive counterparts
+          parentCounterparts.forEach((counterpart, idx) => {
             // Check for existing child with same sharedId
             const existingChild = draft.nodes.find(
               (n) =>
-                n.parentId === target.id && n.sharedId === draftNode.sharedId
+                n.parentId === counterpart.id &&
+                n.sharedId === draftNode.sharedId
             );
 
             if (existingChild) {
-              console.log(
-                `    ⚠️ Child already exists: ${existingChild.id}, updating properties`
-              );
+              // Link with other responsive counterparts
+              existingChild.variantResponsiveId = childResponsiveId;
 
-              // Update existing child
+              // Update properties
               Object.entries(draftNode).forEach(([key, value]) => {
                 if (
                   key !== "id" &&
@@ -918,7 +1689,8 @@ export class NodeDispatcher {
                   key !== "variantParentId" &&
                   key !== "variantInfo" &&
                   key !== "dynamicParentId" &&
-                  key !== "dynamicViewportId"
+                  key !== "dynamicViewportId" &&
+                  key !== "position"
                 ) {
                   existingChild[key] = value;
                 }
@@ -936,248 +1708,503 @@ export class NodeDispatcher {
                 }
               );
             } else {
-              console.log(
-                `    ✅ Creating new child with parent: ${target.id}`
-              );
-
               // Create new child
               const newChild = {
                 ...draftNode,
                 id: nanoid(),
-                parentId: target.id, // CRITICAL FIX: Always set parentId to the top-level target
+                // Set parentId to the counterpart - this maintains the proper hierarchy
+                parentId: counterpart.id,
                 style: { ...draftNode.style },
                 independentStyles: {},
+                // Link with other responsive counterparts
+                variantResponsiveId: childResponsiveId,
               };
 
-              // Set the viewport ID
-              const targetViewportId = findParentViewport(
-                target.id,
-                draft.nodes
-              );
-              if (targetViewportId) {
-                newChild.dynamicViewportId = targetViewportId;
-                console.log(`    ✅ Set viewport ID: ${targetViewportId}`);
+              // Copy necessary properties from parent
+              if (counterpart.dynamicViewportId) {
+                newChild.dynamicViewportId = counterpart.dynamicViewportId;
               }
 
-              // Set variant properties if target is a variant
-              if (target.isVariant) {
-                newChild.isVariant = true;
-                newChild.variantParentId = target.variantParentId || target.id;
-                newChild.dynamicParentId = target.dynamicParentId;
-                newChild.variantInfo = target.variantInfo;
-                console.log(`    ✅ Set variant properties from target`);
-              }
-
-              console.log(`    ✅ Created new child with ID: ${newChild.id}`);
+              // Add to nodes array
               draft.nodes.push(newChild);
             }
           });
-        }
-        // If we added to a child of the dynamic node, we need to find corresponding parents
-        else if (ancestorChain.length > 0) {
-          console.log(
-            `🔄 CASE: Child of a child (${ancestorChain.length} levels deep)`
+
+          // Now sync to variants - need to find the root of this hierarchy first
+          const rootNode = this.findBaseNodeRoot(draftNode.id, draft.nodes);
+          if (!rootNode) {
+            return;
+          }
+
+          // Find the family ID
+          const familyId = rootNode.dynamicFamilyId;
+          if (!familyId) {
+            return;
+          }
+
+          // Find the path from the root to our parent
+          const pathFromRoot = this.buildPathFromRoot2(
+            rootNode.id,
+            draftParent.id,
+            draft.nodes
           );
 
-          // For each root/variant, follow the ancestor chain to find the corresponding parent
-          const allTargetRoots = [...allDynamicRoots, ...allVariants].filter(
-            (target) => target.id !== dynamicRoot.id
+          // Find all variants in this family
+          const allVariants = draft.nodes.filter(
+            (n) => n.dynamicFamilyId === familyId && n.isVariant && !n.parentId
           );
 
-          console.log(
-            `  📊 Found ${allTargetRoots.length} target roots/variants to process`
-          );
+          // Group variants by their type
+          const variantsByType = {};
+          allVariants.forEach((variant) => {
+            const variantTypeId = variant.variantInfo?.id;
+            if (!variantTypeId) return;
 
-          allTargetRoots.forEach((targetRoot, rootIdx) => {
-            console.log(
-              `  🔄 Processing target root ${rootIdx + 1}: ${targetRoot.id} (${
-                targetRoot.isDynamic ? "dynamic" : "variant"
-              })`
-            );
-
-            // For debugging - check what's in the target root's hierarchy
-            const targetChildren = draft.nodes.filter(
-              (n) => n.parentId === targetRoot.id
-            );
-            console.log(
-              `    📊 Target root has ${targetChildren.length} direct children`
-            );
-
-            // Start from the target root
-            let targetParent = targetRoot;
-            let isCorrectPath = true;
-
-            // Follow the ancestor chain to find the corresponding parent
-            for (let i = ancestorChain.length - 1; i >= 0; i--) {
-              const ancestor = ancestorChain[i];
-
-              // Find child with matching sharedId
-              const childWithSharedId = draft.nodes.find(
-                (n) =>
-                  n.parentId === targetParent.id &&
-                  n.sharedId === ancestor.sharedId
-              );
-
-              if (!childWithSharedId) {
-                console.log(
-                  `    ❌ Could not find matching child for ancestor: ${ancestor.id}`
-                );
-                isCorrectPath = false;
-                break;
-              }
-
-              console.log(`    ✅ Found next parent: ${childWithSharedId.id}`);
-              targetParent = childWithSharedId;
+            if (!variantsByType[variantTypeId]) {
+              variantsByType[variantTypeId] = [];
             }
 
-            if (!isCorrectPath) {
-              console.log(
-                `    ❌ Could not build complete path for target: ${targetRoot.id}`
-              );
-              return;
-            }
+            variantsByType[variantTypeId].push(variant);
+          });
 
-            console.log(`    ✅ Found final target parent: ${targetParent.id}`);
+          // Process each variant type
+          Object.entries(variantsByType).forEach(
+            ([variantTypeId, variants]) => {
+              // Generate a unique variantResponsiveId for this child across all variants of this type
+              const variantTypeChildResponsiveId = nanoid();
 
-            // CRITICAL FIX: Check for existing duplicates with this shared ID
-            // We need to find ALL instances under this target root, not just direct children
-            const existingChildren = draft.nodes.filter(
-              (n) =>
-                n.sharedId === draftNode.sharedId &&
-                (n.dynamicParentId === targetRoot.id ||
-                  n.variantParentId === targetRoot.id)
-            );
+              // Filter variants based on downward flow
+              const filteredVariants =
+                currentViewportIndex !== -1
+                  ? variants.filter((v) => {
+                      const variantViewportId = this.getNodeViewportId(
+                        v,
+                        draft.nodes
+                      );
+                      const variantViewportIndex =
+                        viewportOrder.indexOf(variantViewportId);
+                      return (
+                        variantViewportIndex === -1 ||
+                        variantViewportIndex >= currentViewportIndex
+                      );
+                    })
+                  : variants;
 
-            console.log(
-              `    📊 Found ${existingChildren.length} existing children with this sharedId`
-            );
-
-            if (existingChildren.length > 0) {
-              // Keep only the one with the correct parent if it exists
-              const correctChild = existingChildren.find(
-                (n) => n.parentId === targetParent.id
-              );
-
-              if (correctChild) {
-                console.log(`    ✅ Found correct child: ${correctChild.id}`);
-
-                // Remove all others
-                existingChildren.forEach((child) => {
-                  if (child.id !== correctChild.id) {
-                    console.log(`    ⚠️ Removing incorrect child: ${child.id}`);
-                    const index = draft.nodes.findIndex(
-                      (n) => n.id === child.id
-                    );
-                    if (index !== -1) {
-                      draft.nodes.splice(index, 1);
-                    }
-                  }
-                });
-
-                // Update the correct child
-                console.log(
-                  `    🔄 Updating correct child: ${correctChild.id}`
+              // For each variant, find the corresponding parent path
+              filteredVariants.forEach((variant, idx) => {
+                // Follow the same path in the variant as in the base node
+                const variantParent = this.followPathInVariant(
+                  variant.id,
+                  pathFromRoot,
+                  draft.nodes
                 );
-                Object.entries(draftNode).forEach(([key, value]) => {
-                  if (
-                    key !== "id" &&
-                    key !== "parentId" &&
-                    key !== "style" &&
-                    key !== "independentStyles" &&
-                    key !== "isVariant" &&
-                    key !== "variantParentId" &&
-                    key !== "variantInfo" &&
-                    key !== "dynamicParentId" &&
-                    key !== "dynamicViewportId"
-                  ) {
-                    correctChild[key] = value;
-                  }
-                });
 
-                // Update non-independent style properties
-                Object.entries(draftNode.style).forEach(
-                  ([styleKey, styleValue]) => {
+                if (!variantParent) {
+                  return;
+                }
+
+                // Check for existing child with same sharedId
+                const existingChild = draft.nodes.find(
+                  (n) =>
+                    n.parentId === variantParent.id &&
+                    n.sharedId === draftNode.sharedId
+                );
+
+                if (existingChild) {
+                  // Link with other responsive counterparts of this same variant type
+                  existingChild.variantResponsiveId =
+                    variantTypeChildResponsiveId;
+
+                  // Update properties
+                  Object.entries(draftNode).forEach(([key, value]) => {
                     if (
-                      !correctChild.independentStyles ||
-                      !correctChild.independentStyles[styleKey]
+                      key !== "id" &&
+                      key !== "parentId" &&
+                      key !== "style" &&
+                      key !== "independentStyles" &&
+                      key !== "isVariant" &&
+                      key !== "variantParentId" &&
+                      key !== "variantInfo" &&
+                      key !== "dynamicParentId" &&
+                      key !== "dynamicViewportId" &&
+                      key !== "variantResponsiveId" &&
+                      key !== "position"
                     ) {
-                      correctChild.style[styleKey] = styleValue;
+                      existingChild[key] = value;
                     }
-                  }
-                );
-              } else {
-                // No child with correct parent, remove all existing and create new
-                console.log(
-                  `    ⚠️ No child with correct parent found, removing all and creating new`
-                );
-                existingChildren.forEach((child) => {
-                  const index = draft.nodes.findIndex((n) => n.id === child.id);
-                  if (index !== -1) {
-                    draft.nodes.splice(index, 1);
-                  }
-                });
+                  });
 
-                // Create new below
-              }
+                  // Update non-independent style properties
+                  Object.entries(draftNode.style).forEach(
+                    ([styleKey, styleValue]) => {
+                      if (
+                        !existingChild.independentStyles ||
+                        !existingChild.independentStyles[styleKey]
+                      ) {
+                        existingChild.style[styleKey] = styleValue;
+                      }
+                    }
+                  );
+                } else {
+                  // Create new child
+                  const newChild = {
+                    ...draftNode,
+                    id: nanoid(),
+                    parentId: variantParent.id,
+                    style: { ...draftNode.style },
+                    independentStyles: {},
+                    // Set variant properties
+                    isVariant: true,
+                    // Link with other responsive counterparts of this variant type
+                    variantResponsiveId: variantTypeChildResponsiveId,
+                  };
+
+                  // Get variant properties from closest variant ancestor
+                  const variantAncestor = this.findVariantAncestor(
+                    variantParent.id,
+                    draft.nodes
+                  );
+                  if (variantAncestor) {
+                    newChild.variantParentId = variantAncestor.id;
+                    newChild.dynamicParentId = variantAncestor.dynamicParentId;
+                    newChild.variantInfo = variantAncestor.variantInfo;
+                  }
+
+                  // Set viewport ID
+                  const variantViewportId = this.getNodeViewportId(
+                    variant,
+                    draft.nodes
+                  );
+                  if (variantViewportId) {
+                    newChild.dynamicViewportId = variantViewportId;
+                  }
+
+                  // Add to nodes array
+                  draft.nodes.push(newChild);
+                }
+              });
             }
+          );
+        }
+        // CASE 2: In a variant hierarchy
+        else if (isVariantHierarchy) {
+          // Find all responsive counterparts of the parent using variantResponsiveId
+          const allCounterparts = draft.nodes.filter(
+            (n) =>
+              n.variantResponsiveId === draftParent.variantResponsiveId &&
+              n.id !== draftParent.id
+          );
 
-            // If no correct child exists or we removed all, create a new one
-            if (
-              existingChildren.length === 0 ||
-              !existingChildren.some((n) => n.parentId === targetParent.id)
-            ) {
-              console.log(
-                `    ✅ Creating new child with parent: ${targetParent.id}`
+          // Filter counterparts based on downward flow
+          const currentViewportIndex = viewportOrder.indexOf(currentViewportId);
+
+          const parentCounterparts =
+            currentViewportIndex !== -1
+              ? allCounterparts.filter((n) => {
+                  const counterpartViewportId = this.getNodeViewportId(
+                    n,
+                    draft.nodes
+                  );
+                  const counterpartViewportIndex = viewportOrder.indexOf(
+                    counterpartViewportId
+                  );
+                  // Only include counterparts that are below the current viewport in the order
+                  return (
+                    counterpartViewportIndex !== -1 &&
+                    counterpartViewportIndex > currentViewportIndex
+                  );
+                })
+              : allCounterparts;
+
+          // For each responsive counterpart of the parent, add/update the child
+          parentCounterparts.forEach((counterpart, idx) => {
+            // Check for existing child with same sharedId
+            const existingChild = draft.nodes.find(
+              (n) =>
+                n.parentId === counterpart.id &&
+                n.sharedId === draftNode.sharedId
+            );
+
+            if (existingChild) {
+              // Link with other responsive counterparts
+              existingChild.variantResponsiveId = childResponsiveId;
+
+              // Update properties
+              Object.entries(draftNode).forEach(([key, value]) => {
+                if (
+                  key !== "id" &&
+                  key !== "parentId" &&
+                  key !== "style" &&
+                  key !== "independentStyles" &&
+                  key !== "isVariant" &&
+                  key !== "variantParentId" &&
+                  key !== "variantInfo" &&
+                  key !== "dynamicParentId" &&
+                  key !== "dynamicViewportId" &&
+                  key !== "position"
+                ) {
+                  existingChild[key] = value;
+                }
+              });
+
+              // Update non-independent style properties
+              Object.entries(draftNode.style).forEach(
+                ([styleKey, styleValue]) => {
+                  if (
+                    !existingChild.independentStyles ||
+                    !existingChild.independentStyles[styleKey]
+                  ) {
+                    existingChild.style[styleKey] = styleValue;
+                  }
+                }
               );
-
+            } else {
               // Create new child
               const newChild = {
                 ...draftNode,
                 id: nanoid(),
-                parentId: targetParent.id,
+                // Set parentId to the counterpart - this maintains the proper hierarchy
+                parentId: counterpart.id,
                 style: { ...draftNode.style },
                 independentStyles: {},
+                // Link with other responsive counterparts
+                variantResponsiveId: childResponsiveId,
               };
 
-              // Set viewport ID
-              const targetViewportId = findParentViewport(
-                targetRoot.id,
-                draft.nodes
-              );
-              if (targetViewportId) {
-                newChild.dynamicViewportId = targetViewportId;
-                console.log(`      ✅ Set viewport ID: ${targetViewportId}`);
-              }
-
-              // Inherit variant properties if appropriate
-              if (targetRoot.isVariant || targetParent.isVariant) {
+              // Copy necessary properties from parent
+              // Inherit variant info if parent is a variant
+              if (counterpart.isVariant) {
                 newChild.isVariant = true;
-
-                // If the target root is a variant, use its properties
-                if (targetRoot.isVariant) {
-                  newChild.variantParentId = targetRoot.id;
-                  newChild.dynamicParentId = targetRoot.dynamicParentId;
-                  newChild.variantInfo = targetRoot.variantInfo;
-                }
-                // If just the parent is a variant, use its properties
-                else if (targetParent.isVariant) {
-                  newChild.variantParentId = targetParent.variantParentId;
-                  newChild.dynamicParentId = targetParent.dynamicParentId;
-                  newChild.variantInfo = targetParent.variantInfo;
-                }
-
-                console.log(`      ✅ Set variant properties`);
+                newChild.variantParentId =
+                  counterpart.variantParentId || counterpart.id;
+                newChild.variantInfo = counterpart.variantInfo;
               }
 
-              console.log(`      ✅ Created new child with ID: ${newChild.id}`);
+              // Handle dynamicParentId and viewportId
+              if (counterpart.dynamicParentId) {
+                newChild.dynamicParentId = counterpart.dynamicParentId;
+              }
+
+              if (counterpart.dynamicViewportId) {
+                newChild.dynamicViewportId = counterpart.dynamicViewportId;
+              }
+
+              // Add to nodes array
               draft.nodes.push(newChild);
             }
           });
         }
-
-        console.log("----------- SYNC VARIANTS END -----------");
       })
     );
+  }
+
+  // Helper method to check if a node is somewhere in a base node hierarchy
+  isInBaseNodeHierarchy(nodeId) {
+    const currentState = this.getNodeState();
+    const node = currentState.nodes.find((n) => n.id === nodeId);
+    if (!node || !node.parentId) return false;
+
+    let currentParentId = node.parentId;
+    while (currentParentId) {
+      const parent = currentState.nodes.find((n) => n.id === currentParentId);
+      if (!parent) break;
+
+      // If any ancestor is a base node, we're in a base node hierarchy
+      if (parent.isDynamic) return true;
+
+      if (!parent.parentId) break;
+      currentParentId = parent.parentId;
+    }
+
+    return false;
+  }
+
+  // Helper method to check if a node is somewhere in a variant hierarchy
+  isInVariantHierarchy(nodeId) {
+    const currentState = this.getNodeState();
+    const node = currentState.nodes.find((n) => n.id === nodeId);
+    if (!node || !node.parentId) return false;
+
+    let currentParentId = node.parentId;
+    while (currentParentId) {
+      const parent = currentState.nodes.find((n) => n.id === currentParentId);
+      if (!parent) break;
+
+      // If any ancestor is a variant, we're in a variant hierarchy
+      if (parent.isVariant) return true;
+
+      if (!parent.parentId) break;
+      currentParentId = parent.parentId;
+    }
+
+    return false;
+  }
+
+  // Helper method to get the viewport ID for a node
+  getNodeViewportId(node, nodesArray) {
+    if (!node) return null;
+
+    // If node has a dynamicViewportId, use it
+    if (node.dynamicViewportId) {
+      return node.dynamicViewportId;
+    }
+
+    // Otherwise traverse up to find a viewport
+    let currentId = node.parentId;
+    const nodes = nodesArray || this.getNodeState().nodes;
+
+    while (currentId) {
+      const parent = nodes.find((n) => n.id === currentId);
+      if (!parent) break;
+
+      if (parent.isViewport) {
+        return parent.id;
+      }
+
+      if (parent.dynamicViewportId) {
+        return parent.dynamicViewportId;
+      }
+
+      if (!parent.parentId) break;
+      currentId = parent.parentId;
+    }
+
+    return null;
+  }
+
+  // Helper to find the base node root of a hierarchy
+  findBaseNodeRoot(nodeId, nodes) {
+    let current = nodes.find((n) => n.id === nodeId);
+    if (!current || !current.parentId) return null;
+
+    let path = [];
+
+    while (current && current.parentId) {
+      path.push(current);
+      const parent = nodes.find((n) => n.id === current.parentId);
+      if (!parent) break;
+
+      if (parent.isDynamic) {
+        return parent;
+      }
+
+      current = parent;
+    }
+
+    return null;
+  }
+
+  // Helper to build a path from root to a node
+  buildPathFromRoot2(rootId, nodeId, nodes) {
+    // If node is the root, return empty path
+    if (rootId === nodeId) {
+      return [];
+    }
+
+    const path = [];
+    let current = nodes.find((n) => n.id === nodeId);
+
+    while (current && current.id !== rootId) {
+      path.unshift(current); // Add to start
+
+      if (!current.parentId) break;
+      current = nodes.find((n) => n.id === current.parentId);
+      if (!current) break;
+    }
+
+    return path;
+  }
+
+  // Helper to follow a path in a variant
+  followPathInVariant(variantRootId, path, nodes) {
+    if (path.length === 0) {
+      // If no path, the variant root is the target parent
+      return nodes.find((n) => n.id === variantRootId);
+    }
+
+    let current = nodes.find((n) => n.id === variantRootId);
+    if (!current) return null;
+
+    // For each node in the path, find the corresponding child in the variant
+    for (let i = 0; i < path.length; i++) {
+      const pathNode = path[i];
+
+      // Find child with matching sharedId
+      const matchingChild = nodes.find(
+        (n) => n.parentId === current.id && n.sharedId === pathNode.sharedId
+      );
+
+      if (!matchingChild) {
+        // If no direct match, try using variantResponsiveId
+        if (pathNode.variantResponsiveId) {
+          const matchByResponsiveId = nodes.find(
+            (n) =>
+              n.parentId === current.id &&
+              n.variantResponsiveId === pathNode.variantResponsiveId
+          );
+
+          if (matchByResponsiveId) {
+            current = matchByResponsiveId;
+            continue;
+          }
+        }
+
+        // If still no match, try a broader search
+        const anyMatchingNode = nodes.find(
+          (n) =>
+            n.sharedId === pathNode.sharedId &&
+            this.isDescendantOf(n.id, variantRootId, nodes)
+        );
+
+        if (anyMatchingNode) {
+          current = anyMatchingNode;
+          continue;
+        }
+
+        // No match found
+        return null;
+      }
+
+      current = matchingChild;
+    }
+
+    return current;
+  }
+
+  // Helper to check if a node is a descendant of another
+  isDescendantOf(childId, ancestorId, nodes) {
+    let current = nodes.find((n) => n.id === childId);
+    if (!current || !current.parentId) return false;
+
+    if (current.parentId === ancestorId) return true;
+
+    return this.isDescendantOf(current.parentId, ancestorId, nodes);
+  }
+
+  // Helper to find the nearest variant ancestor
+  findVariantAncestor(nodeId, nodes) {
+    let current = nodes.find((n) => n.id === nodeId);
+    if (!current) return null;
+
+    // If node itself is a variant, return it
+    if (current.isVariant) return current;
+
+    // Otherwise traverse up to find a variant ancestor
+    let currentId = current.parentId;
+
+    while (currentId) {
+      const parent = nodes.find((n) => n.id === currentId);
+      if (!parent) break;
+
+      if (parent.isVariant) {
+        return parent;
+      }
+
+      if (!parent.parentId) break;
+      currentId = parent.parentId;
+    }
+
+    return null;
   }
 
   // Helper function to get all nodes in a subtree
@@ -1231,12 +2258,9 @@ export class NodeDispatcher {
           return;
         }
 
-        console.log("Syncing node:", node.id, "in parent:", parentNode.id);
-
         // Ensure the node has a sharedId
         if (!node.sharedId) {
           node.sharedId = nanoid();
-          console.log("Assigned new sharedId:", node.sharedId);
         }
 
         // STEP 1: Find the root dynamic node of the entire tree
@@ -1252,16 +2276,9 @@ export class NodeDispatcher {
           return;
         }
 
-        console.log("Found root dynamic node:", rootDynamicId);
-
         // STEP 2: Find all related dynamic nodes across viewports
         const allDynamicNodes = draft.nodes.filter(
           (n) => n.isDynamic && n.sharedId === rootDynamicNode.sharedId
-        );
-
-        console.log(
-          "Found related dynamic nodes across viewports:",
-          allDynamicNodes.map((n) => n.id)
         );
 
         // STEP 3: Find all variants of all these dynamic nodes
@@ -1271,11 +2288,6 @@ export class NodeDispatcher {
             allDynamicNodes.some(
               (d) => n.dynamicParentId === d.id || n.variantParentId === d.id
             )
-        );
-
-        console.log(
-          "Found variants across viewports:",
-          allVariants.map((n) => n.id)
         );
 
         // STEP 4: Find the corresponding parent in each target tree
@@ -1288,10 +2300,6 @@ export class NodeDispatcher {
           parentNode,
           rootDynamicId,
           draft.nodes
-        );
-        console.log(
-          "Path from root:",
-          pathFromRoot.map((p) => p.id)
         );
 
         // For each target, find the corresponding parent using the path
@@ -1312,13 +2320,8 @@ export class NodeDispatcher {
           }
 
           if (!correspondingParent) {
-            console.log(`No corresponding parent found in ${targetRoot.id}`);
             return;
           }
-
-          console.log(
-            `Found corresponding parent ${correspondingParent.id} in ${targetRoot.id}`
-          );
 
           // CRITICAL: Check if this parent already has a child with this sharedId
           // If it does, just update it - don't create a new one
@@ -1329,10 +2332,6 @@ export class NodeDispatcher {
           );
 
           if (existingChild) {
-            console.log(
-              `Updating existing child ${existingChild.id} with shared ID ${node.sharedId}`
-            );
-
             // Update properties while respecting independent styles
             Object.entries(node.style).forEach(([key, value]) => {
               if (
@@ -1385,19 +2384,12 @@ export class NodeDispatcher {
                 (n) => n.parentId === node.id
               );
               if (children.length > 0) {
-                console.log(
-                  `Syncing ${children.length} children of frame ${node.id}`
-                );
                 children.forEach((child) => {
                   syncNodeWithTarget(child, existingChild, draft.nodes);
                 });
               }
             }
           } else {
-            console.log(
-              `Creating new child in ${correspondingParent.id} with shared ID ${node.sharedId}`
-            );
-
             // Create a new child with the same properties
             const newChild: Node = {
               id: nanoid(),
@@ -1444,9 +2436,6 @@ export class NodeDispatcher {
                 (n) => n.parentId === node.id
               );
               if (children.length > 0) {
-                console.log(
-                  `Syncing ${children.length} children of frame ${node.id}`
-                );
                 children.forEach((child) => {
                   syncNodeWithTarget(child, newChild, draft.nodes);
                 });
@@ -1454,8 +2443,6 @@ export class NodeDispatcher {
             }
           }
         });
-
-        console.log("Finished syncing node:", nodeId);
       })
     );
 
@@ -1545,9 +2532,6 @@ export class NodeDispatcher {
         const match = children.find((n) => n.sharedId === pathNode.sharedId);
 
         if (!match) {
-          console.log(
-            `Path broken at index ${i}, no child with sharedId ${pathNode.sharedId} found in ${current.id}`
-          );
           return undefined;
         }
 
@@ -1579,9 +2563,6 @@ export class NodeDispatcher {
 
       if (existingNode) {
         // Update existing node properties without creating duplicates
-        console.log(
-          `Updating existing child ${existingNode.id} with shared ID ${sourceNode.sharedId}`
-        );
 
         Object.entries(sourceNode.style).forEach(([key, value]) => {
           if (
@@ -1625,9 +2606,6 @@ export class NodeDispatcher {
         }
       } else {
         // Create new node - not a duplicate because we checked first
-        console.log(
-          `Creating new child in ${targetParent.id} with shared ID ${sourceNode.sharedId}`
-        );
 
         const newNode: Node = {
           id: nanoid(),
@@ -1785,17 +2763,13 @@ export class NodeDispatcher {
    * This fixes cases where the same sharedId appears multiple times in the same parent.
    */
   fixDuplicatedDynamicElements() {
-    console.log("Starting fix for duplicated dynamic elements...");
-
     this.setState((prev) =>
       produce(prev, (draft) => {
         // Get all dynamic nodes
         const dynamicNodes = draft.nodes.filter((n) => n.isDynamic);
-        console.log(`Found ${dynamicNodes.length} dynamic nodes to check`);
 
         // Get all variants
         const allVariants = draft.nodes.filter((n) => n.isVariant);
-        console.log(`Found ${allVariants.length} variants to check`);
 
         // For each variant, check for duplicate children with the same sharedId
         allVariants.forEach((variant) => {
@@ -1819,10 +2793,6 @@ export class NodeDispatcher {
           // Check each group for duplicates
           childrenBySharedId.forEach((children, sharedId) => {
             if (children.length > 1) {
-              console.log(
-                `Found ${children.length} duplicate children with sharedId ${sharedId} in variant ${variant.id}`
-              );
-
               // Keep the most recently added one (usually the last in the array)
               // Sort by ID to ensure deterministic behavior
               const sortedChildren = [...children].sort((a, b) =>
@@ -1832,15 +2802,10 @@ export class NodeDispatcher {
 
               // Remove all but the one we want to keep
               sortedChildren.slice(0, -1).forEach((childToRemove) => {
-                console.log(`Removing duplicate child ${childToRemove.id}`);
-
                 // Get all descendants of this child to also remove
                 const descendantsToRemove = getAllDescendants(
                   childToRemove.id,
                   draft.nodes
-                );
-                console.log(
-                  `Also removing ${descendantsToRemove.length} descendants`
                 );
 
                 // Remove the child and all its descendants
@@ -1852,8 +2817,6 @@ export class NodeDispatcher {
                   (n) => !allToRemove.includes(n.id)
                 );
               });
-
-              console.log(`Kept child ${keepChild.id}`);
             }
           });
 
@@ -1884,10 +2847,6 @@ export class NodeDispatcher {
               // Check each group for duplicates
               grandchildrenBySharedId.forEach((items, sharedId) => {
                 if (items.length > 1) {
-                  console.log(
-                    `Found ${items.length} duplicate grandchildren with sharedId ${sharedId} in node ${child.id}`
-                  );
-
                   // Keep the most recently added one (usually the last in the array)
                   const sortedItems = [...items].sort((a, b) =>
                     a.id.localeCompare(b.id as string)
@@ -1896,10 +2855,6 @@ export class NodeDispatcher {
 
                   // Remove all but the one we want to keep
                   sortedItems.slice(0, -1).forEach((itemToRemove) => {
-                    console.log(
-                      `Removing duplicate grandchild ${itemToRemove.id}`
-                    );
-
                     // Get all descendants of this item to also remove
                     const descendantsToRemove = getAllDescendants(
                       itemToRemove.id,
@@ -1915,8 +2870,6 @@ export class NodeDispatcher {
                       (n) => !allToRemove.includes(n.id)
                     );
                   });
-
-                  console.log(`Kept grandchild ${keepItem.id}`);
                 }
               });
 
@@ -1930,8 +2883,6 @@ export class NodeDispatcher {
         });
       })
     );
-
-    console.log("Completed fix for duplicated dynamic elements");
   }
 
   /**
@@ -1962,7 +2913,6 @@ export class NodeDispatcher {
     this.setState((prev) => {
       // First find all dynamic nodes
       const dynamicNodes = prev.nodes.filter((n) => n.isDynamic);
-      console.log(`Found ${dynamicNodes.length} dynamic nodes to sync`);
 
       // Return state unchanged - we'll make changes in the next steps
       return prev;
@@ -1975,24 +2925,15 @@ export class NodeDispatcher {
       if (
         index >= this.getNodeState().nodes.filter((n) => n.isDynamic).length
       ) {
-        console.log("Finished syncing all dynamic nodes");
         return;
       }
 
       const dynamicNodes = this.getNodeState().nodes.filter((n) => n.isDynamic);
       const dynamicNode = dynamicNodes[index];
-      console.log(
-        `Processing dynamic node ${index + 1}/${dynamicNodes.length}: ${
-          dynamicNode.id
-        }`
-      );
 
       // Find all direct children of this dynamic node
       const children = this.getNodeState().nodes.filter(
         (n) => n.parentId === dynamicNode.id
-      );
-      console.log(
-        `Found ${children.length} children for node ${dynamicNode.id}`
       );
 
       // Process each child with a delay
@@ -2002,17 +2943,11 @@ export class NodeDispatcher {
         if (childIndex >= children.length) {
           // Move to next dynamic node
           processedCount += children.length;
-          console.log(`Processed ${processedCount} total children so far`);
           setTimeout(() => processNextNode(index + 1), 100);
           return;
         }
 
         const child = children[childIndex];
-        console.log(
-          `Syncing child ${childIndex + 1}/${children.length} of node ${
-            index + 1
-          }/${dynamicNodes.length}`
-        );
 
         // Sync this child
         this.syncDynamicChildren(child.id);
@@ -2174,8 +3109,6 @@ export class NodeDispatcher {
         );
         if (!dynamicNode) return;
 
-        console.log("Syncing all children for dynamic node:", dynamicNodeId);
-
         // Find all direct children of the dynamic node
         const directChildren = draft.nodes.filter(
           (n) => n.parentId === dynamicNodeId
@@ -2187,8 +3120,6 @@ export class NodeDispatcher {
           if (!child.sharedId) {
             child.sharedId = nanoid();
           }
-
-          console.log("Processing child:", child.id);
         });
 
         // Get all variants of this dynamic node
@@ -2204,11 +3135,6 @@ export class NodeDispatcher {
             )
         );
 
-        console.log(
-          "Found variants:",
-          allVariants.map((v) => v.id)
-        );
-
         // For each direct child, ensure it exists in all variants
         directChildren.forEach((child) => {
           allVariants.forEach((variant) => {
@@ -2218,10 +3144,6 @@ export class NodeDispatcher {
             );
 
             if (!existingChild) {
-              console.log(
-                `Creating missing child for variant ${variant.id} with shared ID ${child.sharedId}`
-              );
-
               // Create a new copy of the child for this variant
               const newChildId = nanoid();
               const newChild: Node = {
@@ -2361,8 +3283,19 @@ export class NodeDispatcher {
         if (idx === -1) return;
         const node = draft.nodes[idx];
 
+        // Store original text content and unsync flags for text nodes
+        const originalText = node.style?.text;
+        const hasTextUnsyncFlag = node.unsyncFromParentViewport?.text === true;
+        const originalUnsyncFlags = { ...node.unsyncFromParentViewport };
+        const originalIndependentStyles = { ...node.independentStyles };
+
         // Remove from old position
         draft.nodes.splice(idx, 1);
+
+        // NEW: Clean up text property if this is not a text element
+        if (node.type !== "text" && node.style && "text" in node.style) {
+          delete node.style.text;
+        }
 
         // Find siblings in target parent
         const siblings = draft.nodes
@@ -2390,6 +3323,21 @@ export class NodeDispatcher {
 
         // Insert at new position
         draft.nodes.splice(insertIndex, 0, node);
+
+        // Restore original text content if this is a text node with text unsync flag
+        if (node.type === "text" && hasTextUnsyncFlag && originalText) {
+          node.style.text = originalText;
+        }
+
+        // Restore the original unsync flags
+        if (originalUnsyncFlags) {
+          node.unsyncFromParentViewport = originalUnsyncFlags;
+        }
+
+        // Restore original independent styles flags
+        if (originalIndependentStyles) {
+          node.independentStyles = originalIndependentStyles;
+        }
       })
     );
   }
@@ -2409,16 +3357,17 @@ export class NodeDispatcher {
     },
     targetIsDynamic?: boolean
   ) {
-    // Track if we need to sync after state update
     let needsSync = false;
-
-    console.log("TARGET IS DYNAMIC IN MOVE NODE", targetIsDynamic);
 
     this.setState((prev) =>
       produce(prev, (draft) => {
         const idx = draft.nodes.findIndex((n) => n.id === nodeId);
         if (idx === -1) return;
         const node = draft.nodes[idx];
+
+        if (node.type !== "text" && node.style && "text" in node.style) {
+          delete node.style.text;
+        }
 
         if (!inViewport) {
           node.inViewport = false;
@@ -2432,18 +3381,15 @@ export class NodeDispatcher {
 
         node.inViewport = true;
         node.style.position = "relative";
-
         if (!node.sharedId) {
           node.sharedId = nanoid();
         }
 
         if (options?.targetId != null && options.position) {
           draft.nodes.splice(idx, 1);
-
           const targetId = options.targetId;
           const position = options.position;
           const targetIndex = draft.nodes.findIndex((n) => n.id === targetId);
-
           if (targetIndex === -1) {
             node.parentId = null;
             draft.nodes.push(node);
@@ -2452,9 +3398,6 @@ export class NodeDispatcher {
 
           const targetNode = draft.nodes[targetIndex];
 
-          console.log("targetIsDynamic", targetIsDynamic);
-
-          // If target is dynamic and position is "inside", mark for sync after update
           if (position === "inside" && targetIsDynamic) {
             needsSync = true;
           }
@@ -2467,7 +3410,7 @@ export class NodeDispatcher {
 
           node.parentId = targetNode.parentId;
 
-          // If index is provided, use it directly
+          // Use provided index if available
           if (typeof options.index === "number") {
             const siblings = draft.nodes.filter(
               (n) => n.parentId === targetNode.parentId
@@ -2480,25 +3423,21 @@ export class NodeDispatcher {
             return;
           }
 
-          // Otherwise use before/after position
+          // Otherwise, use before/after positioning
           const siblingIds = draft.nodes
             .map((n, i) => ({ node: n, index: i }))
             .filter((obj) => obj.node.parentId === targetNode.parentId);
-
           const siblingIdx = siblingIds.findIndex(
             (obj) => obj.node.id === targetId
           );
-
           if (siblingIdx === -1) {
             draft.nodes.push(node);
             return;
           }
-
           const insertGlobalIndex =
             position === "after"
               ? siblingIds[siblingIdx].index + 1
               : siblingIds[siblingIdx].index;
-
           draft.nodes.splice(insertGlobalIndex, 0, node);
           return;
         }
@@ -2508,11 +3447,8 @@ export class NodeDispatcher {
       })
     );
 
-    // After the state update, check if we need to sync the moved node
     if (targetIsDynamic) {
-      // Use setTimeout to ensure state has been updated
       setTimeout(() => {
-        console.log("Synchronizing moved node:", nodeId);
         this.syncVariants(nodeId);
       }, 50);
     }
@@ -2675,9 +3611,17 @@ export class NodeDispatcher {
               n.sharedId === node.sharedId && n.id !== node.id && n.isDynamic
           );
 
-          console.log(
-            `Found ${responsiveCounterparts.length} responsive counterparts`
-          );
+          // IMPROVEMENT: Ensure base node and all responsive counterparts have matching variantResponsiveId
+          if (!node.variantResponsiveId) {
+            // Generate a shared variantResponsiveId for all base dynamic nodes
+            const baseNodeResponsiveId = nanoid();
+            node.variantResponsiveId = baseNodeResponsiveId;
+
+            // Apply same variantResponsiveId to all responsive counterparts
+            responsiveCounterparts.forEach((counterpart) => {
+              counterpart.variantResponsiveId = baseNodeResponsiveId;
+            });
+          }
 
           responsiveCounterparts.forEach((counterpart) => {
             // Store original state if not already stored
@@ -2736,12 +3680,6 @@ export class NodeDispatcher {
         if (isDynamicMode) {
           // CASE 1: Naming a top-level variant (a variant container)
           if (node.isVariant && !node.parentId) {
-            console.log(
-              "Setting custom name for top-level variant:",
-              nodeId,
-              customName
-            );
-
             // Get the variant identifier
             const variantId = node.variantInfo?.id;
             if (!variantId) return;
@@ -2755,10 +3693,6 @@ export class NodeDispatcher {
                 otherNode.isVariant &&
                 !otherNode.parentId // Only sync to top-level variants
               ) {
-                console.log(
-                  "Syncing name to responsive variant:",
-                  otherNode.id
-                );
                 otherNode.customName = customName;
               }
             });
@@ -2767,12 +3701,6 @@ export class NodeDispatcher {
 
           // CASE 2: Naming a child element inside a variant
           if (node.isVariant && node.parentId) {
-            console.log(
-              "Setting custom name for variant child:",
-              nodeId,
-              customName
-            );
-
             // Get the variant identifier from the parent
             const parentVariant = draft.nodes.find(
               (n) => n.id === node.variantParentId
@@ -2799,9 +3727,6 @@ export class NodeDispatcher {
 
               // Update all equivalent children in other responsive variants
               childNodes.forEach((childNode) => {
-                console.log(
-                  `Syncing name to equivalent child ${childNode.id} in variant ${relatedVariant.id}`
-                );
                 childNode.customName = customName;
               });
             });
@@ -2811,12 +3736,6 @@ export class NodeDispatcher {
 
           // CASE 3: Naming a component in a dynamic base node (important new case!)
           if (node.sharedId && !node.isVariant) {
-            console.log(
-              "Setting name for component in dynamic base node:",
-              nodeId,
-              customName
-            );
-
             // Find all nodes with the same shared ID, including:
             // 1. Normal responsive instances
             // 2. Equivalent components inside variants
@@ -2827,11 +3746,6 @@ export class NodeDispatcher {
               ) {
                 // For normal responsive instances or variant components
                 otherNode.customName = customName;
-                console.log(
-                  `Syncing name to component ${
-                    otherNode.id
-                  } (isVariant: ${!!otherNode.isVariant})`
-                );
               }
             });
 
@@ -2840,12 +3754,6 @@ export class NodeDispatcher {
 
           // CASE 4: For normal children of dynamic nodes
           if (!node.isVariant && node.dynamicParentId && node.sharedId) {
-            console.log(
-              "Setting custom name for dynamic child:",
-              nodeId,
-              customName
-            );
-
             // Update all other instances of this child across viewports and inside variants
             draft.nodes.forEach((otherNode) => {
               if (
@@ -2885,17 +3793,9 @@ export class NodeDispatcher {
             n.originalParentId !== undefined
         );
 
-        console.log(
-          `Resetting positions for ${dynamicNodes.length} dynamic nodes`
-        );
-
         dynamicNodes.forEach((node) => {
           // Restore the original state
           if (node.originalState) {
-            console.log(
-              `Restoring node ${node.id} to parent ${node.originalState.parentId}`
-            );
-
             node.parentId = node.originalState.parentId;
             node.inViewport = node.originalState.inViewport;
 
@@ -2944,6 +3844,14 @@ export class NodeDispatcher {
         const variantName = "Variant " + Math.floor(Math.random() * 1000);
         const variantSlug = "variant-" + Math.floor(Math.random() * 1000);
 
+        // IMPROVEMENT: Create a shared variantResponsiveId for all variants of this type
+        // This will directly link all responsive variants of the same type across viewports
+        // Only used for variant nodes, not base nodes
+        const variantResponsiveId = nanoid();
+
+        // We'll also track variantResponsiveIds for all children for proper synchronization
+        const childVariantResponsiveIds = new Map();
+
         // Ensure the original node has a sharedId for synchronization
         if (!originalNode.sharedId) {
           originalNode.sharedId = nanoid();
@@ -2958,20 +3866,12 @@ export class NodeDispatcher {
         // Determine if we're duplicating from a variant or base node
         const duplicatingFromVariant = originalNode.isVariant === true;
 
-        console.log("Duplicating from variant:", duplicatingFromVariant);
-
         // Define our source instances to duplicate from
         const dynamicInstances = duplicatingFromVariant
           ? [originalNode]
           : draft.nodes.filter(
               (n) => n.sharedId === originalNode.sharedId && n.isDynamic
             );
-
-        console.log(
-          "Found",
-          dynamicInstances.length,
-          "source instances to duplicate"
-        );
 
         // Track the desktop/main variant positions for reference
         const mainVariantPositions = new Map();
@@ -3002,10 +3902,6 @@ export class NodeDispatcher {
           // Calculate position based on direction parameter
           let posX = sourceInstance.position?.x || 0;
           let posY = sourceInstance.position?.y || 0;
-
-          console.log(
-            `Using source position (${posX}, ${posY}) with direction ${direction}`
-          );
 
           // Use element width or default gap
           const width = elementWidth || 300;
@@ -3061,6 +3957,9 @@ export class NodeDispatcher {
               name: variantName,
               id: variantSlug,
             },
+            // IMPROVEMENT: Set the variantResponsiveId to link with other responsive variants
+            // Only set on variant nodes, not on base nodes
+            variantResponsiveId: variantResponsiveId,
             // Set the dynamicFamilyId to connect to the family
             dynamicFamilyId: familyId,
             // Use empty independentStyles to track overrides
@@ -3120,21 +4019,11 @@ export class NodeDispatcher {
           // Add to nodes array
           draft.nodes.push(duplicate);
 
-          console.log(
-            `Created variant ${instanceDuplicateId} for instance ${
-              sourceInstance.id
-            } in viewport ${
-              viewportId || sourceInstance.dynamicViewportId || "none"
-            } at position (${posX}, ${posY})`
-          );
-
           // If this is a frame, duplicate all its children
           if (sourceInstance.type === "frame") {
             const children = getSubtree(draft.nodes, sourceInstance.id, false);
             const idMap = new Map<string | number, string | number>();
             idMap.set(sourceInstance.id, instanceDuplicateId);
-
-            console.log(`Found ${children.length} children to duplicate`);
 
             children.forEach((child) => {
               const childDuplicateId = nanoid();
@@ -3142,6 +4031,21 @@ export class NodeDispatcher {
               // Ensure the original child has a sharedId
               if (!child.sharedId) {
                 child.sharedId = nanoid();
+              }
+
+              // IMPROVEMENT: Create a unique variantResponsiveId for this child if it doesn't have one
+              // This ensures each child in the hierarchy has its own synchronization channel
+              let childResponsiveId;
+              if (!childVariantResponsiveIds.has(child.sharedId)) {
+                childResponsiveId = nanoid();
+                childVariantResponsiveIds.set(
+                  child.sharedId,
+                  childResponsiveId
+                );
+              } else {
+                childResponsiveId = childVariantResponsiveIds.get(
+                  child.sharedId
+                );
               }
 
               // Create duplicate child with same properties
@@ -3156,6 +4060,8 @@ export class NodeDispatcher {
                 isVariant: true,
                 // Connect to the dynamic family
                 dynamicFamilyId: familyId,
+                // IMPROVEMENT: Assign variantResponsiveId to children as well
+                variantResponsiveId: childResponsiveId,
                 // Use empty independentStyles to track overrides
                 independentStyles: {},
               };
@@ -3198,9 +4104,6 @@ export class NodeDispatcher {
               // If direct child of the instance, set to the duplicate
               if (child.parentId === sourceInstance.id) {
                 childDuplicate.parentId = instanceDuplicateId;
-                console.log(
-                  `Setting direct child ${childDuplicateId} parentId to ${instanceDuplicateId}`
-                );
               } else {
                 // Otherwise look up parent mapping
                 const originalParentId = child.parentId;
@@ -3208,13 +4111,7 @@ export class NodeDispatcher {
                   const newParentId = idMap.get(originalParentId);
                   if (newParentId) {
                     childDuplicate.parentId = newParentId;
-                    console.log(
-                      `Mapping child ${childDuplicateId} parentId from ${originalParentId} to ${newParentId}`
-                    );
                   } else {
-                    console.log(
-                      `Warning: Could not find parent mapping for child ${child.id}`
-                    );
                   }
                 }
               }
@@ -3223,42 +4120,23 @@ export class NodeDispatcher {
               idMap.set(child.id, childDuplicateId);
               draft.nodes.push(childDuplicate);
             });
-
-            console.log(
-              `Finished duplicating children for instance ${sourceInstance.id}`
-            );
           }
         });
 
         // Cross-viewport duplication for variant sources
         if (duplicatingFromVariant) {
-          console.log(
-            "Duplicating from variant - checking for other viewports"
-          );
-
           // CRITICAL FIX: Get the true base node
           // When duplicating from a variant, we need to find the original base dynamic node
           const baseNodeId =
             originalNode.dynamicParentId || originalNode.variantParentId;
           if (!baseNodeId) {
-            console.log(
-              "Cannot find base node ID for cross-viewport duplication"
-            );
             return;
           }
 
           const baseNode = draft.nodes.find((n) => n.id === baseNodeId);
           if (!baseNode || !baseNode.sharedId) {
-            console.log("Cannot find base node or it has no sharedId");
             return;
           }
-
-          console.log(
-            "Found base node:",
-            baseNode.id,
-            "with sharedId:",
-            baseNode.sharedId
-          );
 
           // Find existing variants with the same ID to get relative positions
           const existingVariants = draft.nodes.filter(
@@ -3266,12 +4144,6 @@ export class NodeDispatcher {
               n.isVariant &&
               n.variantInfo?.id &&
               n.dynamicParentId === baseNode.id
-          );
-
-          console.log(
-            "Found",
-            existingVariants.length,
-            "existing variants for relative positioning"
           );
 
           // Group by variant ID
@@ -3293,12 +4165,6 @@ export class NodeDispatcher {
               n.isDynamic
           );
 
-          console.log(
-            "Found",
-            otherBaseInstances.length,
-            "other base instances across viewports"
-          );
-
           // For each base instance in other viewports, create variants with proper spacing
           otherBaseInstances.forEach((otherBaseInstance) => {
             // Get viewport ID
@@ -3318,8 +4184,6 @@ export class NodeDispatcher {
               return;
             }
 
-            console.log(`Processing viewport ${viewportId}`);
-
             // Check if this variant already exists
             const variantExists = draft.nodes.some(
               (n) =>
@@ -3328,7 +4192,6 @@ export class NodeDispatcher {
             );
 
             if (variantExists) {
-              console.log(`Variant already exists in viewport ${viewportId}`);
               return;
             }
 
@@ -3378,10 +4241,6 @@ export class NodeDispatcher {
                 // Apply same offset in this viewport
                 posX = lastVariant.position.x + mainRelativeX;
                 posY = lastVariant.position.y + mainRelativeY;
-
-                console.log(
-                  `Using relative positioning: x=${posX}, y=${posY} based on desktop variant`
-                );
               } else {
                 // Otherwise just place it after the last variant
                 switch (direction) {
@@ -3405,10 +4264,6 @@ export class NodeDispatcher {
                     posX = lastVariant.position.x + width + gap;
                     posY = lastVariant.position.y;
                 }
-
-                console.log(
-                  `Using simple positioning after last variant: x=${posX}, y=${posY}`
-                );
               }
             } else {
               // No existing variants, position relative to the base instance
@@ -3430,10 +4285,6 @@ export class NodeDispatcher {
                   // Default to right if direction is invalid
                   posX += width + gap;
               }
-
-              console.log(
-                `Using position relative to base: x=${posX}, y=${posY}`
-              );
             }
 
             // Create the new variant
@@ -3459,6 +4310,8 @@ export class NodeDispatcher {
                 name: variantName,
                 id: variantSlug,
               },
+              // IMPROVEMENT: Set the same variantResponsiveId to link with variants in other viewports
+              variantResponsiveId: variantResponsiveId,
               dynamicFamilyId: familyId,
               independentStyles: {
                 // CRITICAL FIX: Always mark position properties as independent
@@ -3504,10 +4357,6 @@ export class NodeDispatcher {
 
             draft.nodes.push(newVariant);
 
-            console.log(
-              `Created cross-viewport variant in ${viewportId} at (${posX}, ${posY})`
-            );
-
             // Duplicate children if needed
             if (otherBaseInstance.type === "frame") {
               const children = getSubtree(
@@ -3525,6 +4374,22 @@ export class NodeDispatcher {
                   child.sharedId = nanoid();
                 }
 
+                // IMPROVEMENT: Use the same childVariantResponsiveId across viewports
+                // Reuse the same one we created earlier for this sharedId
+                let childResponsiveId;
+                if (!childVariantResponsiveIds.has(child.sharedId)) {
+                  // This should rarely happen - means we're seeing a child that wasn't in the source
+                  childResponsiveId = nanoid();
+                  childVariantResponsiveIds.set(
+                    child.sharedId,
+                    childResponsiveId
+                  );
+                } else {
+                  childResponsiveId = childVariantResponsiveIds.get(
+                    child.sharedId
+                  );
+                }
+
                 const childDuplicate: Node = {
                   id: childId,
                   type: child.type,
@@ -3536,6 +4401,8 @@ export class NodeDispatcher {
                   variantParentId: otherBaseInstance.id,
                   dynamicViewportId: viewportId,
                   dynamicFamilyId: familyId,
+                  // IMPROVEMENT: Set the same variantResponsiveId as the child in desktop viewport
+                  variantResponsiveId: childResponsiveId,
                   independentStyles: {},
                 };
 
@@ -3587,11 +4454,6 @@ export class NodeDispatcher {
             }
           });
         }
-
-        console.log(
-          "Dynamic element duplication complete, returning ID:",
-          duplicateId
-        );
       })
     );
 
@@ -3765,27 +4627,641 @@ export class NodeDispatcher {
     });
   }
 
+  syncDroppedNodeWithChildren(sourceNodeId, additionalNodeIds = []) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        console.log(
+          `Syncing dropped node ${sourceNodeId} with all its children and ${additionalNodeIds.length} additional nodes`
+        );
+
+        // First, build a dependency map to understand parent-child relationships
+        const dependencyMap = new Map(); // nodeId -> childIds[]
+        const allNodeIds = [sourceNodeId, ...additionalNodeIds];
+
+        // Build a hierarchy map of the nodes we're processing
+        for (const nodeId of allNodeIds) {
+          // Find any children of this node
+          const children = draft.nodes.filter((n) => n.parentId === nodeId);
+          if (children.length > 0) {
+            dependencyMap.set(
+              nodeId,
+              children.map((c) => c.id)
+            );
+          }
+        }
+
+        console.log("Dependency map:", dependencyMap);
+
+        // Process the main node first
+        const processNode = (nodeId, isRoot = false) => {
+          const sourceNode = draft.nodes.find((n) => n.id === nodeId);
+          if (!sourceNode) {
+            console.log(`Source node ${nodeId} not found`);
+            return;
+          }
+
+          // Check if this is a direct child of a viewport
+          const isDirectViewportChild =
+            sourceNode.parentId &&
+            draft.nodes.some(
+              (n) => n.id === sourceNode.parentId && n.isViewport
+            );
+
+          // Ensure the node has a sharedId for syncing
+          if (!sourceNode.sharedId && isRoot) {
+            console.log(`Node ${nodeId} has no sharedId, cannot sync properly`);
+            return;
+          }
+
+          // If it's a direct viewport child, handle specially
+          if (isDirectViewportChild) {
+            console.log(`Node ${nodeId} is a direct child of a viewport`);
+
+            // Find source viewport
+            const sourceViewport = draft.nodes.find(
+              (n) => n.id === sourceNode.parentId
+            );
+            if (!sourceViewport || !sourceViewport.isViewport) {
+              console.log(`Source viewport for ${nodeId} not found`);
+              return;
+            }
+
+            // Find all other viewports
+            const otherViewports = draft.nodes.filter(
+              (n) => n.isViewport && n.id !== sourceViewport.id
+            );
+
+            console.log(
+              `Found ${otherViewports.length} other viewports for ${nodeId}`
+            );
+
+            // For each other viewport, create a copy
+            otherViewports.forEach((targetViewport) => {
+              // Check if node already exists in this viewport (by sharedId)
+              const existingNode = draft.nodes.find(
+                (n) =>
+                  n.sharedId === sourceNode.sharedId &&
+                  n.parentId === targetViewport.id
+              );
+
+              if (existingNode) {
+                console.log(
+                  `Node already exists in viewport ${targetViewport.id} - skipping`
+                );
+                return;
+              }
+
+              console.log(
+                `Creating copy of ${nodeId} in viewport ${targetViewport.id}`
+              );
+
+              // Clone the source node under the target viewport
+              const newNode = {
+                ...sourceNode,
+                id: nanoid(),
+                parentId: targetViewport.id,
+                style: { ...sourceNode.style },
+                unsyncFromParentViewport: {
+                  ...sourceNode.unsyncFromParentViewport,
+                },
+                independentStyles: { ...sourceNode.independentStyles },
+                lowerSyncProps: { ...sourceNode.lowerSyncProps },
+              };
+
+              // Add to the nodes collection
+              draft.nodes.push(newNode);
+              console.log(
+                `Created node ${newNode.id} in viewport ${targetViewport.id}`
+              );
+
+              // Clone all children of the source node
+              const childIds = dependencyMap.get(nodeId) || [];
+              if (childIds.length > 0) {
+                // Process direct children, keeping them attached to this new parent
+                cloneChildrenKeepingParent(nodeId, newNode.id, childIds);
+              }
+            });
+          }
+          // If it's a child of another node we're syncing, skip (it will be handled through its parent)
+          else if (isPartOfDependencyTree(nodeId) && !isRoot) {
+            console.log(
+              `Node ${nodeId} is part of dependency tree, will be processed through its parent`
+            );
+            return;
+          }
+          // Normal case - node is child of another component with sharedId
+          else if (sourceNode.sharedId || (isRoot && sourceNode.parentId)) {
+            console.log(`Processing ${nodeId} as child of another component`);
+
+            // Get the source parent to find corresponding targets in other viewports
+            const sourceParent = draft.nodes.find(
+              (n) => n.id === sourceNode.parentId
+            );
+            if (!sourceParent || !sourceParent.sharedId) {
+              console.log(
+                `Source parent for ${nodeId} not found or has no sharedId`
+              );
+              return;
+            }
+
+            console.log(
+              `Source node parent is ${sourceParent.id} with sharedId ${sourceParent.sharedId}`
+            );
+
+            // Get all target parents across viewports (components with same sharedId as parent)
+            const targetParents = draft.nodes.filter(
+              (n) =>
+                n.sharedId === sourceParent.sharedId && n.id !== sourceParent.id
+            );
+
+            console.log(
+              `Found ${targetParents.length} target parents for ${nodeId}`
+            );
+
+            // For each target parent in other viewports, create a copy of source node and all its children
+            targetParents.forEach((targetParent) => {
+              console.log(
+                `Creating copy of ${nodeId} under parent ${targetParent.id}`
+              );
+
+              // Clone the source node under the target parent
+              const newNode = {
+                ...sourceNode,
+                id: nanoid(),
+                parentId: targetParent.id,
+                style: { ...sourceNode.style },
+                unsyncFromParentViewport: {
+                  ...sourceNode.unsyncFromParentViewport,
+                },
+                independentStyles: { ...sourceNode.independentStyles },
+                lowerSyncProps: { ...sourceNode.lowerSyncProps },
+              };
+
+              // Add to the nodes collection
+              draft.nodes.push(newNode);
+              console.log(
+                `Created node ${newNode.id} with parent ${targetParent.id}`
+              );
+
+              // Clone all children of the source node
+              const childIds = dependencyMap.get(nodeId) || [];
+              if (childIds.length > 0) {
+                // Process direct children, keeping them attached to this new parent
+                cloneChildrenKeepingParent(nodeId, newNode.id, childIds);
+              }
+            });
+          }
+        };
+
+        // Check if a node is part of the dependency tree (is a child of another node we're syncing)
+        function isPartOfDependencyTree(nodeId) {
+          for (const [parentId, childIds] of dependencyMap.entries()) {
+            if (childIds.includes(nodeId)) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        // Clone children keeping their relationship to their parent
+        function cloneChildrenKeepingParent(
+          sourceParentId,
+          newParentId,
+          childIds
+        ) {
+          // For each child, create a copy with the new parent
+          childIds.forEach((childId) => {
+            const sourceChild = draft.nodes.find((n) => n.id === childId);
+            if (!sourceChild) {
+              console.log(`Child ${childId} not found`);
+              return;
+            }
+
+            const newChild = {
+              ...sourceChild,
+              id: nanoid(),
+              parentId: newParentId, // Link to the new parent
+              style: { ...sourceChild.style },
+              unsyncFromParentViewport: {
+                ...sourceChild.unsyncFromParentViewport,
+              },
+              independentStyles: { ...sourceChild.independentStyles },
+              lowerSyncProps: { ...sourceChild.lowerSyncProps },
+            };
+
+            draft.nodes.push(newChild);
+            console.log(
+              `Created child ${newChild.id} with parent ${newParentId}`
+            );
+
+            // Recursively clone this child's children if any
+            const grandchildren = dependencyMap.get(childId) || [];
+            if (grandchildren.length > 0) {
+              cloneChildrenKeepingParent(childId, newChild.id, grandchildren);
+            }
+          });
+        }
+
+        // Process the main node first
+        processNode(sourceNodeId, true);
+
+        // Then process additional nodes, but only if they're not children of the main node
+        additionalNodeIds.forEach((nodeId) => {
+          if (!isPartOfDependencyTree(nodeId)) {
+            processNode(nodeId, true);
+          }
+        });
+
+        console.log("Finished syncing all nodes with their children");
+      })
+    );
+  }
+
   syncViewports() {
     this.setState((prev) =>
       produce(prev, (draft) => {
         const viewports = draft.nodes.filter((n) => n.isViewport);
-        const desktop = viewports.find((v) => v.viewportWidth === 1440);
-        if (!desktop) return;
+        viewports.sort((a, b) => b.viewportWidth - a.viewportWidth);
+        const viewportOrder = viewports.map((v) => v.id);
 
-        const desktopSubtree = getSubtree(draft.nodes, desktop.id);
+        // Add utility for direct positioning
+        const directlyMoveNodeToIndex = (nodeId, siblings, targetIndex) => {
+          // Find the node we want to move
+          const node = draft.nodes.find((n) => n.id === nodeId);
+          if (!node) return;
 
-        console.log("doing something");
+          // Ensure target index is valid
+          const safeIndex = Math.max(0, Math.min(targetIndex, siblings.length));
+
+          // Get the real indices of all nodes in the actual draft.nodes array
+          const nodeIndex = draft.nodes.findIndex((n) => n.id === nodeId);
+          const siblingsIndices = siblings.map((s) =>
+            draft.nodes.findIndex((n) => n.id === s.id)
+          );
+
+          // If the target position is already correct, do nothing
+          const currentPosition = siblings.findIndex((s) => s.id === nodeId);
+          if (currentPosition === safeIndex) return;
+
+          // Move the node in the draft.nodes array directly
+          if (nodeIndex !== -1) {
+            // First remove the node
+            const [removedNode] = draft.nodes.splice(nodeIndex, 1);
+
+            // Recalculate siblings indices after removal
+            const updatedSiblingIndices = siblings
+              .map((s) => {
+                if (s.id === nodeId) return -1; // Skip the node we're moving
+                const idx = draft.nodes.findIndex((n) => n.id === s.id);
+                return idx;
+              })
+              .filter((idx) => idx !== -1);
+
+            // Find insert position
+            let insertIndex;
+            if (safeIndex === 0) {
+              // Insert at beginning
+              insertIndex =
+                updatedSiblingIndices.length > 0
+                  ? updatedSiblingIndices[0] // Before first sibling
+                  : draft.nodes.length; // Or at the end if no siblings
+            } else if (
+              safeIndex >= siblings.length ||
+              safeIndex >= updatedSiblingIndices.length
+            ) {
+              // Insert at end
+              insertIndex = draft.nodes.length;
+            } else {
+              // Insert at specific position
+              insertIndex = updatedSiblingIndices[safeIndex];
+            }
+
+            // Insert at the right position
+            draft.nodes.splice(insertIndex, 0, removedNode);
+          }
+        };
+
+        // CRITICAL FIX: Track the source viewport where a node was moved
+        // and its position, to sync to other viewports
+        let recentlyMovedSharedId = null;
+        let sourceViewportId = null;
+        let targetIndex = -1;
+
+        const lastAddedInfo = draft._lastAddedNodeInfo;
+        if (lastAddedInfo) {
+          const newNode = draft.nodes.find(
+            (n) => n.id === lastAddedInfo.nodeId
+          );
+
+          if (newNode && newNode.sharedId) {
+            // This is the source node that was moved - save its info
+            recentlyMovedSharedId = newNode.sharedId;
+            targetIndex = lastAddedInfo.exactIndex || 0;
+            sourceViewportId = findParentViewport(
+              newNode.parentId,
+              draft.nodes
+            );
+          }
+        }
+
+        // If a node was recently moved in one viewport,
+        // directly force the same order in all other viewports
+        if (recentlyMovedSharedId && sourceViewportId && targetIndex !== -1) {
+          // Apply the same position to all other viewports immediately
+          for (const viewport of viewports) {
+            // Skip the source viewport - it already has the right position
+            if (viewport.id === sourceViewportId) continue;
+
+            // Find the node with the same sharedId in this viewport
+            const nodeWithSameSharedId = draft.nodes.find(
+              (n) =>
+                n.sharedId === recentlyMovedSharedId &&
+                findParentViewport(n.parentId, draft.nodes) === viewport.id
+            );
+
+            if (nodeWithSameSharedId) {
+              // Get all direct children of this viewport to determine the target position
+              const viewportChildren = draft.nodes.filter(
+                (n) => n.parentId === viewport.id
+              );
+
+              // Directly manipulate the array to position this node at the same index
+              directlyMoveNodeToIndex(
+                nodeWithSameSharedId.id,
+                viewportChildren,
+                targetIndex
+              );
+            }
+          }
+        }
+
+        // Clear the temporary info
+        delete draft._lastAddedNodeInfo;
+
+        // Continue with the normal sync process for other aspects
+        // Phase 1: Find nodes that exist in some viewports but not all
+        const nodesBySharedId = new Map(); // Map<sharedId, Array<node>>
+        const viewportsBySharedId = new Map(); // Map<sharedId, Set<viewportId>>
+
+        // Collect all nodes by sharedId and viewport
+        for (const node of draft.nodes) {
+          if (!node.sharedId) continue;
+
+          const nodeViewportId = node.isViewport
+            ? node.id
+            : findParentViewport(node.parentId, draft.nodes);
+
+          if (!nodeViewportId) continue;
+
+          if (!nodesBySharedId.has(node.sharedId)) {
+            nodesBySharedId.set(node.sharedId, []);
+            viewportsBySharedId.set(node.sharedId, new Set());
+          }
+
+          nodesBySharedId.get(node.sharedId).push(node);
+          viewportsBySharedId.get(node.sharedId).add(nodeViewportId);
+        }
+
+        // Helper function to find position index of a node among its siblings
+        function findPositionIndex(nodeId, parentId, nodes) {
+          const siblings = nodes.filter((n) => n.parentId === parentId);
+          for (let i = 0; i < siblings.length; i++) {
+            if (siblings[i].id === nodeId) return i;
+          }
+          return 0;
+        }
+
+        // For each shared ID that doesn't exist in all viewports, create copies
+        nodesBySharedId.forEach((nodes, sharedId) => {
+          // Skip if this shared ID exists in all viewports
+          const existingViewports = viewportsBySharedId.get(sharedId);
+          const missingViewports = viewports.filter(
+            (v) => !existingViewports.has(v.id)
+          );
+
+          if (missingViewports.length === 0) return;
+
+          // Find the source node (prefer higher viewport nodes)
+          let sourceNode = null;
+
+          // Try to find a source node from the highest viewport first
+          for (const vpId of viewportOrder) {
+            if (!existingViewports.has(vpId)) continue;
+
+            const candidateNode = nodes.find((n) => {
+              const nvpId = findParentViewport(n.parentId, draft.nodes);
+              return nvpId === vpId;
+            });
+
+            if (candidateNode) {
+              sourceNode = candidateNode;
+              break;
+            }
+          }
+
+          if (!sourceNode) {
+            // Fallback to using the first node
+            sourceNode = nodes[0];
+          }
+
+          if (!sourceNode) return;
+
+          // Get source parent info
+          const sourceParentId = sourceNode.parentId;
+          const sourceParent = draft.nodes.find((n) => n.id === sourceParentId);
+          if (!sourceParent) return;
+
+          // Find the position index within parent
+          const sourceIndex = findPositionIndex(
+            sourceNode.id,
+            sourceParentId,
+            draft.nodes
+          );
+
+          // For each missing viewport, create a copy at the same position
+          for (const targetViewport of missingViewports) {
+            let targetParentId;
+
+            // If parent is a viewport, use the target viewport
+            if (sourceParent.isViewport) {
+              targetParentId = targetViewport.id;
+            }
+            // If parent is a node with sharedId, find corresponding node in target viewport
+            else if (sourceParent.sharedId) {
+              const targetParent = draft.nodes.find(
+                (n) =>
+                  n.sharedId === sourceParent.sharedId &&
+                  findParentViewport(n.parentId, draft.nodes) ===
+                    targetViewport.id
+              );
+
+              if (targetParent) {
+                targetParentId = targetParent.id;
+              } else {
+                // Fallback to viewport if we can't find the parent
+                targetParentId = targetViewport.id;
+              }
+            } else {
+              // Default to viewport
+              targetParentId = targetViewport.id;
+            }
+
+            // Create the new node
+            const newNode = {
+              ...sourceNode,
+              id: nanoid(),
+              parentId: targetParentId,
+              style: { ...sourceNode.style },
+              unsyncFromParentViewport: {
+                ...sourceNode.unsyncFromParentViewport,
+              },
+              independentStyles: { ...sourceNode.independentStyles },
+              lowerSyncProps: { ...sourceNode.lowerSyncProps },
+            };
+
+            // Add to node collection
+            draft.nodes.push(newNode);
+
+            const processedChildrenKeys = new Set();
+
+            const processedChildIds = new Set();
+
+            // Replace with this modified version that uses our tracking set:
+            const sourceChildren = draft.nodes.filter(
+              (n) => n.parentId === sourceNode.id
+            );
+
+            if (sourceChildren.length > 0) {
+              console.log(
+                `Node ${sourceNode.id} has ${sourceChildren.length} children to copy to ${targetViewport.id}`
+              );
+
+              sourceChildren.forEach((sourceChild) => {
+                // Add this check to prevent duplication
+                const childTrackingKey = `${sourceChild.id || ""}-${
+                  targetViewport.id
+                }`;
+                if (processedChildrenKeys.has(childTrackingKey)) {
+                  console.log(
+                    `Skipping already processed child ${sourceChild.id} for viewport ${targetViewport.id}`
+                  );
+                  return;
+                }
+
+                // Mark as processed
+                processedChildrenKeys.add(childTrackingKey);
+
+                // Rest of your existing child creation code
+                const newChild = {
+                  ...sourceChild,
+                  id: nanoid(),
+                  parentId: newNode.id,
+                  style: { ...sourceChild.style },
+                  unsyncFromParentViewport: {
+                    ...sourceChild.unsyncFromParentViewport,
+                  },
+                  independentStyles: { ...sourceChild.independentStyles },
+                  lowerSyncProps: { ...sourceChild.lowerSyncProps },
+                };
+
+                console.log(
+                  `Created child node ${newChild.id} with parent ${newNode.id} in viewport ${targetViewport.id}`
+                );
+                draft.nodes.push(newChild);
+
+                // Then modify your recursive function to also use the tracking
+                const processChildrenRecursively = (sourceId, newParentId) => {
+                  const children = draft.nodes.filter(
+                    (n) => n.parentId === sourceId
+                  );
+                  if (children.length === 0) return;
+
+                  children.forEach((child) => {
+                    // Check if this nested child has been processed
+                    const nestedChildKey = `${child.id || ""}-${
+                      targetViewport.id
+                    }`;
+                    if (processedChildrenKeys.has(nestedChildKey)) {
+                      return;
+                    }
+
+                    // Mark as processed
+                    processedChildrenKeys.add(nestedChildKey);
+
+                    // Your existing recursive child creation code
+                    const newChildNode = {
+                      ...child,
+                      id: nanoid(),
+                      parentId: newParentId,
+                      style: { ...child.style },
+                      unsyncFromParentViewport: {
+                        ...child.unsyncFromParentViewport,
+                      },
+                      independentStyles: { ...child.independentStyles },
+                      lowerSyncProps: { ...child.lowerSyncProps },
+                    };
+
+                    draft.nodes.push(newChildNode);
+                    processChildrenRecursively(child.id, newChildNode.id);
+                  });
+                };
+
+                // Process any deeper children
+                processChildrenRecursively(sourceChild.id, newChild.id);
+              });
+            }
+            // Get siblings to determine position
+            const targetSiblings = draft.nodes.filter(
+              (n) => n.parentId === targetParentId && n.id !== newNode.id
+            );
+
+            // Position directly in the array
+            directlyMoveNodeToIndex(newNode.id, targetSiblings, sourceIndex);
+          }
+        });
+
+        // Phase 2: Desktop-based style sync
+        const desktopViewport = viewports.length > 0 ? viewports[0] : null;
+        if (!desktopViewport) return;
+
+        const desktopSubtree = getSubtree(draft.nodes, desktopViewport.id);
 
         viewports.forEach((viewport) => {
-          if (viewport.id === desktop.id) return;
+          if (viewport.id === desktopViewport.id) return;
 
           const oldSubtree = getSubtree(draft.nodes, viewport.id);
-          const oldNodesBySharedId = new Map<string, Node>();
+          const oldNodesBySharedId = new Map();
 
           // Track dynamic nodes to preserve them
-          const dynamicNodesToPreserve = new Set<string | number>();
+          const dynamicNodesToPreserve = new Set();
 
-          // Identify dynamic nodes that should be preserved
+          // CRITICAL FIX: Store position of nodes by sharedId and parent
+          const positionsByParent = new Map(); // Map<parentId, Map<sharedId, index>>
+
+          // Get positions of all nodes before making changes
+          for (const oldNode of oldSubtree) {
+            if (oldNode.isViewport || !oldNode.sharedId) continue;
+
+            const parentId = oldNode.parentId;
+            if (!parentId) continue;
+
+            // Get siblings with this parent
+            const siblings = draft.nodes.filter((n) => n.parentId === parentId);
+
+            // Find position of this node among siblings
+            const index = siblings.findIndex((n) => n.id === oldNode.id);
+
+            if (index !== -1) {
+              if (!positionsByParent.has(parentId)) {
+                positionsByParent.set(parentId, new Map());
+              }
+
+              // Preserve position by sharedId
+              positionsByParent.get(parentId).set(oldNode.sharedId, index);
+            }
+          }
+
+          // Identify dynamic nodes and nodes with sharedId
           for (const oldNode of oldSubtree) {
             if (oldNode.isViewport) continue;
 
@@ -3812,26 +5288,53 @@ export class NodeDispatcher {
             }
           }
 
-          const idMap = new Map<string | number, string | number>();
+          const idMap = new Map();
 
-          // Only clone nodes that are not dynamic
+          // First pass: clone all nodes
           for (const desktopNode of desktopSubtree) {
             // Skip dynamic nodes - don't recreate them
             if (desktopNode.isDynamic || desktopNode.dynamicParentId) continue;
 
             const oldNode = oldNodesBySharedId.get(desktopNode.sharedId || "");
-            const cloned: Node = {
+            const cloned = {
               ...desktopNode,
               id: oldNode?.id || nanoid(),
               style: { ...desktopNode.style },
             };
 
-            if (oldNode?.independentStyles) {
+            // CRITICAL FIX: More thoroughly respect independent styles and unsyncFromParentViewport
+            if (oldNode) {
+              // First initialize flag objects if they don't exist
+              cloned.independentStyles = cloned.independentStyles || {};
+              cloned.unsyncFromParentViewport =
+                cloned.unsyncFromParentViewport || {};
+              cloned.lowerSyncProps = cloned.lowerSyncProps || {};
+
+              // Copy over all the existing flags
+              if (oldNode.independentStyles) {
+                cloned.independentStyles = { ...oldNode.independentStyles };
+              }
+
+              if (oldNode.unsyncFromParentViewport) {
+                cloned.unsyncFromParentViewport = {
+                  ...oldNode.unsyncFromParentViewport,
+                };
+              }
+
+              if (oldNode.lowerSyncProps) {
+                cloned.lowerSyncProps = { ...oldNode.lowerSyncProps };
+              }
+
+              // Apply all independent/unsync styles from the old node
               Object.keys(oldNode.style).forEach((prop) => {
-                if (oldNode.independentStyles![prop]) {
+                // If this property is marked as independent or unsync, keep the old value
+                if (
+                  (oldNode.independentStyles &&
+                    oldNode.independentStyles[prop]) ||
+                  (oldNode.unsyncFromParentViewport &&
+                    oldNode.unsyncFromParentViewport[prop])
+                ) {
                   cloned.style[prop] = oldNode.style[prop];
-                  cloned.independentStyles = cloned.independentStyles || {};
-                  cloned.independentStyles[prop] = true;
                 }
               });
             }
@@ -3840,7 +5343,7 @@ export class NodeDispatcher {
             draft.nodes.push(cloned);
           }
 
-          // Update parent references for new nodes
+          // Second pass: update parent references and position nodes
           for (const dNode of desktopSubtree) {
             // Skip dynamic nodes
             if (dNode.isDynamic || dNode.dynamicParentId) continue;
@@ -3851,11 +5354,162 @@ export class NodeDispatcher {
             const clonedNode = draft.nodes.find((n) => n.id === newId);
             if (!clonedNode) continue;
 
-            if (dNode.parentId === desktop.id) {
-              clonedNode.parentId = viewport.id;
+            // Determine parent ID
+            let newParentId;
+            if (dNode.parentId === desktopViewport.id) {
+              newParentId = viewport.id;
             } else {
-              const newParent = idMap.get(dNode.parentId || "");
-              clonedNode.parentId = newParent ?? null;
+              newParentId = idMap.get(dNode.parentId || "") || viewport.id;
+            }
+
+            clonedNode.parentId = newParentId;
+
+            // Handle positioning based on stored positions
+            if (
+              dNode.sharedId &&
+              positionsByParent.has(newParentId) &&
+              positionsByParent.get(newParentId).has(dNode.sharedId)
+            ) {
+              // Get the position this sharedId had in this parent
+              const targetIndex = positionsByParent
+                .get(newParentId)
+                .get(dNode.sharedId);
+
+              // Get siblings for positioning
+              const siblings = draft.nodes.filter(
+                (n) => n.parentId === newParentId && n.id !== clonedNode.id
+              );
+
+              // Position directly in the array
+              directlyMoveNodeToIndex(clonedNode.id, siblings, targetIndex);
+            } else {
+              // Use desktop order
+              const desktopParent = dNode.parentId;
+              const desktopSiblings = desktopSubtree.filter(
+                (n) => n.parentId === desktopParent
+              );
+              const desktopIndex = desktopSiblings.findIndex(
+                (n) => n.id === dNode.id
+              );
+
+              if (desktopIndex !== -1) {
+                // Get siblings for positioning
+                const siblings = draft.nodes.filter(
+                  (n) => n.parentId === newParentId && n.id !== clonedNode.id
+                );
+
+                // Position directly in the array
+                directlyMoveNodeToIndex(clonedNode.id, siblings, desktopIndex);
+              }
+            }
+          }
+        });
+
+        // FINAL FIX: Check once more for the recently moved shared ID
+        // and force its position again to be 100% sure
+        if (recentlyMovedSharedId && sourceViewportId && targetIndex !== -1) {
+          for (const viewport of viewports) {
+            if (viewport.id === sourceViewportId) continue;
+
+            const nodeWithSameSharedId = draft.nodes.find(
+              (n) =>
+                n.sharedId === recentlyMovedSharedId &&
+                findParentViewport(n.parentId, draft.nodes) === viewport.id
+            );
+
+            if (nodeWithSameSharedId) {
+              const viewportChildren = draft.nodes.filter(
+                (n) => n.parentId === viewport.id
+              );
+              directlyMoveNodeToIndex(
+                nodeWithSameSharedId.id,
+                viewportChildren,
+                targetIndex
+              );
+            }
+          }
+        }
+      })
+    );
+  }
+
+  // This function should be added to your NodeDispatcher class
+  syncNodePosition(nodeId: string | number) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        const node = draft.nodes.find((n) => n.id === nodeId);
+        if (!node || !node.sharedId) return;
+
+        const sharedNodes = draft.nodes.filter(
+          (n) => n.id !== nodeId && n.sharedId === node.sharedId
+        );
+
+        const sourceViewport = findParentViewport(node.parentId, draft.nodes);
+        if (!sourceViewport) return;
+
+        const sourceParentId = node.parentId;
+        if (!sourceParentId) return;
+
+        const sourceParentNode = draft.nodes.find(
+          (n) => n.id === sourceParentId
+        );
+        if (!sourceParentNode) return;
+
+        const sourceIndex = findIndexWithinParent(
+          draft.nodes,
+          nodeId,
+          sourceParentId
+        );
+        if (sourceIndex === -1) return;
+
+        const viewports = draft.nodes.filter((n) => n.isViewport);
+        viewports.sort((a, b) => b.viewportWidth - a.viewportWidth);
+        const viewportOrder = viewports.map((v) => v.id);
+
+        // Update the position of every clone in other viewports
+        sharedNodes.forEach((sharedNode) => {
+          const targetViewport = findParentViewport(
+            sharedNode.parentId,
+            draft.nodes
+          );
+          if (!targetViewport || targetViewport === sourceViewport) return;
+
+          if (sourceParentNode.isViewport) {
+            // Special handling for direct children of viewports
+            const targetViewportChildren = draft.nodes.filter(
+              (n) => n.parentId === targetViewport
+            );
+            if (targetViewportChildren.length > sourceIndex) {
+              const siblingAtIndex = targetViewportChildren[sourceIndex];
+              if (siblingAtIndex && siblingAtIndex.id !== sharedNode.id) {
+                this.reorderNode(sharedNode.id, targetViewport, sourceIndex);
+              }
+            } else {
+              this.reorderNode(
+                sharedNode.id,
+                targetViewport,
+                targetViewportChildren.length
+              );
+            }
+          } else {
+            if (!sourceParentNode.sharedId) return;
+            const targetParentNode = draft.nodes.find(
+              (n) =>
+                n.sharedId === sourceParentNode.sharedId &&
+                findParentViewport(n.parentId, draft.nodes) === targetViewport
+            );
+            if (targetParentNode) {
+              sharedNode.parentId = targetParentNode.id;
+              const targetSiblings = draft.nodes.filter(
+                (n) => n.parentId === targetParentNode.id
+              );
+              if (targetSiblings.length > 0) {
+                this.reorderNode(
+                  sharedNode.id,
+                  targetParentNode.id,
+                  Math.min(sourceIndex, targetSiblings.length)
+                );
+              }
             }
           }
         });
@@ -3998,11 +5652,6 @@ export class NodeDispatcher {
         const idMap = new Map<string | number, string | number>();
         idMap.set(mainNode.id, variantId);
 
-        console.log("Creating variant with ID:", variantId);
-        console.log("Main node ID:", mainNode.id);
-        console.log("Family ID:", familyId);
-        console.log("Found", mainChildren.length, "children to clone");
-
         // Clone each child node with shared identity
         mainChildren.forEach((childNode) => {
           const childVariantId = nanoid();
@@ -4046,12 +5695,6 @@ export class NodeDispatcher {
           // CRITICAL FIX: Always set parentId for direct children of the dynamic node
           if (childNode.parentId === mainNode.id) {
             childVariant.parentId = variantId;
-            console.log(
-              "Assigning direct child to variant:",
-              childVariantId,
-              "->",
-              variantId
-            );
           } else {
             // For nested children, map the parent relationship to the new variant tree
             const originalParentId = childNode.parentId;
@@ -4059,19 +5702,7 @@ export class NodeDispatcher {
               const newParentId = idMap.get(originalParentId);
               if (newParentId) {
                 childVariant.parentId = newParentId;
-                console.log(
-                  "Mapped child parent:",
-                  childVariantId,
-                  "->",
-                  newParentId
-                );
               } else {
-                console.log(
-                  "Warning: Could not find parent mapping for:",
-                  childNode.id,
-                  "parent:",
-                  originalParentId
-                );
               }
             }
           }
@@ -4082,16 +5713,18 @@ export class NodeDispatcher {
           // Add to the nodes array
           draft.nodes.push(childVariant);
         });
-
-        console.log(
-          "Variant creation complete, created",
-          mainChildren.length + 1,
-          "nodes"
-        );
       })
     );
 
     return variantId;
+  }
+
+  removePlaceholders() {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        draft.nodes = draft.nodes.filter((node) => node.type !== "placeholder");
+      })
+    );
   }
 
   syncFromViewport(sourceViewportId: string | number) {

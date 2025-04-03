@@ -18,6 +18,8 @@ import { BorderRadiusHandle } from "./BorderRadiusHandle";
 import AddVariantsUI from "../canvasHelpers/AddVariantUI";
 import NameDisplay from "./NameDisplay";
 import { AxeIcon } from "lucide-react";
+import { FontSizeHandle } from "./FontSizeHandle";
+import { ObjectPositionHandle } from "./ObjectPositionHandle";
 
 /* -------------------------------------------
    2D MATRIX HELPERS
@@ -334,6 +336,7 @@ export const VisualHelpers = ({
     isAdjustingGap,
     isRotating,
     nodeState,
+    isEditingText,
   } = useBuilder();
 
   const cumulativeSkew = getCumulativeSkew(node, nodeState);
@@ -552,18 +555,18 @@ export const VisualHelpers = ({
     };
   };
 
-  const copyNodeIdToClipboard = () => {
-    if (node.id) {
-      navigator.clipboard.writeText(node.id).then(
-        () => {
-          console.log(`Node ID ${node.id} copied to clipboard.`);
-        },
-        (err) => {
-          console.error("Could not copy text: ", err);
-        }
-      );
-    }
-  };
+  // const copyNodeIdToClipboard = () => {
+  //   if (node.id) {
+  //     navigator.clipboard.writeText(node.id).then(
+  //       () => {
+  //         console.log(`Node ID ${node.id} copied to clipboard.`);
+  //       },
+  //       (err) => {
+  //         console.error("Could not copy text: ", err);
+  //       }
+  //     );
+  //   }
+  // };
 
   return createPortal(
     <>
@@ -605,7 +608,7 @@ export const VisualHelpers = ({
           {!isMovingCanvas && <NameDisplay node={node} />}
 
           {/* Actual selection border + handles */}
-          {showHelpers && isSelected && (
+          {showHelpers && isSelected && !isEditingText && (
             <>
               <div
                 style={{
@@ -631,6 +634,10 @@ export const VisualHelpers = ({
               {/* Single-element controls if not locked */}
               {!isLocked && (
                 <>
+                  {!node.id.includes("viewport") &&
+                    !hasSkewTransform(node.style.transform) && (
+                      <FontSizeHandle node={node} elementRef={elementRef} />
+                    )}
                   {/* Rotate handle if no skew */}
                   {!node.id.includes("viewport") &&
                     !hasSkewTransform(node.style.transform) && (
@@ -642,6 +649,18 @@ export const VisualHelpers = ({
                     !hasSkewTransform(node.style.transform) &&
                     node.type !== "text" && (
                       <BorderRadiusHandle node={node} elementRef={elementRef} />
+                    )}
+
+                  {!hasSkewTransform(node.style.transform) &&
+                    (node.type === "image" ||
+                      node.type === "video" ||
+                      (node.type === "frame" &&
+                        (node.style.backgroundImage ||
+                          node.style.backgroundVideo))) && (
+                      <ObjectPositionHandle
+                        node={node}
+                        elementRef={elementRef}
+                      />
                     )}
 
                   {/* Grip handles */}

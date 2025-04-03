@@ -26,13 +26,15 @@ export interface SnapGuideLine {
 
 interface StyleHelper {
   show: boolean;
-  type: "dimensions" | "gap" | "rotate" | "radius" | null;
+  type: "dimensions" | "gap" | "rotate" | "radius" | "fontSize" | null;
   position: { x: number; y: number };
   value?: number;
+  unit?: string; // For font size, this would be "px" or "vw"
+  isMixed?: boolean; // New property to indicate mixed font sizes
   dimensions?: {
     width: number;
     height: number;
-    unit: "px" | "%";
+    unit?: string;
     widthUnit?: string;
     heightUnit?: string;
   };
@@ -382,11 +384,12 @@ export class DragDispatcher {
       })
     );
   }
-
   updateStyleHelper(params: {
-    type: "dimensions" | "gap" | "rotate" | "radius";
+    type: "dimensions" | "gap" | "rotate" | "radius" | "fontSize";
     position: { x: number; y: number };
     value?: number;
+    unit?: string;
+    isMixed?: boolean;
     dimensions?: {
       width: number;
       height: number;
@@ -402,6 +405,8 @@ export class DragDispatcher {
           type: params.type,
           position: params.position,
           value: params.value,
+          unit: params.unit,
+          isMixed: params.isMixed,
           dimensions: params.dimensions,
         };
       })

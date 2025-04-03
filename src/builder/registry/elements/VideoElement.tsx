@@ -19,8 +19,8 @@ export const VideoElement = ({ node }: ElementProps) => {
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
-            borderRadius: node.style.borderRadius,
+            objectFit: node.style.objectFit,
+            objectPosition: node.style.objectPosition,
             pointerEvents: "none",
           }}
           src={

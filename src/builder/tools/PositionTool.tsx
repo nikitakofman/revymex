@@ -23,6 +23,12 @@ export const PositionTool = () => {
     { label: "Fixed", value: "fixed" },
   ];
 
+  const viewportNode = nodeState.nodes
+    .find((n) => n.id === dragState.selectedIds[0])
+    ?.id.includes("viewport");
+
+  console.log("viewportNode", viewportNode);
+
   const position = positionStyle.mixed
     ? "static"
     : (positionStyle.value as string);
@@ -106,16 +112,18 @@ export const PositionTool = () => {
       <div className="flex flex-col gap-3">
         {isDragging ? (
           <div className="grid grid-cols-2 gap-3">
-            <PlaceholderToolInput value={realTimePosition.x} label="x" />
-            <PlaceholderToolInput value={realTimePosition.y} label="y" />
+            <PlaceholderToolInput value={realTimePosition.x} label="X" />
+            <PlaceholderToolInput value={realTimePosition.y} label="Y" />
           </div>
         ) : (
           <>
-            <ToolSelect
-              label="Type"
-              name="position"
-              options={positionOptions}
-            />
+            {!viewportNode && (
+              <ToolSelect
+                label="Type"
+                name="position"
+                options={positionOptions}
+              />
+            )}
             {showCoordinates && (
               <div className="grid grid-cols-2 gap-3">
                 <ToolInput type="number" label="X" name="left" />

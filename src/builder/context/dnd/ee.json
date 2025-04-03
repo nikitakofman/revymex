@@ -1,0 +1,46 @@
+{
+  "id": "hly-ZQhTlqKueVSB8qI61",
+  "type": "frame",
+  "style": {
+    "position": "relative",
+    "width": "479.786px",
+    "height": "426.514px",
+    "backgroundColor": "#453c77",
+    "flex": "0 0 auto",
+    "display": "flex",
+    "alignItems": "center",
+    "justifyContent": "center",
+    "left": "",
+    "top": "",
+    "zIndex": ""
+  },
+  "inViewport": true,
+  "sharedId": "Y7pWc9TQ03JDfKa_6ElJd",
+  "unsyncFromParentViewport": {
+    "backgroundColor": true,
+    "position": true,
+    "zIndex": true,
+    "left": true,
+    "top": true,
+    "width": true,
+    "height": true
+  },
+  "independentStyles": {
+    "backgroundColor": true,
+    "position": true,
+    "zIndex": true,
+    "left": true,
+    "top": true,
+    "width": true,
+    "height": true
+  },
+  "lowerSyncProps": {},
+  "parentId": "viewport-768",
+  "dynamicViewportId": null,
+  "dynamicParentId": null,
+  "variantResponsiveId": null,
+  "position": {
+    "x": 630,
+    "y": 1381.6667302449544
+  }
+}

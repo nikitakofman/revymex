@@ -61,18 +61,21 @@ export const generateViewportContainerRules = (
       let mediaQuery;
       const nextBreakpoint = array[index + 1];
 
+      // FIXED: Adjust media query boundaries to avoid exact breakpoint values
       if (index === 0) {
         // Largest breakpoint (e.g., Desktop)
         mediaQuery = `@media (min-width: ${
-          nextBreakpoint ? nextBreakpoint.width + 1 : 0
+          nextBreakpoint ? nextBreakpoint.width : 0
         }px)`;
       } else if (index === array.length - 1) {
         // Smallest breakpoint (e.g., Mobile)
-        mediaQuery = `@media (max-width: ${viewport.width}px)`;
+        mediaQuery = `@media (max-width: ${viewport.width - 0.02}px)`;
       } else {
         // Middle breakpoints (e.g., Tablet)
-        const nextWidth = array[index + 1] ? array[index + 1].width + 1 : 0;
-        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${viewport.width}px)`;
+        const nextWidth = array[index + 1] ? array[index + 1].width : 0;
+        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${
+          viewport.width - 0.02
+        }px)`;
       }
 
       // Add background media handling for each viewport
@@ -112,18 +115,21 @@ export const generateResponsiveCSS = (node, viewportBreakpoints) => {
       let mediaQuery;
       const nextBreakpoint = array[index + 1];
 
+      // FIXED: Adjust media query boundaries to avoid exact breakpoint values
       if (index === 0) {
         // Largest breakpoint (e.g., Desktop)
         mediaQuery = `@media (min-width: ${
-          nextBreakpoint ? nextBreakpoint.width + 1 : 0
+          nextBreakpoint ? nextBreakpoint.width : 0
         }px)`;
       } else if (index === array.length - 1) {
         // Smallest breakpoint (e.g., Mobile)
-        mediaQuery = `@media (max-width: ${viewport.width}px)`;
+        mediaQuery = `@media (max-width: ${viewport.width - 0.02}px)`;
       } else {
         // Middle breakpoints (e.g., Tablet)
-        const nextWidth = array[index + 1] ? array[index + 1].width + 1 : 0;
-        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${viewport.width}px)`;
+        const nextWidth = array[index + 1] ? array[index + 1].width : 0;
+        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${
+          viewport.width - 0.02
+        }px)`;
       }
 
       // Filter out any special properties that aren't CSS styles
@@ -151,7 +157,7 @@ ${cssStyles}
   return cssRules;
 };
 
-// --- Updated background image CSS generation ---
+// Updated background image CSS generation with fixed media queries
 export const generateBackgroundImageCSS = (node, viewportBreakpoints) => {
   if (!node.responsiveStyles || Object.keys(node.responsiveStyles).length === 0)
     return "";
@@ -164,18 +170,21 @@ export const generateBackgroundImageCSS = (node, viewportBreakpoints) => {
       let mediaQuery;
       const nextBreakpoint = array[index + 1];
 
+      // FIXED: Adjust media query boundaries to avoid exact breakpoint values
       if (index === 0) {
         // Largest breakpoint (e.g., Desktop)
         mediaQuery = `@media (min-width: ${
-          nextBreakpoint ? nextBreakpoint.width + 1 : 0
+          nextBreakpoint ? nextBreakpoint.width : 0
         }px)`;
       } else if (index === array.length - 1) {
         // Smallest breakpoint (e.g., Mobile)
-        mediaQuery = `@media (max-width: ${viewport.width}px)`;
+        mediaQuery = `@media (max-width: ${viewport.width - 0.02}px)`;
       } else {
         // Middle breakpoints (e.g., Tablet)
-        const nextWidth = array[index + 1] ? array[index + 1].width + 1 : 0;
-        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${viewport.width}px)`;
+        const nextWidth = array[index + 1] ? array[index + 1].width : 0;
+        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${
+          viewport.width - 0.02
+        }px)`;
       }
 
       return `${mediaQuery} {
@@ -190,7 +199,7 @@ export const generateBackgroundImageCSS = (node, viewportBreakpoints) => {
   return cssRules;
 };
 
-// --- Updated media query content generation ---
+// Updated media query content generation with fixed boundaries
 export const generateMediaQueryContent = (node, viewportBreakpoints) => {
   if (!node.responsiveStyles) return "";
   const { src, text } = node.style;
@@ -207,20 +216,23 @@ export const generateMediaQueryContent = (node, viewportBreakpoints) => {
       let mediaQuery;
       const nextBreakpoint = viewportBreakpoints[viewportIndex + 1];
 
+      // FIXED: Adjust media query boundaries to avoid exact breakpoint values
       if (viewportIndex === 0) {
         // Largest breakpoint (e.g., Desktop)
         mediaQuery = `@media (min-width: ${
-          nextBreakpoint ? nextBreakpoint.width + 1 : 0
+          nextBreakpoint ? nextBreakpoint.width : 0
         }px)`;
       } else if (viewportIndex === viewportBreakpoints.length - 1) {
         // Smallest breakpoint (e.g., Mobile)
-        mediaQuery = `@media (max-width: ${viewportWidth}px)`;
+        mediaQuery = `@media (max-width: ${viewportWidth - 0.02}px)`;
       } else {
         // Middle breakpoints (e.g., Tablet)
         const nextWidth = viewportBreakpoints[viewportIndex + 1]
-          ? viewportBreakpoints[viewportIndex + 1].width + 1
+          ? viewportBreakpoints[viewportIndex + 1].width
           : 0;
-        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${viewportWidth}px)`;
+        mediaQuery = `@media (min-width: ${nextWidth}px) and (max-width: ${
+          viewportWidth - 0.02
+        }px)`;
       }
 
       // Generate dynamic content based on viewport
@@ -256,6 +268,115 @@ export const generateMediaQueryContent = (node, viewportBreakpoints) => {
     })
     .filter(Boolean)
     .join("\n");
+};
+
+// Generate enhanced responsive CSS that uses !important to overcome specificity issues
+export const generateEnhancedResponsiveCSS = (node, viewportBreakpoints) => {
+  if (!node || !node.sharedId) return "";
+
+  // Get all responsive nodes
+  const responsiveBreakpoints = [];
+
+  // Sort breakpoints from largest to smallest
+  const sortedBreakpoints = [...viewportBreakpoints].sort(
+    (a, b) => b.width - a.width
+  );
+
+  // Create CSS rules for each viewport with non-overlapping bounds and !important
+  let cssRules = "";
+
+  // Desktop styles (largest viewport)
+  const desktopBreakpoint = sortedBreakpoints[0];
+  if (desktopBreakpoint) {
+    // Desktop styles with non-overlapping boundaries
+    cssRules += `
+      @media (min-width: ${
+        sortedBreakpoints[1] ? sortedBreakpoints[1].width : 0
+      }px) {
+        #dynamic-node-${node.id} {
+          width: ${node.style.width || "auto"} !important;
+          height: ${node.style.height || "auto"} !important;
+          background-color: ${
+            node.style.backgroundColor || "transparent"
+          } !important;
+          ${
+            node.style.flexDirection
+              ? `flex-direction: ${node.style.flexDirection} !important;`
+              : ""
+          }
+          ${
+            node.style.padding
+              ? `padding: ${node.style.padding} !important;`
+              : ""
+          }
+          ${node.style.margin ? `margin: ${node.style.margin} !important;` : ""}
+          ${
+            node.style.borderRadius
+              ? `border-radius: ${node.style.borderRadius} !important;`
+              : ""
+          }
+        }
+      }
+    `;
+  }
+
+  // Middle and mobile breakpoints with non-overlapping boundaries
+  for (let i = 1; i < sortedBreakpoints.length; i++) {
+    const currentBreakpoint = sortedBreakpoints[i];
+    const nextBreakpoint = sortedBreakpoints[i + 1];
+
+    // Find the responsive node for this breakpoint
+    const responsiveNode = node;
+
+    if (responsiveNode) {
+      // Use exact pixel boundaries to prevent overlap
+      const minWidth = nextBreakpoint ? nextBreakpoint.width : 0;
+      const maxWidth = currentBreakpoint.width - 0.02; // Avoid exact boundary
+
+      let mediaQuery;
+      if (i === sortedBreakpoints.length - 1) {
+        // Smallest breakpoint (Mobile)
+        mediaQuery = `@media (max-width: ${maxWidth}px)`;
+      } else {
+        // Middle breakpoints
+        mediaQuery = `@media (min-width: ${minWidth}px) and (max-width: ${maxWidth}px)`;
+      }
+
+      cssRules += `
+        ${mediaQuery} {
+          #dynamic-node-${node.id} {
+            width: ${responsiveNode.style.width || "auto"} !important;
+            height: ${responsiveNode.style.height || "auto"} !important;
+            background-color: ${
+              responsiveNode.style.backgroundColor || "transparent"
+            } !important;
+            ${
+              responsiveNode.style.flexDirection
+                ? `flex-direction: ${responsiveNode.style.flexDirection} !important;`
+                : ""
+            }
+            ${
+              responsiveNode.style.padding
+                ? `padding: ${responsiveNode.style.padding} !important;`
+                : ""
+            }
+            ${
+              responsiveNode.style.margin
+                ? `margin: ${responsiveNode.style.margin} !important;`
+                : ""
+            }
+            ${
+              responsiveNode.style.borderRadius
+                ? `border-radius: ${responsiveNode.style.borderRadius} !important;`
+                : ""
+            }
+          }
+        }
+      `;
+    }
+  }
+
+  return cssRules;
 };
 
 // --- Optional debugging helper function ---

@@ -5,6 +5,8 @@ import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Wand2 } from "lucide-react";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { FillToolPopup } from "./fill-popup";
+import { VideoSettingsControl } from "./video-settings";
+import { ImageSettingsControl } from "./image-settings";
 import {
   extractUrlFromCssValue,
   getNodeImageSource,
@@ -99,6 +101,16 @@ export const FillTool = () => {
 
   if (!selectedNode) return null;
 
+  // Check if the selected node is a video or has video background
+  const isVideoNode = selectedNode.type === "video";
+  const hasVideoBackground = !!directStyles.backgroundVideo;
+  const showVideoSettings = isVideoNode || hasVideoBackground;
+
+  // Check if the selected node is an image or has image background
+  const isImageNode = selectedNode.type === "image";
+  const hasImageBackground = !!directStyles.backgroundImage;
+  const showImageSettings = isImageNode || hasImageBackground;
+
   // Create a clean style object with only one background property
   const createCleanStyleObject = (property, value) => {
     // Only include one background-related property to avoid conflicts
@@ -127,6 +139,19 @@ export const FillTool = () => {
         ),
         label: "Image",
       };
+    } else if (selectedNode.type === "video") {
+      return {
+        type: "video",
+        preview: (
+          <video
+            src={selectedNode.style.src}
+            className="h-full w-full object-cover"
+            autoPlay
+            loop
+          />
+        ),
+        label: "Video",
+      };
     }
 
     // 2. Check for node image source from style properties
@@ -154,7 +179,12 @@ export const FillTool = () => {
         type: "video",
         preview: (
           <div className="w-full h-full flex items-center justify-center bg-gray-800">
-            <span className="text-xs text-white">Video</span>
+            <video
+              src={nodeStyles.backgroundVideo}
+              className="h-full w-full object-cover"
+              autoPlay
+              loop
+            />
           </div>
         ),
         label: selectedNode.type === "video" ? "Video" : "Video Background",
@@ -190,7 +220,12 @@ export const FillTool = () => {
         type: "video",
         preview: (
           <div className="w-full h-full flex items-center justify-center bg-gray-800">
-            <span className="text-xs text-white">Video</span>
+            <video
+              src={nodeStyles.backgroundVideo}
+              className="h-full w-full object-cover"
+              autoPlay
+              loop
+            />
           </div>
         ),
         label: "Video Background",
@@ -317,7 +352,7 @@ export const FillTool = () => {
     };
   };
 
-  const { preview } = getFillTypeInfo();
+  const { preview, type } = getFillTypeInfo();
 
   const handleOpenPopup = (e) => {
     // Stop propagation to prevent event bubbling
@@ -330,14 +365,19 @@ export const FillTool = () => {
     }
   };
 
-  const sectionName = selectedNode.type === "image" ? "Image" : "Fill";
+  const sectionName =
+    selectedNode.type === "image"
+      ? "Image"
+      : selectedNode.type === "video"
+      ? "Video"
+      : "Fill";
 
   return (
     <>
-      <ToolbarSection title={sectionName}>
+      <ToolbarSection solo title={sectionName}>
         <div
           ref={previewRef}
-          className="relative   bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md cursor-pointer transition-colors group"
+          className="relative mb-1 bg-[var(--bg-default)] hover:bg-[var(--bg-hover)] rounded-md cursor-pointer transition-colors group"
           onClick={handleOpenPopup}
         >
           <div className="w-full h-8 rounded-md overflow-hidden hover:bg-black/10 border border-[var(--border-default)]">
@@ -345,6 +385,20 @@ export const FillTool = () => {
             <div className="absolute bg-black/30 inset-0 flex items-center justify-end p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
           </div>
         </div>
+
+        {/* Add image settings if the node is an image or has image background */}
+        {showImageSettings && (
+          <div className="mt-3">
+            <ImageSettingsControl selectedNode={selectedNode} />
+          </div>
+        )}
+
+        {/* Add video settings if the node is a video or has video background */}
+        {showVideoSettings && (
+          <div className="mt-2">
+            <VideoSettingsControl selectedNode={selectedNode} />
+          </div>
+        )}
       </ToolbarSection>
 
       <ToolbarPopup

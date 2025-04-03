@@ -63,7 +63,14 @@ export const BubbleMenuPortal = React.memo(
     const handleToolClick = (e: React.MouseEvent, callback: () => void) => {
       e.preventDefault();
       e.stopPropagation();
+
+      // Execute the callback (style change) while preserving the selection
       callback();
+
+      // Prevent the editor from losing focus
+      if (editor) {
+        editor.view.focus();
+      }
     };
 
     const handleInputChange = (
@@ -101,6 +108,7 @@ export const BubbleMenuPortal = React.memo(
         onMouseDown={(e) => e.stopPropagation()}
         onMouseUp={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
+        onBlur={(e) => e.preventDefault()} // Add this
         style={{
           position: "fixed",
           left:
@@ -152,6 +160,18 @@ export const BubbleMenuPortal = React.memo(
             .getAttributes("textStyle")
             .fontSize?.replace("px", "")}
           onMouseDown={(e) => e.stopPropagation()}
+          onFocus={(e) => {
+            // Capture the current selection state when focusing the input
+            e.stopPropagation();
+          }}
+          onBlur={(e) => {
+            // Restore focus to the editor when leaving the input
+            setTimeout(() => {
+              if (editor && !editor.view.hasFocus()) {
+                editor.view.focus();
+              }
+            }, 10);
+          }}
         />
 
         <div className="w-px h-3 mx-0.5 bg-[var(--border-light)]" />

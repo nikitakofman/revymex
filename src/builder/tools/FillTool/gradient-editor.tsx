@@ -172,6 +172,17 @@ export const GradientEditor = ({
 
   return (
     <div className="space-y-3">
+      {selectedStopId && (
+        <ColorPicker
+          value={
+            gradientStops.find((stop) => stop.id === selectedStopId)?.color ||
+            "#000000"
+          }
+          onChange={handleStopColorChange}
+          displayMode="direct"
+          containerClassName="w-full"
+        />
+      )}
       <div className="relative h-2 bg-[var(--control-bg)] rounded-full overflow-hidden">
         <div
           className="absolute inset-0 h-full"
@@ -248,18 +259,6 @@ export const GradientEditor = ({
           />
         </div>
       </div>
-
-      {selectedStopId && (
-        <ColorPicker
-          value={
-            gradientStops.find((stop) => stop.id === selectedStopId)?.color ||
-            "#000000"
-          }
-          onChange={handleStopColorChange}
-          displayMode="direct"
-          containerClassName="w-full"
-        />
-      )}
     </div>
   );
 };

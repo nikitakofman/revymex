@@ -13,6 +13,26 @@ export const StyleUpdateHelper = () => {
     y: styleHelper.position.y + 40,
   };
 
+  // Helper function to format the font size display
+  const formatFontSize = () => {
+    if (styleHelper.isMixed) {
+      return "Mixed";
+    }
+
+    // Format with appropriate precision based on unit
+    if (styleHelper.unit === "vw") {
+      // For vw units, show 2 decimal places
+      return `${
+        typeof styleHelper.value === "number"
+          ? styleHelper.value.toFixed(2)
+          : styleHelper.value
+      }${styleHelper.unit}`;
+    } else {
+      // For px or other units, round to integer
+      return `${Math.round(styleHelper.value ?? 0)}${styleHelper.unit}`;
+    }
+  };
+
   return createPortal(
     <div
       className={`fixed ${
@@ -46,6 +66,10 @@ export const StyleUpdateHelper = () => {
       ) : styleHelper.type === "rotate" ? (
         <div className="flex items-center gap-2">
           <span>{Math.round(styleHelper.value ?? 0)}°</span>
+        </div>
+      ) : styleHelper.type === "fontSize" ? (
+        <div className="flex items-center gap-2">
+          <span>{formatFontSize()}</span>
         </div>
       ) : null}
     </div>,

@@ -6,6 +6,7 @@ import { PreviewProvider, usePreview } from "./preview-context";
 import { PreviewStyles } from "./preview-styles";
 import Image from "next/image";
 import { ViewportBackgroundStyles } from "./utils/viewportBackgroundStyles";
+import useDynamicFontLoader from "./hooks/useDynamicFont";
 
 type PreviewPlayProps = {
   nodes: Node[];
@@ -32,6 +33,31 @@ const PreviewContent: React.FC = () => {
     return originalNodes.filter((node) => node.isViewport);
   }, [originalNodes]);
 
+  useDynamicFontLoader(originalNodes);
+
+  const enhancedTransitionCSS = `
+  .dynamic-node {
+    transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
+  }
+  
+  .dynamic-child {
+    transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
+  }
+`;
+
+  //   const forcedTransitionCSS = `
+  //   [data-node-id] {
+  //     transition-property: all !important;
+  //     transition-duration: 0.5s !important;
+  //     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  //     transition-delay: 0s !important;
+  //   }
+
+  //   .dynamic-child {
+  //     will-change: transform, opacity, background-color, width, height !important;
+  //   }
+  // `;
+
   return (
     <div
       className="preview-container"
@@ -39,6 +65,9 @@ const PreviewContent: React.FC = () => {
     >
       <PreviewStyles />
       <style>{viewportContainerRules}</style>
+      {/* <style dangerouslySetInnerHTML={{ __html: forcedTransitionCSS }} /> */}
+
+      <style>{enhancedTransitionCSS}</style>
       <ViewportBackgroundStyles />
 
       <div className="viewport-container">

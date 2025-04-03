@@ -18,7 +18,9 @@ export const useDragStart = () => {
     dragState,
     setNodeStyle,
     startRecording,
+    stopRecording,
     selectedIdsRef,
+    isMiddleMouseDown,
   } = useBuilder();
 
   const getDynamicParentNode = (node: Node): Node | null => {
@@ -32,8 +34,24 @@ export const useDragStart = () => {
     return null;
   };
 
+  if (isMiddleMouseDown) return null;
+
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
     // Check if the click is on a resize handle or its parent resize handle container
+
+    if (dragState.recordingSessionId && !dragState.isDragging) {
+      console.warn(
+        "Inconsistent state detected: recordingSessionId exists but not dragging. Resetting state."
+      );
+      stopRecording(dragState.recordingSessionId);
+      dragDisp.resetDragState();
+      // Clean up any dangling placeholders
+      const placeholders = nodeState.nodes.filter(
+        (n) => n.type === "placeholder"
+      );
+      placeholders.forEach((p) => nodeDisp.removeNode(p.id));
+    }
+
     const target = e.target as HTMLElement;
     const resizeHandle = target.closest('[data-resize-handle="true"]');
     const borderRadiusHandle = target.closest(
@@ -42,12 +60,62 @@ export const useDragStart = () => {
 
     selectedIdsRef.current = [...dragState.selectedIds];
 
-    const selectedIds = dragState.selectedIds;
-    // if (resizeHandle || borderRadiusHandle) {
-    //   e.preventDefault();
-    //   e.stopPropagation();
-    //   return; // Exit early if clicking on a resize handle
-    // }
+    // Store original selection
+    const originalSelectedIds = [...dragState.selectedIds];
+
+    // NEW: Filter out any selected nodes that are children of other selected nodes
+    let selectedIds = [...originalSelectedIds];
+
+    // Create a map of parent-child relationships for quick lookup
+    const childParentMap = new Map();
+
+    // Build the parent-child relationship map for the entire node tree
+    nodeState.nodes.forEach((node) => {
+      if (node.parentId) {
+        childParentMap.set(node.id, node.parentId);
+      }
+    });
+
+    // Initialize selectedIds to the original selection
+
+    // Only filter out child nodes if there are multiple nodes selected
+    // This is the key change - only apply this filtering if we actually have multiple items selected
+    if (
+      originalSelectedIds.length > 1 &&
+      node &&
+      originalSelectedIds.includes(node.id)
+    ) {
+      // Find nodes to remove (children whose parents are also selected)
+      const nodesToRemove = [];
+
+      originalSelectedIds.forEach((id) => {
+        // Check if any parent in the hierarchy is selected
+        let currentId = id;
+        let parentId = childParentMap.get(currentId);
+
+        while (parentId) {
+          if (originalSelectedIds.includes(parentId)) {
+            // This node has a parent (or ancestor) that's selected
+            nodesToRemove.push(id);
+            break;
+          }
+          // Move up the hierarchy
+          currentId = parentId;
+          parentId = childParentMap.get(currentId);
+        }
+      });
+
+      // If we found child nodes to remove from selection, update the selection
+      if (nodesToRemove.length > 0) {
+        console.log(
+          `Filtering out ${nodesToRemove.length} child nodes from dragging:`,
+          nodesToRemove
+        );
+
+        // Remove child nodes from the selection used for dragging
+        selectedIds = selectedIds.filter((id) => !nodesToRemove.includes(id));
+      }
+    }
 
     e.preventDefault();
     dragDisp.setIsDragging(true);
@@ -84,6 +152,39 @@ export const useDragStart = () => {
 
     if (!node || !contentRef.current) return;
 
+    // Check if node is in the filtered selection
+    if (!selectedIds.includes(node.id) && selectedIds.length > 1) {
+      // The clicked node isn't in the filtered selection and we have multiple nodes selected
+      // This means it's likely a child of a selected parent
+
+      // Find its top-most selected parent
+      let currentId = node.id;
+      let parentId = childParentMap.get(currentId);
+      let foundParent = false;
+
+      while (parentId) {
+        if (selectedIds.includes(parentId)) {
+          // Use this parent instead
+          const parentNode = nodeState.nodes.find((n) => n.id === parentId);
+          if (parentNode) {
+            node = parentNode;
+            foundParent = true;
+            break;
+          }
+        }
+        // Move up the hierarchy
+        currentId = parentId;
+        parentId = childParentMap.get(currentId);
+      }
+
+      // If we didn't find a parent in the selection, just use the clicked node directly
+      if (!foundParent) {
+        // Clear the existing selection and just use this node
+        selectedIds = [node.id];
+        dragDisp.setSelectedIds([node.id]);
+      }
+    }
+
     // NEW: Check if node is absolutely positioned in a frame
     if (isAbsoluteInFrame(node)) {
       dragDisp.setDragSource("absolute-in-frame"); // New drag source type
@@ -92,7 +193,6 @@ export const useDragStart = () => {
       if (!element) return;
 
       const elementRect = element.getBoundingClientRect();
-      const contentRect = contentRef.current.getBoundingClientRect();
 
       // Calculate initial position
       const currentLeft = parseFloat(node.style.left as string) || 0;
@@ -182,6 +282,7 @@ export const useDragStart = () => {
         element,
         transform,
         setNodeStyle,
+        preventUnsync: true,
       });
 
       // Create main placeholder
@@ -252,8 +353,6 @@ export const useDragStart = () => {
               `[data-node-id="${id}"]`
             ) as HTMLElement;
             if (!el) return null;
-
-            // Calculate dimensions for additional node
 
             const {
               finalWidth: additionalWidth,

@@ -83,29 +83,77 @@ export const useNodeActions = () => {
 
     const nodesToRemove = new Set<string | number>();
 
+    // Step 1: First collect all nodes to be deleted (selected nodes and their children)
     dragState.selectedIds.forEach((nodeId) => {
       const node = nodeState.nodes.find((n) => n.id === nodeId);
       if (!node) return;
 
       nodesToRemove.add(nodeId);
+
+      // For each node, also collect all its children recursively
       const children = getAllChildNodes(nodeId, nodeState.nodes);
       children.forEach((child) => nodesToRemove.add(child.id));
     });
 
-    Array.from(nodesToRemove).forEach((id) => {
-      nodeDisp.removeNode(id);
-    });
-
-    dragDisp.clearSelection();
-
-    const wasInViewport = Array.from(nodesToRemove).some((id) => {
+    // Step 2: Check if any nodes are in viewports
+    const nodesInViewport = Array.from(nodesToRemove).some((id) => {
       const node = nodeState.nodes.find((n) => n.id === id);
       return node?.inViewport;
     });
 
-    if (wasInViewport) {
-      nodeDisp.syncViewports();
+    // Step 3: Collect all shared IDs for nodes in viewports
+    const sharedIdsToRemove = new Set<string>();
+
+    if (nodesInViewport) {
+      Array.from(nodesToRemove).forEach((id) => {
+        const node = nodeState.nodes.find((n) => n.id === id);
+        if (node?.sharedId) {
+          sharedIdsToRemove.add(node.sharedId);
+        }
+      });
     }
+
+    // Step 4: Find all nodes with the same shared IDs across viewports
+    if (sharedIdsToRemove.size > 0) {
+      nodeState.nodes.forEach((node) => {
+        if (node.sharedId && sharedIdsToRemove.has(node.sharedId)) {
+          nodesToRemove.add(node.id);
+
+          // Also add children of these shared nodes
+          const children = getAllChildNodes(node.id, nodeState.nodes);
+          children.forEach((child) => nodesToRemove.add(child.id));
+        }
+      });
+    }
+
+    // Step 5: Actually delete the nodes
+    // Remove children first to avoid orphaned nodes
+    const allNodes = [...nodeState.nodes];
+    const nodeIds = Array.from(nodesToRemove);
+
+    // Sort nodes so that children are removed before parents
+    nodeIds.sort((idA, idB) => {
+      const nodeA = allNodes.find((n) => n.id === idA);
+      const nodeB = allNodes.find((n) => n.id === idB);
+
+      if (!nodeA || !nodeB) return 0;
+
+      // If B is a child of A, remove B first
+      if (nodeB.parentId === nodeA.id) return 1;
+      // If A is a child of B, remove A first
+      if (nodeA.parentId === nodeB.id) return -1;
+
+      return 0;
+    });
+
+    // Now remove the nodes in the correct order
+    nodeIds.forEach((id) => {
+      console.log(`Removing node ${id}`);
+      nodeDisp.removeNode(id);
+    });
+
+    // Clear selection
+    dragDisp.clearSelection();
   };
 
   // Duplicate nodes action

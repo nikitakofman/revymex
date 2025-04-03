@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import Button from "@/components/ui/button";
+import { useBuilder } from "@/builder/context/builderState";
 
 /**
  * Helper function to safely create a CSS background image value
@@ -21,6 +22,7 @@ export const ImageSearchModal = ({
   const [query, setQuery] = useState("minimal");
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { isEditingText, setIsEditingText } = useBuilder();
 
   const fetchImages = async (searchQuery = "minimal") => {
     if (loading) return;
@@ -58,6 +60,8 @@ export const ImageSearchModal = ({
     }
   };
 
+  console.log("images", images);
+
   const content = (
     <div className="space-y-4">
       <div className="flex gap-2">
@@ -65,6 +69,8 @@ export const ImageSearchModal = ({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onBlur={(e) => setIsEditingText(false)}
+          onSelect={(e) => setIsEditingText(true)}
           placeholder="Search images..."
           className="flex-1 px-3 py-1.5 bg-[var(--bg-default)] border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />
@@ -73,7 +79,7 @@ export const ImageSearchModal = ({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+      <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
         {images.map((image) => (
           <div
             key={image.id}
@@ -133,6 +139,7 @@ export const VideoSearchModal = ({
   const [query, setQuery] = useState("minimal");
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
+  const { isEditingText, setIsEditingText } = useBuilder();
 
   const fetchVideos = async (searchQuery = "minimal") => {
     if (loading) return;
@@ -172,6 +179,8 @@ export const VideoSearchModal = ({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onBlur={(e) => setIsEditingText(false)}
+          onSelect={(e) => setIsEditingText(true)}
           placeholder="Search videos..."
           className="flex-1 px-3 py-1.5 bg-[var(--bg-default)] border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />
@@ -180,12 +189,12 @@ export const VideoSearchModal = ({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+      <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
         {videos.map((video) => (
           <div
             key={video.id}
             className="relative group cursor-pointer aspect-video rounded-md overflow-hidden"
-            onClick={() => handleVideoSelect(video.videos.tiny.url)}
+            onClick={() => handleVideoSelect(video.videos.large.url)}
           >
             <video
               src={video.videos.tiny.url}

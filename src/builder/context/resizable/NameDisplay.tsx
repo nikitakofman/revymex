@@ -78,7 +78,9 @@ const NameDisplay = ({ node }: { node: Node }) => {
         left: `0px`,
         pointerEvents: "auto", // Make sure clicks work
         textAlign: "left",
-        color: "var(--accent-secondary)",
+        color: dragState.dynamicModeNodeId
+          ? "var(--accent-secondary)"
+          : "var(--accent)",
         whiteSpace: "nowrap",
       }}
       onClick={(e) => {

@@ -44,6 +44,38 @@ export const PreviewProvider: React.FC<{
 }> = ({ children, nodes }) => {
   const originalNodes = useMemo(() => nodes, [nodes]);
 
+  const getAllConnectionsForNode = (nodeId, eventType) => {
+    const connections = [];
+
+    // First, look for connections in the original node
+    const sourceNode = originalNodes.find((n) => n.id === nodeId);
+    if (sourceNode && sourceNode.dynamicConnections) {
+      const sourceConnections = sourceNode.dynamicConnections.filter(
+        (conn) => conn.type === eventType
+      );
+      connections.push(...sourceConnections);
+    }
+
+    // Next, look for connections in any target variants that match this node's shared ID
+    if (sourceNode && sourceNode.sharedId) {
+      const variantNodes = originalNodes.filter(
+        (n) =>
+          n.sharedId === sourceNode.sharedId && n.isVariant && n.id !== nodeId
+      );
+
+      variantNodes.forEach((variantNode) => {
+        if (variantNode.dynamicConnections) {
+          const variantConnections = variantNode.dynamicConnections.filter(
+            (conn) => conn.type === eventType
+          );
+          connections.push(...variantConnections);
+        }
+      });
+    }
+
+    return connections;
+  };
+
   // Basic viewport handling
   const [currentViewport, setCurrentViewport] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1440
@@ -83,230 +115,172 @@ export const PreviewProvider: React.FC<{
   }, [initialNodeTree]);
 
   // The transformNode function:
+  // Updated transformNode function to fix connection detection issues
+  // This should replace the transformNode function in the preview-context.tsx file
+
+  // Updated transformNode function to fix connection detection issues
+  // This should replace the transformNode function in the preview-context.tsx file
+
+  // SIMPLIFIED TransformNode Fix - Replace your transformNode function with this version
+
+  // Final transformNode function addressing all issues
+  // Replace the current transformNode in preview-context.tsx with this version
+
   const transformNode = useMemo(() => {
     return (sourceId: string, type: string) => {
-      // Find the current viewport in breakpoints
-      const getActiveBreakpoint = (width, breakpoints) => {
-        const sortedBreakpoints = [...breakpoints].sort(
-          (a, b) => b.width - a.width
-        );
-
-        for (let i = 0; i < sortedBreakpoints.length - 1; i++) {
-          const current = sortedBreakpoints[i];
-          const next = sortedBreakpoints[i + 1];
-
-          if (width > next.width && width <= current.width) {
-            return current;
-          }
-        }
-
-        if (width <= sortedBreakpoints[sortedBreakpoints.length - 1].width) {
-          return sortedBreakpoints[sortedBreakpoints.length - 1];
-        }
-
-        return sortedBreakpoints[0];
-      };
-
-      const currentViewportObj = getActiveBreakpoint(
-        currentViewport,
-        viewportBreakpoints
+      console.log(
+        `🔍 DEBUG: transformNode called for ${sourceId} with event type ${type}`
       );
 
-      if (!currentViewportObj) {
+      // First, find the node for this ID
+      let sourceNode = originalNodes.find((n) => n.id === sourceId);
+      if (!sourceNode) {
+        console.warn(`Source node ${sourceId} not found`);
         return;
       }
 
-      // First, find the node for this ID
-      let sourceNode = findNodeById(nodeTree, sourceId);
-      let isResponsiveNode = false;
-      let isChildTrigger = false;
+      // Get the actual source node (handle child trigger case)
+      let actualSourceId = sourceId;
+      let actualSourceNode = sourceNode;
 
-      if (!sourceNode) {
-        sourceNode = originalNodes.find((n) => n.id === sourceId);
-        if (!sourceNode) {
-          return;
-        }
-
-        isChildTrigger = Boolean(sourceNode.dynamicParentId);
-      } else {
-        // If found in nodeTree, it's a responsive node
-        isResponsiveNode = true;
-        isChildTrigger = Boolean(sourceNode.dynamicParentId);
-      }
-
-      // If this node has a sharedId, find the version for the current viewport
-      if (sourceNode.sharedId && !isChildTrigger) {
-        // Try to find a version of this node with the same sharedId that's in the current viewport
-        const viewportNode = originalNodes.find(
-          (n) =>
-            n.sharedId === sourceNode.sharedId &&
-            n.parentId === currentViewportObj.id
+      if (sourceNode.dynamicParentId) {
+        console.log(
+          `This is a child trigger. Parent ID: ${sourceNode.dynamicParentId}`
         );
-
-        if (viewportNode && viewportNode.id !== sourceNode.id) {
-          sourceNode = viewportNode;
+        const parentNode = originalNodes.find(
+          (n) => n.id === sourceNode.dynamicParentId
+        );
+        if (parentNode) {
+          actualSourceId = parentNode.id;
+          actualSourceNode = parentNode;
         }
       }
 
-      // Check if we're dealing with an already transformed node (variant cycling)
-      const existingVariant = dynamicVariants[sourceId];
+      // Find the connection
+      let connections = [];
+      const existingVariant = dynamicVariants[actualSourceId];
+
       if (existingVariant) {
-        // Check if the variant has connections for this specific event type
-        const hasConnectionsForEventType =
-          existingVariant.dynamicConnections &&
-          existingVariant.dynamicConnections.some((conn) => conn.type === type);
-
-        if (!hasConnectionsForEventType) {
-          return; // Important: exit early if no connections for this event type
+        console.log(`Source has active variant:`, existingVariant);
+        const targetId =
+          existingVariant.targetId || existingVariant._originalTargetId;
+        if (targetId) {
+          const targetNode = originalNodes.find((n) => n.id === targetId);
+          if (targetNode && targetNode.dynamicConnections) {
+            connections = targetNode.dynamicConnections.filter(
+              (c) => c.type === type
+            );
+          }
         }
+      } else if (sourceNode.dynamicConnections) {
+        console.log(`Source has direct connections`);
+        connections = sourceNode.dynamicConnections.filter(
+          (c) => c.type === type
+        );
+      }
 
-        // If we have a variant with connections, use them instead
-        if (
-          existingVariant.dynamicConnections &&
-          existingVariant.dynamicConnections.length > 0
-        ) {
-          // Look for connection in the active variant
-          const connection = existingVariant.dynamicConnections.find(
-            (conn) => conn.type === type
+      if (connections.length === 0 && sourceNode.dynamicConnections) {
+        console.log(`Using fallback connections from source node`);
+        connections = sourceNode.dynamicConnections.filter(
+          (c) => c.type === type
+        );
+      }
+
+      if (connections.length === 0) {
+        console.log(`❌ No connections found for event type ${type}`);
+        return;
+      }
+
+      const connection = connections[0];
+      console.log(
+        `✅ Using connection: ${connection.sourceId || actualSourceId} -> ${
+          connection.targetId
+        }`
+      );
+
+      const targetNode = originalNodes.find(
+        (n) => n.id === connection.targetId
+      );
+      if (!targetNode) {
+        console.warn(`❌ Target node ${connection.targetId} not found`);
+        return;
+      }
+
+      console.log(`Target Node Info:`, {
+        id: targetNode.id,
+        type: targetNode.type,
+        isVariant: targetNode.isVariant,
+        backgroundColor: targetNode.style.backgroundColor,
+      });
+
+      // Create enhanced variant
+      const enhancedVariant = {
+        ...targetNode,
+        _originalTargetId: connection.targetId,
+        targetId: connection.targetId,
+        id: actualSourceId,
+      };
+
+      console.log(`💡 Enhanced Variant:`, {
+        id: enhancedVariant.id,
+        targetId: enhancedVariant.targetId,
+        backgroundColor: enhancedVariant.style.backgroundColor,
+      });
+
+      // Update the variant
+      setDynamicVariants((prev) => {
+        const newVariants = { ...prev };
+        newVariants[actualSourceId] = enhancedVariant;
+
+        // Debug state update
+        console.log(`📊 Updated dynamicVariants state:`, {
+          [actualSourceId]: {
+            id: enhancedVariant.id,
+            targetId: enhancedVariant.targetId,
+            backgroundColor: enhancedVariant.style.backgroundColor,
+          },
+        });
+
+        return newVariants;
+      });
+
+      // Apply DOM changes for immediate feedback
+      setTimeout(() => {
+        try {
+          // Debug DOM application
+          const element = document.querySelector(
+            `[data-node-id="${actualSourceId}"]`
           );
+          if (element) {
+            console.log(`🎨 DOM Before:`, {
+              backgroundColor: element.style.backgroundColor,
+              computedBgColor: window.getComputedStyle(element).backgroundColor,
+            });
 
-          if (connection) {
-            // Find target node
-            let targetNode = findNodeById(initialNodeTree, connection.targetId);
-            if (!targetNode) {
-              targetNode = buildResponsiveSubtree(
-                connection.targetId,
-                originalNodes
+            // Apply background color directly
+            if (targetNode.style.backgroundColor) {
+              element.style.backgroundColor = targetNode.style.backgroundColor;
+              console.log(
+                `🎨 Setting backgroundColor:`,
+                targetNode.style.backgroundColor
               );
             }
 
-            if (!targetNode) {
-              return;
-            }
-
-            // Create enhanced variant with preserved connections
-            const nextVariant = {
-              ...targetNode,
-              _originalTargetId: connection.targetId,
-              targetId: connection.targetId,
-              id: sourceId, // Use the current ID to maintain continuity
-              dynamicConnections: targetNode.dynamicConnections || [],
-            };
-
-            // Apply the next variant
-            setDynamicVariants((prev) => ({
-              ...prev,
-              [sourceId]: nextVariant,
-            }));
-
-            return; // Exit early - we've handled the variant cycling
+            console.log(`🎨 DOM After:`, {
+              backgroundColor: element.style.backgroundColor,
+              computedBgColor: window.getComputedStyle(element).backgroundColor,
+            });
           } else {
-            return; // Exit early - no connection for this event type
+            console.log(`❌ Element not found in DOM:`, actualSourceId);
           }
+        } catch (error) {
+          console.error("Error in DOM manipulation:", error);
         }
-      }
+      }, 100);
 
-      // Check if this node has connections
-      if (
-        !sourceNode.dynamicConnections ||
-        sourceNode.dynamicConnections.length === 0
-      ) {
-        return;
-      }
-
-      // Find the connection that matches the event type
-      const connection = sourceNode.dynamicConnections.find(
-        (conn) => conn.type === type
-      );
-
-      if (!connection) {
-        return;
-      }
-
-      // Try to find the target node in the initial tree
-      let targetNode = findNodeById(initialNodeTree, connection.targetId);
-      if (!targetNode) {
-        const subtree = buildResponsiveSubtree(
-          connection.targetId,
-          originalNodes
-        );
-        if (subtree) {
-          targetNode = subtree;
-        }
-      }
-
-      if (!targetNode) {
-        return;
-      }
-
-      // Determine the key for variant storage
-      let variantKey = sourceId;
-
-      // If this is a child trigger, we need to ensure it's stored under the correct parent ID
-      if (isChildTrigger && sourceNode.dynamicParentId) {
-        // Verify if this parent ID actually exists as a dynamic node in the tree
-        const parentExists = nodeTree.some(
-          (node) => node.id === sourceNode.dynamicParentId
-        );
-
-        if (parentExists) {
-          variantKey = sourceNode.dynamicParentId;
-          console.log(
-            `Child trigger: storing variant under parent ID: ${variantKey}`
-          );
-        } else {
-          // Maybe the parent has a different ID in different viewports?
-          // Try to find a matching parent node
-          console.log(
-            `Parent ID ${sourceNode.dynamicParentId} not found in nodeTree, searching for alternative...`
-          );
-          const possibleParent = originalNodes.find(
-            (node) =>
-              node.isDynamic &&
-              // Either the node has the same ID as dynamicParentId
-              (node.id === sourceNode.dynamicParentId ||
-                // Or the node has the same shared ID as the parent referenced in dynamicParentId
-                (node.sharedId &&
-                  originalNodes.some(
-                    (n) =>
-                      n.id === sourceNode.dynamicParentId &&
-                      n.sharedId === node.sharedId
-                  )))
-          );
-
-          if (possibleParent) {
-            variantKey = possibleParent.id;
-            console.log(`Found alternative parent ID: ${variantKey}`);
-          }
-        }
-      }
-      // IMPORTANT: Store a modified variant with additional information
-      // that will help the DynamicNode component find children
-      const enhancedVariant = {
-        ...targetNode,
-        // Store the original target ID so the DynamicNode can find children
-        _originalTargetId: connection.targetId,
-        // Also store as targetId for compatibility
-        targetId: connection.targetId,
-        // Set the ID to match where we're storing it
-        id: variantKey,
-        // CRITICAL: Preserve the connections from the target node
-        // This single line is what enables cycling through variants
-        dynamicConnections: targetNode.dynamicConnections || [],
-      };
-      setDynamicVariants((prev) => ({
-        ...prev,
-        [variantKey]: enhancedVariant,
-      }));
+      console.log(`✅ Transform complete`);
     };
-  }, [
-    nodeTree,
-    initialNodeTree,
-    originalNodes,
-    dynamicVariants,
-    currentViewport,
-    viewportBreakpoints,
-  ]);
+  }, [originalNodes, dynamicVariants]);
 
   const contextValue = useMemo(
     () => ({

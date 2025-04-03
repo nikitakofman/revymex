@@ -104,6 +104,11 @@
   }
 }
 
+html,
+body {
+  overscroll-behavior-x: none;
+}
+
 @layer components {
   .element-box {
     @apply aspect-square flex items-center justify-center 
@@ -220,4 +225,16 @@
   50% {
     opacity: 0.5;
   }
+}
+
+/* Add this to your CSS */
+.vw-editor-scaling {
+  --vw-scale-factor: 1;
+}
+
+/* Override vw units in the ProseMirror editor when in edit mode */
+.vw-editor-scaling .ProseMirror [style*="vw"] {
+  font-size: calc(
+    var(--font-size-vw, 1) * var(--vw-scale-factor) * 1vw
+  ) !important;
 }

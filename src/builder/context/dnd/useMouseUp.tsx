@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { handleMediaToFrameTransformation } from "../utils";
+import produce from "immer";
 
 export const useMouseUp = () => {
   const {
@@ -22,12 +23,14 @@ export const useMouseUp = () => {
     setNodeStyle,
     stopRecording,
     selectedIdsRef,
+    draggingOverCanvasRef,
+    hasLeftViewportRef,
   } = useBuilder();
 
   const originalIndexRef = useRef<number | null>(null);
   const { stopAutoScroll } = useAutoScroll();
 
-  // Store last added node ID for post-processing
+  // Store last added node ID for post-processing (used to store ordering info in NodeDispatcher)
   const lastAddedNodeIdRef = useRef<string | null>(null);
 
   return () => {
@@ -36,11 +39,8 @@ export const useMouseUp = () => {
     }
 
     stopAutoScroll();
-
-    // Reset last added node ref
+    // Reset last added node ref at the beginning of the drop
     lastAddedNodeIdRef.current = null;
-
-    // dragDisp.setSelectedIds(selectedIdsRef.current);
 
     const draggedNode = dragState.draggedNode.node;
     const realNodeId = draggedNode.id;
@@ -61,12 +61,19 @@ export const useMouseUp = () => {
       nodeState.nodes
     );
 
-    // NEW: Handle absolute positioning within frames
+    console.log("HERE?");
+
+    // Determine if we're adding a new element or repositioning an existing one
+    const isNewElement = !!dragState.draggedItem;
+
+    // ============================================
+    // Absolute positioning (inside frames or canvas)
+    // ============================================
     if (
       dragState.dragSource === "absolute-in-frame" ||
       isAbsoluteInFrame(draggedNode)
     ) {
-      // If we have a target parent ID and absolute-inside position
+      // If dropped with target and position "absolute-inside", update the node inside its frame
       if (
         dragState.dropInfo.targetId &&
         dragState.dropInfo.position === "absolute-inside"
@@ -75,33 +82,30 @@ export const useMouseUp = () => {
         const parentNode = nodeState.nodes.find((n) => n.id === parentId);
 
         if (parentNode) {
-          // Calculate the correct position that accounts for the grab offset
+          // Calculate the position adjusted by the grab offset
           const relativeX = dragState.dropInfo.dropX || 0;
           const relativeY = dragState.dropInfo.dropY || 0;
-
-          // FIXED: We need to apply the same offset logic used during dragging
-          // to ensure the element's final position maintains the same grab point
           const finalX = relativeX - dragState.draggedNode.offset.mouseX;
           const finalY = relativeY - dragState.draggedNode.offset.mouseY;
 
-          // Set absolute position within the frame
           setNodeStyle(
             {
               position: "absolute",
               left: `${finalX}px`,
               top: `${finalY}px`,
             },
-            [draggedNode.id]
+            [draggedNode.id],
+            false
           );
 
-          // Update node properties
+          // Update node properties for absolute positioning inside a frame
           nodeDisp.updateNode(draggedNode.id, {
             parentId: parentId,
             isAbsoluteInFrame: true,
             inViewport: isWithinViewport(parentId, nodeState.nodes),
           });
 
-          // If adding to a dynamic parent, remember the nodeId for syncing
+          // If the parent is dynamic, mark the node for later syncing
           const isDynamicParent =
             parentNode.isDynamic ||
             (parentNode.isVariant && parentNode.dynamicParentId);
@@ -109,26 +113,24 @@ export const useMouseUp = () => {
             lastAddedNodeIdRef.current = draggedNode.id;
           }
 
-          // Handle additional dragged nodes if any
+          // Handle any additional dragged nodes similarly
           if (dragState.additionalDraggedNodes?.length) {
             dragState.additionalDraggedNodes.forEach((info, index) => {
-              // Calculate offset from main node
               const offsetX =
                 info.offset.x - dragState.draggedNode.offset.x || 0;
               const offsetY =
                 info.offset.y - dragState.draggedNode.offset.y || 0;
 
-              // Apply same positioning to additional node with corrected offset
               setNodeStyle(
                 {
                   position: "absolute",
                   left: `${finalX + offsetX}px`,
                   top: `${finalY + offsetY}px`,
                 },
-                [info.node.id]
+                [info.node.id],
+                false
               );
 
-              // Update node properties
               nodeDisp.updateNode(info.node.id, {
                 parentId: parentId,
                 isAbsoluteInFrame: true,
@@ -137,80 +139,74 @@ export const useMouseUp = () => {
             });
           }
 
-          console.log("moussing up here1");
-
-          // Clean up and finish
           dragDisp.hideLineIndicator();
           dragDisp.resetDragState();
           stopRecording(dragState.recordingSessionId);
+
+          // Always sync new elements to all viewports
+          if (isNewElement && !dragState.dynamicModeNodeId) {
+            setTimeout(() => {
+              nodeDisp.syncDroppedNodeWithChildren(realNodeId);
+            }, 0);
+          }
           return;
         }
       } else {
-        // If dragged outside to canvas, convert to regular canvas element
+        // Dropped outside the frame on canvas: convert to regular canvas element
         const { dropX, dropY } = dragState.dropInfo;
 
-        console.log("moussing up here2");
+        console.log("HERE2");
 
         if (dropX !== undefined && dropY !== undefined) {
-          // FIXED: Apply the same offset logic for canvas positioning
           const finalX = dropX - dragState.draggedNode.offset.mouseX;
           const finalY = dropY - dragState.draggedNode.offset.mouseY;
 
-          console.log("moussing up here3");
-
-          // Set position in canvas
           setNodeStyle(
             {
               position: "absolute",
               left: `${finalX}px`,
               top: `${finalY}px`,
             },
-            [draggedNode.id]
+            [draggedNode.id],
+            false
           );
 
-          // Update node
           nodeDisp.updateNode(draggedNode.id, {
             parentId: null,
             isAbsoluteInFrame: false,
             inViewport: false,
           });
 
-          // Update position for node on canvas
           nodeDisp.updateNodePosition(draggedNode.id, {
             x: finalX,
             y: finalY,
           });
 
-          // Handle additional dragged nodes if any
           if (dragState.additionalDraggedNodes?.length) {
             dragState.additionalDraggedNodes.forEach((info) => {
-              // Calculate offset from main node
               const offsetX =
                 info.offset.x - dragState.draggedNode.offset.x || 0;
               const offsetY =
                 info.offset.y - dragState.draggedNode.offset.y || 0;
-
               const additionalX = finalX + offsetX;
               const additionalY = finalY + offsetY;
 
-              // Apply positioning to additional node
               setNodeStyle(
                 {
                   position: "absolute",
                   left: `${additionalX}px`,
                   top: `${additionalY}px`,
                 },
-                [info.node.id]
+                [info.node.id],
+                false
               );
 
-              // Update node
               nodeDisp.updateNode(info.node.id, {
                 parentId: null,
                 isAbsoluteInFrame: false,
                 inViewport: false,
               });
 
-              // Update position
               nodeDisp.updateNodePosition(info.node.id, {
                 x: additionalX,
                 y: additionalY,
@@ -218,20 +214,30 @@ export const useMouseUp = () => {
             });
           }
 
-          // Clean up and finish
           dragDisp.hideLineIndicator();
           dragDisp.resetDragState();
           stopRecording(dragState.recordingSessionId);
+
+          if (isNewElement && !dragState.dynamicModeNodeId) {
+            setTimeout(() => {
+              nodeDisp.syncDroppedNodeWithChildren(realNodeId);
+            }, 0);
+          }
           return;
         }
       }
     }
 
+    // ============================================
+    // Handling drops onto a target container
+    // ============================================
     if (dragState.dropInfo.targetId) {
+      console.log("HERE3");
+
       const { targetId, position } = dragState.dropInfo;
       const targetNode = nodeState.nodes.find((n) => n.id === targetId);
 
-      // Handle image transformation first
+      // First, handle media transformation for image or video nodes
       if (
         (targetNode?.type === "image" || targetNode?.type === "video") &&
         dragState.draggedItem
@@ -256,8 +262,10 @@ export const useMouseUp = () => {
         );
 
         if (transformed) {
-          if (!dragState.dynamicModeNodeId) {
-            nodeDisp.syncViewports();
+          if (isNewElement && !dragState.dynamicModeNodeId) {
+            setTimeout(() => {
+              nodeDisp.syncDroppedNodeWithChildren(realNodeId);
+            }, 0);
           }
           dragDisp.hideLineIndicator();
           dragDisp.resetDragState();
@@ -266,17 +274,21 @@ export const useMouseUp = () => {
         }
       }
 
-      // Regular drop handling
+      console.log("HERE4");
+
+      // Regular drop handling onto a target container
       const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
       const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
-
       const activeViewportId = dragState.activeViewportInDynamicMode;
 
       if (dragState.draggedItem) {
-        console.log("dragState", dragState.draggedItem, draggedNode);
+        // Adding a new element from the toolbar or canvas
+
+        console.log("HERE5");
+
         const newNode = {
           ...draggedNode,
-          sharedId,
+          sharedId: nanoid(), // always generate a new sharedId
           style: {
             ...draggedNode.style,
             position: "relative",
@@ -298,25 +310,40 @@ export const useMouseUp = () => {
           newNode.dynamicParentId = targetFrame.dynamicParentId;
         }
 
-        // IMPORTANT: Store the ID for synchronization after the state update
+        // Store the new node's ID for later sync (its ordering info will be captured inside addNode)
         lastAddedNodeIdRef.current = newNode.id;
 
+        // IMPORTANT: addNode now captures the exact index where the node is inserted.
         nodeDisp.addNode(newNode, targetId, position, shouldBeInViewport);
         dragDisp.setSelectedIds([newNode.id]);
+
+        if (!dragState.dynamicModeNodeId) {
+          setTimeout(() => {
+            // Enhanced sync will use the stored ordering info (_lastAddedNodeInfo)
+            nodeDisp.syncDroppedNodeWithChildren(realNodeId);
+          }, 0);
+        }
       } else {
-        // After moving a node
-        // Move the node to the target
+        console.log("HERE6");
 
+        // Repositioning an existing element
         const targetNode = nodeState.nodes.find((n) => n.id === targetId);
-
         const isTargetDynamic =
           (targetNode?.isDynamic ||
             targetNode?.dynamicFamilyId ||
             targetNode?.dynamicParentId) !== undefined;
 
-        console.log("targetNode", targetNode);
+        // Detect different types of moves that need special handling
+        const draggedFromCanvas =
+          !draggedNode.inViewport && draggedNode.parentId === null;
+        const movingToViewport = isWithinViewport(targetId, nodeState.nodes);
+        const isCanvasToViewportMove = draggedFromCanvas && movingToViewport;
 
-        console.log("IS TARGET DYNAMIC?", isTargetDynamic);
+        // Also detect moves to any component within a viewport
+        const movingToViewportComponent = isWithinViewport(
+          targetId,
+          nodeState.nodes
+        );
 
         nodeDisp.moveNode(
           realNodeId,
@@ -324,18 +351,14 @@ export const useMouseUp = () => {
           { targetId, position },
           isTargetDynamic
         );
-
-        console.log("YOOOO");
         if (dragState.additionalDraggedNodes?.length) {
           dragState.additionalDraggedNodes.forEach((info, index) => {
             if (index === 0) {
-              // First additional node goes after main node
               nodeDisp.moveNode(info.node.id, true, {
                 targetId: realNodeId,
                 position: "after",
               });
             } else {
-              // Subsequent nodes go after previous additional node
               const previousNodeId =
                 dragState.additionalDraggedNodes[index - 1].node.id;
               nodeDisp.moveNode(info.node.id, true, {
@@ -359,28 +382,25 @@ export const useMouseUp = () => {
               });
             }
 
-            // Apply viewport styles to additional nodes
+            // Apply updated viewport styles to additional nodes
             setNodeStyle(
               {
                 position: "relative",
                 zIndex: "",
                 left: "",
                 top: "",
-                ...(info.node.style.flex === "1 0 0px" && {
-                  flex: "1 0 0px",
-                }),
+                ...(info.node.style.flex === "1 0 0px" && { flex: "1 0 0px" }),
               },
               [info.node.id],
-              undefined
+              false
             );
 
-            // Update dynamic parent if needed
             if (targetFrame?.dynamicParentId) {
               nodeDisp.updateNode(info.node.id, {
                 dynamicParentId: targetFrame.dynamicParentId,
               });
 
-              // Check if we should sync this moved node
+              // If target is dynamic or variant, mark for synchronization
               if (
                 targetFrame.isDynamic ||
                 (targetFrame.isVariant && targetFrame.dynamicParentId)
@@ -396,7 +416,6 @@ export const useMouseUp = () => {
             dynamicParentId: targetFrame.dynamicParentId,
           });
 
-          // Check if target is dynamic or variant
           if (
             targetFrame.isDynamic ||
             (targetFrame.isVariant && targetFrame.dynamicParentId)
@@ -412,19 +431,59 @@ export const useMouseUp = () => {
             left: "",
             top: "",
             ...(dragState.originalWidthHeight.isFillMode
-              ? {
-                  flex: "1 0 0px",
-                }
+              ? { flex: "1 0 0px" }
               : {}),
           },
           [realNodeId],
-          undefined
+          false
         );
-      }
 
-      if (!dragState.dynamicModeNodeId) {
-        nodeDisp.syncViewports();
+        // ENHANCED SYNC LOGIC: Use syncDroppedNodeWithChildren for ALL moves to viewport components
+        if (movingToViewportComponent && !dragState.dynamicModeNodeId) {
+          // Get the moved node with its updated parent
+          const movedNode = nodeState.nodes.find((n) => n.id === realNodeId);
+
+          if (movedNode) {
+            // Ensure the node has a sharedId for syncing
+            if (!movedNode.sharedId) {
+              const newSharedId = nanoid();
+              nodeDisp.updateNode(realNodeId, {
+                sharedId: newSharedId,
+                inViewport: true,
+              });
+            }
+
+            // Collect IDs of any additional nodes that were moved
+            const additionalNodeIds = [];
+            if (dragState.additionalDraggedNodes?.length) {
+              additionalNodeIds.push(
+                ...dragState.additionalDraggedNodes.map((info) => info.node.id)
+              );
+
+              // Ensure all additional nodes have sharedIds
+              dragState.additionalDraggedNodes.forEach((info) => {
+                if (!info.node.sharedId) {
+                  const newSharedId = nanoid();
+                  nodeDisp.updateNode(info.node.id, {
+                    sharedId: newSharedId,
+                    inViewport: true,
+                  });
+                }
+              });
+            }
+
+            // Sync immediately instead of using setTimeout
+            nodeDisp.syncDroppedNodeWithChildren(realNodeId, additionalNodeIds);
+          }
+        }
+        // For repositioning on canvas, only sync the position changes
+        else if (!isNewElement && !dragState.dynamicModeNodeId) {
+          nodeDisp.syncNodePosition(realNodeId);
+          nodeDisp.removePlaceholders();
+        }
       }
+      console.log("HERE7");
+
       dragDisp.hideLineIndicator();
       dragDisp.resetDragState();
       originalIndexRef.current = null;
@@ -432,6 +491,9 @@ export const useMouseUp = () => {
       return;
     }
 
+    // ============================================
+    // Handling placeholder-based drops
+    // ============================================
     const placeholderIndex = nodeState.nodes.findIndex(
       (node) => node.type === "placeholder"
     );
@@ -465,6 +527,9 @@ export const useMouseUp = () => {
         const firstPlaceholder = nodeState.nodes.find(
           (n) => n.id === allDraggedNodes[0].placeholderId
         );
+
+        console.log("HERE9");
+
         if (!firstPlaceholder) return;
 
         const parentId = firstPlaceholder.parentId;
@@ -477,6 +542,8 @@ export const useMouseUp = () => {
           parentId
         );
 
+        console.log("HERE8");
+
         // Remove all placeholders
         allDraggedNodes.forEach((info) => {
           const placeholder = nodeState.nodes.find(
@@ -484,6 +551,7 @@ export const useMouseUp = () => {
           );
           if (placeholder) {
             nodeDisp.removeNode(placeholder.id);
+            nodeDisp.removePlaceholders();
           }
         });
 
@@ -499,7 +567,7 @@ export const useMouseUp = () => {
           );
 
           if (firstSibling) {
-            // Move nodes in sequence before the first non-dragged sibling
+            // Move nodes sequentially before the first non-dragged sibling
             allDraggedNodes.forEach((info, index) => {
               if (index === 0) {
                 nodeDisp.moveNode(info.nodeId, true, {
@@ -520,20 +588,18 @@ export const useMouseUp = () => {
                   zIndex: "",
                   left: "",
                   top: "",
-                  ...(dimensions?.isFillMode && {
-                    flex: "1 0 0px",
-                  }),
+                  ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
                   width: dimensions?.width || dropWidth,
                   height: dimensions?.height || dropHeight,
                 },
                 [info.nodeId],
-                undefined
+                false
               );
             });
-
-            console.log("moussing up here");
           } else {
-            // If no siblings, move as first children
+            console.log("HERE10");
+
+            // If no siblings exist, move as first children
             allDraggedNodes.forEach((info, index) => {
               if (index === 0) {
                 nodeDisp.moveNode(info.nodeId, true, {
@@ -554,19 +620,19 @@ export const useMouseUp = () => {
                   zIndex: "",
                   left: "",
                   top: "",
-                  ...(dimensions?.isFillMode && {
-                    flex: "1 0 0px",
-                  }),
+                  ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
                   width: dimensions?.width || dropWidth,
                   height: dimensions?.height || dropHeight,
                 },
                 [info.nodeId],
-                undefined
+                false
               );
             });
           }
         } else {
-          // Existing logic for non-first positions
+          console.log("HERE11");
+
+          // For non-first positions
           const targetNode = currentNodes[placeholderIndex - 1];
           allDraggedNodes.forEach((info, index) => {
             if (index === 0) {
@@ -588,24 +654,40 @@ export const useMouseUp = () => {
                 zIndex: "",
                 left: "",
                 top: "",
-                ...(dimensions?.isFillMode && {
-                  flex: "1 0 0px",
-                }),
+                ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
                 width: dimensions?.width,
                 height: dimensions?.height,
               },
               [info.nodeId],
-              undefined
+              false
             );
           });
         }
 
+        console.log("HERE112");
+
+        // For repositioning via placeholders, only sync the position changes
         if (sourceViewportId) {
-          nodeDisp.syncFromViewport(sourceViewportId);
+          allDraggedNodes.forEach((info) => {
+            nodeDisp.syncNodePosition(info.nodeId);
+          });
         }
       } else {
+        console.log("HERE1132");
+
         const placeholderId = nodeState.nodes[placeholderIndex].id;
         const placeholderNode = nodeState.nodes[placeholderIndex];
+
+        // NEW: Check if element is being dropped in the same position
+        const originalNode = nodeState.nodes.find(
+          (n) => n.id === draggedNode.id
+        );
+        const originalParentId = originalNode?.parentId;
+        const originalIndex = findIndexWithinParent(
+          nodeState.nodes,
+          draggedNode.id,
+          originalParentId
+        );
 
         const targetIndex = findIndexWithinParent(
           nodeState.nodes.filter((n) => n.id !== draggedNode.id),
@@ -613,37 +695,224 @@ export const useMouseUp = () => {
           placeholderNode.parentId
         );
 
-        nodeDisp.removeNode(placeholderId);
+        // Check if we're dropping in the same place
+        const isSameParent = originalParentId === placeholderNode.parentId;
 
-        nodeDisp.reorderNode(
-          draggedNode.id,
-          placeholderNode.parentId,
-          targetIndex
+        // Get original index of placeholderNode without filtering the array
+        const placeholderOriginalIndex = findIndexWithinParent(
+          nodeState.nodes,
+          placeholderNode.id,
+          placeholderNode.parentId
         );
 
+        // Compare original index with placeholder index
+        // When placeholder replaces the node, its index is the same as the original node's index
+        const isSamePosition =
+          isSameParent && originalIndex === placeholderOriginalIndex;
+
+        // Always remove placeholder
+        nodeDisp.removeNode(placeholderId);
+
+        nodeDisp.removePlaceholders();
+
+        // Get dimensions we need to restore
         const dimensions = dragState.nodeDimensions[realNodeId];
+
+        if (isSamePosition) {
+          // Instead of using setNodeStyle which adds unsync flags,
+          // update ONLY the dimensions directly
+          if (dimensions) {
+            // Create a style update with just the dimension properties
+            const styleUpdates = {
+              ...(dimensions.width && { width: dimensions.width }),
+              ...(dimensions.height && { height: dimensions.height }),
+              ...(dimensions.isFillMode && { flex: "1 0 0px" }),
+            };
+
+            if (Object.keys(styleUpdates).length > 0) {
+              // Pass preventUnsync=true as the final parameter to avoid adding flags
+              setNodeStyle(
+                styleUpdates,
+                [realNodeId],
+                false, // Don't sync viewports
+                true // Prevent adding unsync flags
+              );
+            }
+          }
+        } else {
+          // Position actually changed, do regular reordering and style changes
+          nodeDisp.reorderNode(
+            draggedNode.id,
+            placeholderNode.parentId,
+            targetIndex
+          );
+          // Apply full style with unsync flags since position changed
+
+          setNodeStyle(
+            {
+              position: "relative",
+              zIndex: "",
+              left: "",
+              top: "",
+              ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
+              width: dimensions?.width,
+              height: dimensions?.height,
+            },
+            [realNodeId],
+            false,
+            true // Always prevent adding unsync flags when restoring after drag
+          );
+        }
+
+        if (sourceViewportId) {
+          nodeDisp.syncNodePosition(realNodeId);
+        }
+      }
+
+      dragDisp.hideLineIndicator();
+      dragDisp.resetDragState();
+      originalIndexRef.current = null;
+      stopRecording(dragState.recordingSessionId);
+      return;
+    }
+
+    // ============================================
+    // Handling drops from viewports to canvas
+    // ============================================
+    if (
+      hasLeftViewportRef.current &&
+      dragState.dragSource === "viewport" &&
+      draggedNode.sharedId &&
+      !dragState.dropInfo.targetId // Confirm we're dropping directly on canvas, not on a target
+    ) {
+      // Find and remove all shared ID counterparts
+      const sharedIdCounterparts = nodeState.nodes.filter(
+        (n) => n.sharedId === draggedNode.sharedId && n.id !== draggedNode.id
+      );
+
+      // Remove all counterparts
+      sharedIdCounterparts.forEach((counterpart) => {
+        // First find and remove any children of these counterparts
+        const childrenToRemove = nodeState.nodes.filter(
+          (n) => n.parentId === counterpart.id
+        );
+
+        // Remove children first (to avoid orphaned nodes)
+        childrenToRemove.forEach((child) => {
+          nodeDisp.removeNode(child.id);
+        });
+
+        // Then remove the counterpart itself
+        nodeDisp.removeNode(counterpart.id);
+      });
+
+      // Clear sharedId from the dragged node to make it a standalone element
+      nodeDisp.updateNode(draggedNode.id, {
+        sharedId: undefined,
+        inViewport: false,
+        dynamicViewportId: null,
+        dynamicParentId: null,
+        variantResponsiveId: null,
+      });
+
+      // Handle additional dragged nodes if needed
+      if (dragState.additionalDraggedNodes?.length) {
+        dragState.additionalDraggedNodes.forEach((info) => {
+          const additionalNode = info.node;
+
+          // Clear shared IDs for additional nodes too
+          if (additionalNode.sharedId) {
+            const additionalCounterparts = nodeState.nodes.filter(
+              (n) =>
+                n.sharedId === additionalNode.sharedId &&
+                n.id !== additionalNode.id
+            );
+
+            // Remove counterparts of additional nodes
+            additionalCounterparts.forEach((counterpart) => {
+              const childrenToRemove = nodeState.nodes.filter(
+                (n) => n.parentId === counterpart.id
+              );
+              childrenToRemove.forEach((child) => {
+                nodeDisp.removeNode(child.id);
+              });
+              nodeDisp.removeNode(counterpart.id);
+            });
+
+            // Clear shared ID and other properties
+            nodeDisp.updateNode(additionalNode.id, {
+              sharedId: undefined,
+              inViewport: false,
+              dynamicViewportId: null,
+              dynamicParentId: null,
+              variantResponsiveId: null,
+            });
+          }
+        });
+      }
+
+      // Position the node at its current drag position
+      const { dropX, dropY } = dragState.dropInfo;
+      if (dropX !== undefined && dropY !== undefined) {
+        const finalX = dropX - dragState.draggedNode.offset.mouseX;
+        const finalY = dropY - dragState.draggedNode.offset.mouseY;
 
         setNodeStyle(
           {
-            position: "relative",
-            zIndex: "",
-            left: "",
-            top: "",
-            ...(dimensions?.isFillMode && {
-              flex: "1 0 0px",
-            }),
-            width: dimensions?.width,
-            height: dimensions?.height,
+            position: "absolute",
+            left: `${finalX}px`,
+            top: `${finalY}px`,
           },
-          [realNodeId],
-          undefined
+          [draggedNode.id],
+          false
         );
 
-        if (sourceViewportId) {
-          nodeDisp.syncFromViewport(sourceViewportId);
+        nodeDisp.updateNodePosition(draggedNode.id, {
+          x: finalX,
+          y: finalY,
+        });
+
+        // Position additional nodes based on their offset from the main node
+        if (dragState.additionalDraggedNodes?.length) {
+          dragState.additionalDraggedNodes.forEach((info) => {
+            const offsetX = info.offset.x - dragState.draggedNode.offset.x || 0;
+            const offsetY = info.offset.y - dragState.draggedNode.offset.y || 0;
+
+            const additionalX = finalX + offsetX;
+            const additionalY = finalY + offsetY;
+
+            setNodeStyle(
+              {
+                position: "absolute",
+                left: `${additionalX}px`,
+                top: `${additionalY}px`,
+              },
+              [info.node.id],
+              false
+            );
+
+            nodeDisp.updateNodePosition(info.node.id, {
+              x: additionalX,
+              y: additionalY,
+            });
+          });
         }
       }
-    } else if (dragState.draggedItem && !draggedNode.dynamicParentId) {
+
+      // Reset viewport reference flags
+      hasLeftViewportRef.current = false;
+
+      dragDisp.hideLineIndicator();
+      dragDisp.resetDragState();
+      originalIndexRef.current = null;
+      stopRecording(dragState.recordingSessionId);
+      return;
+    }
+
+    // ============================================
+    // Handling drops on the canvas for new elements
+    // ============================================
+    else if (dragState.draggedItem && !draggedNode.dynamicParentId) {
       const { dropX, dropY } = dragState.dropInfo;
       const itemWidth = parseInt(draggedNode.style.width as string) || 150;
       const itemHeight = parseInt(draggedNode.style.height as string) || 150;
@@ -665,18 +934,34 @@ export const useMouseUp = () => {
         newNode.dynamicPosition = { x: centeredX, y: centeredY };
         newNode.dynamicParentId = dragState.dynamicModeNodeId;
 
-        // Add the dynamicViewportId when in dynamic mode with active viewport
         if (dragState.activeViewportInDynamicMode) {
           newNode.dynamicViewportId = dragState.activeViewportInDynamicMode;
         }
 
-        // Mark new node for synchronization
         lastAddedNodeIdRef.current = newNode.id;
       }
 
       nodeDisp.addNode(newNode, null, null, false);
       dragDisp.setSelectedIds([newNode.id]);
-    } else if (containerRef.current) {
+
+      if (!dragState.dynamicModeNodeId) {
+        setTimeout(() => {
+          nodeDisp.syncDroppedNodeWithChildren(realNodeId);
+        }, 0);
+      }
+
+      dragDisp.hideLineIndicator();
+      dragDisp.resetDragState();
+      originalIndexRef.current = null;
+      hasLeftViewportRef.current = false;
+      stopRecording(dragState.recordingSessionId);
+      return;
+    }
+
+    // ============================================
+    // Handling drops via dragging an existing element (using container ref)
+    // ============================================
+    else if (containerRef.current) {
       const draggedElement = document.querySelector(
         `[data-node-dragged="${draggedNode.id}"]`
       );
@@ -685,7 +970,7 @@ export const useMouseUp = () => {
         const containerRect = containerRef.current.getBoundingClientRect();
         const mainDraggedRect = draggedElement.getBoundingClientRect();
 
-        // Get the main node's true position after transform
+        // Calculate the main node's true position after transform
         const mainNodeX =
           (mainDraggedRect.left - containerRect.left - transform.x) /
           transform.scale;
@@ -699,7 +984,8 @@ export const useMouseUp = () => {
             left: `${mainNodeX}px`,
             top: `${mainNodeY}px`,
           },
-          [draggedNode.id]
+          [draggedNode.id],
+          false
         );
 
         nodeDisp.moveNode(draggedNode.id, false, {
@@ -719,7 +1005,6 @@ export const useMouseUp = () => {
               const additionalRect = additionalElement.getBoundingClientRect();
 
               if (info.node.inViewport || info.node.parentId) {
-                // For nodes from viewport/frames, use their actual dragged positions
                 const additionalX =
                   (additionalRect.left - containerRect.left - transform.x) /
                   transform.scale;
@@ -733,7 +1018,8 @@ export const useMouseUp = () => {
                     left: `${additionalX}px`,
                     top: `${additionalY}px`,
                   },
-                  [info.node.id]
+                  [info.node.id],
+                  false
                 );
 
                 nodeDisp.moveNode(info.node.id, false, {
@@ -743,7 +1029,6 @@ export const useMouseUp = () => {
                   },
                 });
               } else {
-                // For canvas nodes, maintain relative distances
                 const originalLeft =
                   parseFloat(info.node.style.left as string) || 0;
                 const originalTop =
@@ -765,7 +1050,8 @@ export const useMouseUp = () => {
                     left: `${finalX}px`,
                     top: `${finalY}px`,
                   },
-                  [info.node.id]
+                  [info.node.id],
+                  false
                 );
 
                 nodeDisp.moveNode(info.node.id, false, {
@@ -779,11 +1065,12 @@ export const useMouseUp = () => {
           });
         }
       }
-    }
 
-    stopRecording(dragState.recordingSessionId);
-    dragDisp.hideLineIndicator();
-    dragDisp.resetDragState();
-    originalIndexRef.current = null;
+      dragDisp.hideLineIndicator();
+      dragDisp.resetDragState();
+      originalIndexRef.current = null;
+      hasLeftViewportRef.current = false;
+      stopRecording(dragState.recordingSessionId);
+    }
   };
 };

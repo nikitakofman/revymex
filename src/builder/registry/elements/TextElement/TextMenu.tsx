@@ -15,11 +15,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ColorPicker } from "../../../tools/_components/ColorPicker";
 import { ToolInput } from "../../../tools/_components/ToolInput";
 import { useBuilder } from "@/builder/context/builderState";
 import { Editor } from "@tiptap/react";
 import { FixedSizeList as List } from "react-window";
+import SimpleColorPicker from "./SimpleColorPicker";
 
 interface TextMenuProps {
   BubbleMenuPortal: ({
@@ -35,6 +35,10 @@ interface TextMenuProps {
   editor: Editor;
   fontSize: string;
   setFontSize: Dispatch<SetStateAction<string>>;
+  fontUnit?: string;
+  setFontUnit?: Dispatch<SetStateAction<string>>;
+  onToolbarInteractionStart: () => void;
+  onToolbarInteractionEnd: () => void;
 }
 
 const TextMenu = ({
@@ -43,6 +47,10 @@ const TextMenu = ({
   editor,
   fontSize,
   setFontSize,
+  fontUnit = "px", // Default to px if not provided
+  setFontUnit = () => {}, // No-op default function
+  onToolbarInteractionStart,
+  onToolbarInteractionEnd,
 }: TextMenuProps) => {
   const { transform, contentRef } = useBuilder();
   const [fonts, setFonts] = useState<Array<{ family: string }>>([]);
@@ -55,7 +63,27 @@ const TextMenu = ({
   const fontPickerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadedFonts = useRef(new Set<string>());
+  const selectionBeforeFocus = useRef(null);
 
+  // Detect font size unit on mount
+  useEffect(() => {
+    if (editor) {
+      const attrs = editor.getAttributes("textStyle");
+      if (attrs.fontSize) {
+        // Extract unit from fontSize attribute (e.g., "16px" -> "px", "2.5vw" -> "vw")
+        const unitMatch = attrs.fontSize.match(/[a-z%]+$/i);
+        if (unitMatch && unitMatch[0]) {
+          // Set the unit if it's one we support
+          const detectedUnit = unitMatch[0];
+          if (detectedUnit === "px" || detectedUnit === "vw") {
+            setFontUnit(detectedUnit);
+          }
+        }
+      }
+    }
+  }, [editor, setFontUnit]);
+
+  // Fetch Google fonts
   useEffect(() => {
     const fetchGoogleFonts = async () => {
       try {
@@ -74,6 +102,7 @@ const TextMenu = ({
     fetchGoogleFonts();
   }, []);
 
+  // Filter fonts based on search query
   useEffect(() => {
     const filtered = fonts.filter((font) =>
       font.family.toLowerCase().includes(searchQuery.toLowerCase())
@@ -81,12 +110,15 @@ const TextMenu = ({
     setFilteredFonts(filtered);
   }, [searchQuery, fonts]);
 
+  // Focus search input when font picker opens
   useEffect(() => {
     if (showFontPicker && searchInputRef.current) {
+      onToolbarInteractionStart();
       searchInputRef.current.focus();
     }
-  }, [showFontPicker]);
+  }, [showFontPicker, onToolbarInteractionStart]);
 
+  // Load font
   const loadFont = (fontFamily: string) => {
     if (!loadedFonts.current.has(fontFamily)) {
       const link = document.createElement("link");
@@ -100,52 +132,166 @@ const TextMenu = ({
     }
   };
 
+  // Handle font selection
   const handleFontSelect = (fontFamily: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    onToolbarInteractionStart();
 
     loadFont(fontFamily);
 
     setTimeout(() => {
       editor.chain().focus().setMark("textStyle", { fontFamily }).run();
       setShowFontPicker(false);
+      onToolbarInteractionEnd();
     }, 50);
   };
 
+  // Handle clicks outside the font picker
   const handleClickOutside = (event: MouseEvent) => {
     if (
       fontPickerRef.current &&
       !fontPickerRef.current.contains(event.target as Node)
     ) {
       setShowFontPicker(false);
+      onToolbarInteractionEnd();
     }
   };
 
+  // Set up and clean up click outside listener
   useEffect(() => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Enhanced tool click handler that preserves selection
+  const handleToolClick = (e: React.MouseEvent, callback: () => void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onToolbarInteractionStart();
+
+    // Save current selection
+    if (editor) {
+      selectionBeforeFocus.current = editor.state.selection;
+    }
+
+    // Apply the style change
+    callback();
+
+    // Return focus to editor
+    if (editor) {
+      editor.view.focus();
+      // Restore selection if it was lost
+      if (selectionBeforeFocus.current && editor.state.selection.empty) {
+        editor.view.dispatch(
+          editor.state.tr.setSelection(selectionBeforeFocus.current)
+        );
+      }
+    }
+
+    onToolbarInteractionEnd();
+  };
+
+  // Handler for font size change
+  const convertBetweenUnits = (
+    value: number,
+    fromUnit: string,
+    toUnit: string
+  ): number => {
+    if (fromUnit === toUnit) return value;
+
+    // Get the actual window width for accurate conversion
+    const viewportWidth = window.innerWidth;
+
+    if (fromUnit === "px" && toUnit === "vw") {
+      // Convert px to vw - size relative to viewport width
+      return (value / viewportWidth) * 100;
+    } else if (fromUnit === "vw" && toUnit === "px") {
+      // Convert vw to px - absolute pixel size
+      return (value * viewportWidth) / 100;
+    }
+
+    return value; // Default fallback
+  };
+
+  // Replace the handleFontSizeChange function in TextMenu with this fixed version
+  const handleFontSizeChange = (value: string | number, unit?: string) => {
+    if (!editor) return;
+
+    // Save selection before applying style
+    selectionBeforeFocus.current = editor.state.selection;
+
+    // Use the provided unit or fallback to current fontUnit
+    const actualUnit = unit || fontUnit;
+    let newValue = value;
+
+    // If there's a unit change, we need to convert the value to maintain visual size
+    if (unit && unit !== fontUnit) {
+      // Convert value to maintain visual size
+      const numericValue = parseFloat(String(value));
+
+      // Only do conversion if we have a valid number
+      if (!isNaN(numericValue)) {
+        const convertedValue = convertBetweenUnits(
+          numericValue,
+          fontUnit,
+          unit
+        );
+
+        // Format based on unit type
+        if (unit === "vw") {
+          newValue = parseFloat(convertedValue.toFixed(2)); // 2 decimal places for vw
+        } else {
+          newValue = Math.round(convertedValue); // Integer for px
+        }
+      }
+
+      // Update unit state
+      setFontUnit(unit);
+    }
+
+    // Apply the new font size with the appropriate unit
+    const newSize = `${newValue}${actualUnit}`;
+    editor.chain().focus().setFontSize(newSize).run();
+
+    // Update font size state with proper formatting
+    setFontSize(
+      typeof newValue === "number"
+        ? actualUnit === "vw"
+          ? newValue.toFixed(2)
+          : Math.round(newValue).toString()
+        : newValue.toString()
+    );
+
+    // Refocus and restore selection if needed
+    if (editor.state.selection.empty && selectionBeforeFocus.current) {
+      editor.view.dispatch(
+        editor.state.tr.setSelection(selectionBeforeFocus.current)
+      );
+    }
+
+    onToolbarInteractionEnd();
+  };
+
+  // Render toolbar with fixed position at the top of the screen
   return (
     <BubbleMenuPortal>
       <div
         style={{
           position: "fixed",
-          left: `${
-            menuPosition.x * transform.scale +
-            transform.x +
-            contentRef.current!.getBoundingClientRect().left
-          }px`,
-          top: `${
-            menuPosition.y * transform.scale +
-            transform.y +
-            contentRef.current!.getBoundingClientRect().top
-          }px`,
+          left: "50%",
+          top: "76px", // Position below header
           transform: "translateX(-50%)",
           zIndex: 50,
         }}
-        className="flex text-toolbar items-center gap-3 p-1 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
-        onMouseDown={(e) => e.stopPropagation()}
+        className="flex text-toolbar bubble-menu-container items-center gap-3 p-1 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onToolbarInteractionStart();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
       >
         <div className="flex items-center gap-2 px-1 border-r border-[var(--border-light)]">
           <div className="relative" ref={fontPickerRef}>
@@ -153,6 +299,7 @@ const TextMenu = ({
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                onToolbarInteractionStart();
               }}
               onClick={(e) => {
                 e.preventDefault();
@@ -174,7 +321,10 @@ const TextMenu = ({
             {showFontPicker && (
               <div
                 className="absolute top-full left-0 mt-1 w-80 bg-[var(--bg-surface)] border border-[var(--border-light)] rounded-lg shadow-lg z-50"
-                onMouseDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  onToolbarInteractionStart();
+                }}
               >
                 <div className="p-2 border-b border-[var(--border-light)]">
                   <div className="relative">
@@ -185,7 +335,13 @@ const TextMenu = ({
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full bg-[var(--bg-hover)] rounded-md px-4 py-1.5 pl-8 text-sm focus:outline-none"
                       placeholder="Search fonts..."
-                      onMouseDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        onToolbarInteractionStart();
+                      }}
+                      onBlur={() => {
+                        // Don't end interaction on blur - we'll handle it when font picker closes
+                      }}
                     />
                     <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-[var(--text-secondary)]" />
                   </div>
@@ -234,27 +390,39 @@ const TextMenu = ({
             )}
           </div>
 
-          <ToolInput
-            type="number"
-            customValue={fontSize}
-            min={8}
-            max={100000}
-            step={1}
-            showUnit
-            label="Size"
-            onCustomChange={(value, unit) => {
-              if (!editor) return;
-              const newSize = `${value}${unit || "px"}`;
-              editor.chain().focus().setFontSize(newSize).run();
-              setFontSize(value.toString());
+          {/* Custom ToolInput wrapper that maintains selection */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onToolbarInteractionStart();
             }}
-          />
+          >
+            <ToolInput
+              type="number"
+              customValue={fontSize}
+              min={8}
+              max={100000}
+              step={1}
+              showUnit
+              unit={fontUnit} // Pass the current font unit
+              label="Size"
+              onCustomChange={handleFontSizeChange}
+              onUnitChange={(newUnit) => {
+                setFontUnit(newUnit);
+                // When changing unit, update the font size with the new unit
+                handleFontSizeChange(fontSize, newUnit);
+              }}
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-0.5 px-1">
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().toggleBold().run()}
+            onMouseDown={(e) =>
+              handleToolClick(e, () =>
+                editor.chain().focus().toggleBold().run()
+              )
+            }
             className={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
               editor.isActive("bold") ? "bg-[var(--bg-hover)]" : ""
             }`}
@@ -263,8 +431,11 @@ const TextMenu = ({
             <Bold size={16} />
           </button>
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().toggleItalic().run()}
+            onMouseDown={(e) =>
+              handleToolClick(e, () =>
+                editor.chain().focus().toggleItalic().run()
+              )
+            }
             className={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
               editor.isActive("italic") ? "bg-[var(--bg-hover)]" : ""
             }`}
@@ -273,8 +444,11 @@ const TextMenu = ({
             <Italic size={16} />
           </button>
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            onMouseDown={(e) =>
+              handleToolClick(e, () =>
+                editor.chain().focus().toggleUnderline().run()
+              )
+            }
             className={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
               editor.isActive("underline") ? "bg-[var(--bg-hover)]" : ""
             }`}
@@ -285,23 +459,47 @@ const TextMenu = ({
         </div>
 
         <div className="flex items-center gap-0.5 px-1 border-l border-[var(--border-light)]">
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            className={`p-1.5 rounded ${
-              editor.isActive("color") ? "bg-[var(--bg-hover)]" : ""
-            }`}
-            type="button"
+          <div
+            className="relative p-1.5 rounded hover:bg-[var(--bg-hover)]"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToolbarInteractionStart();
+            }}
           >
-            <ColorPicker
-              onChange={(color) => editor.chain().focus().setColor(color).run()}
+            <SimpleColorPicker
+              onChange={(color) => {
+                if (editor) {
+                  // Save selection
+                  selectionBeforeFocus.current = editor.state.selection;
+
+                  // Apply color
+                  editor.chain().focus().setColor(color).run();
+
+                  // Restore selection if needed
+                  if (
+                    editor.state.selection.empty &&
+                    selectionBeforeFocus.current
+                  ) {
+                    editor.view.dispatch(
+                      editor.state.tr.setSelection(selectionBeforeFocus.current)
+                    );
+                  }
+
+                  onToolbarInteractionEnd();
+                }
+              }}
             />
-          </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-0.5 px-1 border-l border-[var(--border-light)]">
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().setTextAlign("left").run()}
+            onMouseDown={(e) =>
+              handleToolClick(e, () =>
+                editor.chain().focus().setTextAlign("left").run()
+              )
+            }
             className={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
               editor.isActive({ textAlign: "left" })
                 ? "bg-[var(--bg-hover)]"
@@ -312,8 +510,11 @@ const TextMenu = ({
             <AlignLeft size={16} />
           </button>
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().setTextAlign("center").run()}
+            onMouseDown={(e) =>
+              handleToolClick(e, () =>
+                editor.chain().focus().setTextAlign("center").run()
+              )
+            }
             className={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
               editor.isActive({ textAlign: "center" })
                 ? "bg-[var(--bg-hover)]"
@@ -324,8 +525,11 @@ const TextMenu = ({
             <AlignCenter size={16} />
           </button>
           <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => editor.chain().focus().setTextAlign("right").run()}
+            onMouseDown={(e) =>
+              handleToolClick(e, () =>
+                editor.chain().focus().setTextAlign("right").run()
+              )
+            }
             className={`p-1.5 rounded hover:bg-[var(--bg-hover)] ${
               editor.isActive({ textAlign: "right" })
                 ? "bg-[var(--bg-hover)]"

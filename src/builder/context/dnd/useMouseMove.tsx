@@ -44,6 +44,8 @@ export const useMouseMove = () => {
     nodeState,
     containerRef,
     setNodeStyle,
+    draggingOverCanvasRef,
+    hasLeftViewportRef,
   } = useBuilder();
 
   const { startAutoScroll, updateScrollPosition, stopAutoScroll } =
@@ -75,8 +77,6 @@ export const useMouseMove = () => {
       siblings: Array<string | number>;
     }>;
   } | null>(null);
-
-  const hasLeftViewportRef = useRef(false);
 
   // Helper function to check if node is absolutely positioned within a frame
 
@@ -917,28 +917,33 @@ export const useMouseMove = () => {
         dragState.dragSource === "viewport" &&
         originalViewportDataRef.current
       ) {
+        console.log("Dragging over canvas from viewport");
         hasLeftViewportRef.current = true;
+
+        // Only clear placeholders when dragging over canvas
         const allPlaceholders = nodeState.nodes.filter(
           (n) => n.type === "placeholder"
         );
         allPlaceholders.forEach((placeholder) => {
           nodeDisp.removeNode(placeholder.id);
         });
+
         if (dragState.placeholderInfo) {
           dragDisp.setPlaceholderInfo(null);
         }
+
+        // Flag that we've left the viewport but don't remove shared IDs yet
         hasReenteredContainerRef.current = false;
       }
+
+      // Move the node to follow the cursor on the canvas
       nodeDisp.moveNode(draggedNode.id, false);
       dragDisp.hideLineIndicator();
       dragDisp.setDropInfo(null, null, canvasX, canvasY);
       prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-      if (
-        !dragState.dynamicModeNodeId &&
-        (!draggedNode.isDynamic || draggedNode.inViewport)
-      ) {
-        nodeDisp.syncViewports();
-      }
+
+      // Disable viewport syncing since we've left the viewport
+      // but don't delete counterparts yet
       return;
     }
 

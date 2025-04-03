@@ -19,6 +19,7 @@ export const ToolSelect = ({
   options,
   disabled = false,
   onChange,
+  customSelectWidth,
 }: ToolSelectProps) => {
   const { setNodeStyle, nodeState, dragState, nodeDisp } = useBuilder();
 
@@ -113,15 +114,46 @@ export const ToolSelect = ({
     setNodeStyle({ position });
   };
 
+  // Event handlers to prevent propagation
+  const handleMouseDown = (e) => {
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+  };
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+  };
+
+  const handleSelectFocus = (e) => {
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+  };
+
+  const handleSelectChange = (e) => {
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+    handleChange(e.target.value);
+  };
+
   return (
-    <div className="relative flex items-center justify-between">
+    <div
+      className="relative flex items-center justify-between"
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+    >
       {label && <Label>{label}</Label>}
 
       <select
         value={computedStyle.mixed ? "mixed" : (computedStyle.value as string)}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={handleSelectChange}
+        onFocus={handleSelectFocus}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
         disabled={disabled}
-        className="h-7 pl-2 pr-6 text-xs appearance-none bg-[var(--grid-line)] border border-[var(--control-border)] hover:border-[var(--control-border-hover)] focus:border-[var(--border-focus)] text-[var(--text-primary)] rounded-[var(--radius-lg)] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className={`h-7 pl-2 pr-6 ${
+          customSelectWidth ? customSelectWidth : ""
+        } text-xs appearance-none bg-[var(--grid-line)] border border-[var(--control-border)] hover:border-[var(--control-border-hover)] focus:border-[var(--border-focus)] text-[var(--text-primary)] rounded-[var(--radius-lg)] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {computedStyle.mixed && (
           <option value="mixed" disabled>

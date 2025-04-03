@@ -85,14 +85,14 @@ export const VideoNode: React.FC<VideoNodeProps> = ({ nodeId }) => {
         data-is-dynamic={node.isDynamic ? "true" : undefined}
         className={`node node-video ${node.isDynamic ? "node-dynamic" : ""}`}
         src={videoSrc}
-        autoPlay
-        loop
-        muted
-        playsInline
+        autoPlay={styleProps.autoplay || false}
+        loop={styleProps.loop || false}
+        muted={styleProps.muted || true}
         controls={styleProps.controls || false}
         style={
           {
             objectFit: styleProps.objectFit || "cover",
+            objectPosition: styleProps.objectPosition || "center",
           } as React.CSSProperties
         }
         onClick={node.isDynamic ? handleClick : undefined}

@@ -94,6 +94,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     startRecording,
     stopRecording,
     isMoveCanvasMode,
+    isEditingText,
+    isFontSizeHandleActive,
+    isMiddleMouseDown,
   } = useBuilder();
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
@@ -490,14 +493,17 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       } as React.HTMLAttributes<HTMLElement>)}
 
       {/* Only render visual helpers for unlocked nodes */}
-      {!isMoveCanvasMode && (
-        <VisualHelpers
-          elementRef={elementRef}
-          node={node}
-          isSelected={isSelected}
-          handleResizeStart={handleResizeStart}
-        />
-      )}
+      {!isMoveCanvasMode &&
+        !isEditingText &&
+        !isFontSizeHandleActive &&
+        !isMiddleMouseDown && (
+          <VisualHelpers
+            elementRef={elementRef}
+            node={node}
+            isSelected={isSelected}
+            handleResizeStart={handleResizeStart}
+          />
+        )}
     </>
   );
 };

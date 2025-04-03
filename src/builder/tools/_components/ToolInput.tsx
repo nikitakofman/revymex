@@ -1,4 +1,10 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
@@ -164,6 +170,14 @@ export function ToolInput({
   const isBoxShadowProp = props.name?.startsWith("boxShadow.");
   const boxShadowPart = isBoxShadowProp ? props.name?.split(".")[1] : null;
 
+  const activeMouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(
+    null
+  );
+  const activeMouseUpHandlerRef = useRef<((e: MouseEvent) => void) | null>(
+    null
+  );
+  const sessionIdRef = useRef<string | null>(null);
+
   const hasParent = useCallback(() => {
     if (!dragState.selectedIds.length) return false;
     const selectedNode = nodeState.nodes.find(
@@ -172,12 +186,62 @@ export function ToolInput({
     return !!selectedNode?.parentId;
   }, [dragState.selectedIds, nodeState.nodes]);
 
-  const unitOptions = [
-    { label: "Fix", value: "px" },
-    { label: "Fill", value: "fill", disabled: !hasParent() },
-    { label: "%", value: "%", disabled: !hasParent() },
-    { label: "Fit", value: "auto", disabled: !hasParent() },
-  ];
+  const isTextFontSize =
+    props.name === "fontSize" || (isCustomMode && label === "Size");
+
+  const unitOptions = useMemo(() => {
+    const selectedNode = nodeState.nodes.find(
+      (n) => n.id === dragState.selectedIds[0]
+    );
+    // Check if the selected node has any children
+    const hasChildren = () => {
+      if (!dragState.selectedIds.length) return false;
+
+      return nodeState.nodes.some((node) => node.parentId === selectedNode?.id);
+    };
+
+    // For text font size, show px and vw
+    if (isTextFontSize) {
+      return [
+        { label: "px", value: "px" },
+        { label: "vw", value: "vw" },
+      ];
+    }
+
+    // For height properties, include vh option
+    const isHeightProperty = props.name === "height";
+    if (isHeightProperty) {
+      return [
+        { label: "Fix", value: "px" },
+        { label: "Fill", value: "fill", disabled: !hasParent() },
+        { label: "%", value: "%", disabled: !hasParent() },
+        { label: "Vh", value: "vh" },
+        {
+          label: "Fit",
+          value: "auto",
+          disabled: selectedNode?.type !== "text" ? !hasChildren() : false,
+        },
+      ];
+    }
+
+    // Default options for other properties
+    return [
+      { label: "Fix", value: "px" },
+      { label: "Fill", value: "fill", disabled: !hasParent() },
+      { label: "%", value: "%", disabled: !hasParent() },
+      {
+        label: "Fit",
+        value: "auto",
+        disabled: selectedNode?.type !== "text" ? !hasChildren() : false,
+      },
+    ];
+  }, [
+    isTextFontSize,
+    hasParent,
+    props.name,
+    dragState.selectedIds,
+    nodeState.nodes,
+  ]);
 
   const getComputedStyleValue = useCallback(() => {
     if (isCustomMode) return null;
@@ -331,27 +395,51 @@ export function ToolInput({
         const defaultValue = isGridInput ? "3" : "0";
         if (localValue !== defaultValue) {
           setLocalValue(defaultValue);
-          setIsMixed(false);
+          if (isMixed) {
+            // Only update if different from current state
+            setIsMixed(false);
+          }
         }
         return;
       }
 
       if ("mixed" in computed) {
-        setIsMixed(true);
+        if (!isMixed) {
+          // Only update if different from current state
+          setIsMixed(true);
+        }
       } else {
         // For regular numeric values
         let newValue = computed.value;
-        if (typeof newValue === "number") {
+
+        // Special handling for auto - show "auto" in the input
+        if (computed.unit === "auto") {
+          newValue = "auto";
+        } else if (typeof newValue === "number") {
           newValue = Math.round(newValue).toString();
         } else {
           newValue = String(newValue);
         }
-        setIsMixed(false);
-        setLocalValue(newValue);
-        if (computed.unit) {
-          setLocalUnit(computed.unit);
+
+        // Batch state updates together and only update when necessary
+        const updates = [];
+
+        if (isMixed) {
+          updates.push(() => setIsMixed(false));
         }
-        currentValueRef.current = Number(computed.value);
+
+        if (localValue !== newValue) {
+          updates.push(() => setLocalValue(newValue));
+        }
+
+        if (computed.unit && localUnit !== computed.unit) {
+          updates.push(() => setLocalUnit(computed.unit));
+        }
+
+        // Apply all updates in sequence
+        updates.forEach((update) => update());
+
+        currentValueRef.current = Number(computed.value) || 0;
       }
     }
   }, [
@@ -359,6 +447,10 @@ export function ToolInput({
     nodeState.nodes,
     isCustomMode,
     getComputedStyleValue,
+    isGridInput,
+    localValue, // Need this dependency for the check
+    isMixed, // Need this dependency for the check
+    localUnit, // Need this dependency for the check
   ]);
 
   useEffect(() => {
@@ -371,7 +463,7 @@ export function ToolInput({
   const getStepForUnit = (unit: string) => {
     if (unit === "%") return 1;
     if (unit === "em" || unit === "rem") return 0.1;
-    if (unit === "vw" || unit === "vh") return 1;
+    if (unit === "vw" || unit === "vh") return 0.1; // Smaller step for vw/vh units
     return step;
   };
 
@@ -424,6 +516,13 @@ export function ToolInput({
     currentValueRef.current = newValue;
 
     isInternalUpdate.current = true;
+
+    if (localUnit === "vw") {
+      setLocalValue(newValue.toFixed(2));
+    } else {
+      setLocalValue(Math.round(newValue).toString());
+    }
+
     setLocalValue(Math.round(newValue).toString());
     isInternalUpdate.current = false;
 
@@ -467,8 +566,32 @@ export function ToolInput({
     }
   };
 
+  const convertBetweenFontUnits = (
+    value: number,
+    fromUnit: string,
+    toUnit: string
+  ): number => {
+    if (fromUnit === toUnit) return value;
+
+    // Use actual viewport width rather than a fixed base value
+    const viewportWidth = window.innerWidth;
+
+    if (fromUnit === "px" && toUnit === "vw") {
+      // Convert px to vw - size relative to viewport width
+      return (value / viewportWidth) * 100;
+    } else if (fromUnit === "vw" && toUnit === "px") {
+      // Convert vw to px - absolute pixel size
+      return (value * viewportWidth) / 100;
+    }
+
+    // For other unit conversions, use the existing utility
+    return convertToNewUnit(value, fromUnit, toUnit, props.name || "", null);
+  };
+
   const handleUnitChange = (newUnit: string) => {
     if (isMixed && !isCustomMode) return;
+
+    forceCleanupDrag();
 
     const elements = dragState.selectedIds
       .map(
@@ -479,11 +602,66 @@ export function ToolInput({
     if (elements.length === 0) return;
 
     if (newUnit === "fill") {
+      // Existing fill handling
       setLocalUnit(newUnit);
       setLocalValue("1");
       updateFillStyles(elements[0], props.name || "", setNodeStyle);
+    } else if (newUnit === "auto") {
+      // Existing auto handling
+      setLocalUnit(newUnit);
+      setLocalValue("auto");
+
+      setNodeStyle(
+        {
+          [props.name || ""]: "auto",
+          ...(localUnit === "fill" ? { flex: "0 0 auto" } : {}),
+        },
+        undefined,
+        true
+      );
+    } else if ((newUnit === "vw" || newUnit === "px") && isTextFontSize) {
+      // Improved conversion between px and vw for text font size
+      // Get the current value as number
+      const currentValue = parseFloat(localValue.toString()) || 0;
+
+      // Convert to maintain the same visual size
+      const convertedValue = convertBetweenFontUnits(
+        currentValue,
+        localUnit,
+        newUnit
+      );
+
+      // Format based on the target unit
+      const formattedValue =
+        newUnit === "vw"
+          ? convertedValue.toFixed(2) // 2 decimal places for vw
+          : Math.round(convertedValue).toString(); // Integer for px
+
+      // Update UI state
+      setLocalUnit(newUnit);
+      setLocalValue(formattedValue);
+
+      // Update the actual style
+      setNodeStyle(
+        {
+          [props.name || ""]: `${formattedValue}${newUnit}`,
+          ...(localUnit === "fill" ? { flex: "0 0 auto" } : {}),
+        },
+        undefined,
+        true
+      );
+
+      // If we're in custom mode, also notify parent
+      if (isCustomMode && onCustomChange) {
+        onCustomChange(
+          newUnit === "vw"
+            ? parseFloat(formattedValue)
+            : parseInt(formattedValue),
+          newUnit
+        );
+      }
     } else {
-      // Handle conversion from fill or other units
+      // Existing handling for other units
       const currentValue = parseFloat(localValue.toString()) || 0;
       const convertedValue = convertToNewUnit(
         currentValue,
@@ -494,7 +672,13 @@ export function ToolInput({
       );
 
       setLocalUnit(newUnit);
-      setLocalValue(Math.round(convertedValue).toString());
+
+      // For vw units, keep decimal precision
+      if (newUnit === "vw") {
+        setLocalValue(convertedValue.toFixed(2));
+      } else {
+        setLocalValue(Math.round(convertedValue).toString());
+      }
 
       if (localUnit === "fill") {
         // Reset flex property when changing from fill to another unit
@@ -519,6 +703,38 @@ export function ToolInput({
 
     onUnitChange?.(newUnit);
   };
+
+  const forceCleanupDrag = useCallback(() => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    isDraggingRef.current = false;
+
+    if (sessionIdRef.current) {
+      stopRecording(sessionIdRef.current);
+      sessionIdRef.current = null;
+    }
+
+    // Clean up event listeners
+    if (activeMouseMoveHandlerRef.current) {
+      document.removeEventListener(
+        "mousemove",
+        activeMouseMoveHandlerRef.current
+      );
+      activeMouseMoveHandlerRef.current = null;
+    }
+
+    if (activeMouseUpHandlerRef.current) {
+      document.removeEventListener("mouseup", activeMouseUpHandlerRef.current);
+      activeMouseUpHandlerRef.current = null;
+    }
+  }, [stopRecording]);
+
+  useEffect(() => {
+    return () => {
+      forceCleanupDrag();
+    };
+  }, [forceCleanupDrag]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation();
@@ -703,6 +919,8 @@ export function ToolInput({
       if (intervalRef.current) clearInterval(intervalRef.current);
       isDraggingRef.current = false;
       stopRecording(sessionId);
+      forceCleanupDrag();
+
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
@@ -728,8 +946,14 @@ export function ToolInput({
   return (
     <div
       className="flex items-center justify-between gap-2"
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
+      }}
     >
       <div className="flex items-center  justify-between gap-2 flex-1">
         {label && <Label>{label}</Label>}
@@ -766,48 +990,63 @@ export function ToolInput({
           ) : (
             <input
               {...props}
-              type="number"
+              type={localValue === "auto" ? "text" : "number"} // Change to text input for "auto"
               value={localValue}
               onChange={handleInputChange}
-              onFocus={handleFocus}
+              onFocus={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                handleFocus(e);
+              }}
               onBlur={handleBlur}
-              onMouseDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
               min={min}
               max={max}
               className={`w-[60px] h-7 px-1.5 text-xs 
-                bg-[var(--grid-line)] border border-[var(--control-border)] 
-                hover:border-[var(--control-border-hover)] 
-                focus:border-[var(--border-focus)] 
-                text-[var(--text-primary)] rounded-[var(--radius-lg)] 
-                focus:outline-none transition-colors 
-                [appearance:textfield] 
-                [&::-webkit-outer-spin-button]:appearance-none 
-                [&::-webkit-inner-spin-button]:appearance-none
-                ${isFocused ? "border-[var(--border-focus)]" : ""}`}
+              bg-[var(--grid-line)] border border-[var(--control-border)] 
+              hover:border-[var(--control-border-hover)] 
+              focus:border-[var(--border-focus)] 
+              ${
+                localValue === "auto"
+                  ? "text-[var(--text-secondary)] "
+                  : "text-[var(--text-primary)]"
+              } 
+              rounded-[var(--radius-lg)] 
+              focus:outline-none transition-colors 
+              [appearance:textfield] 
+              [&::-webkit-outer-spin-button]:appearance-none 
+              [&::-webkit-inner-spin-button]:appearance-none
+              ${isFocused ? "border-[var(--border-focus)]" : ""}`}
+              readOnly={localValue === "auto"} // Make it read-only when "auto"
             />
           )}
-          {(!isMixed || isCustomMode) && type === "number" && (
-            <div
-              className={`absolute right-1 inset-y-0 w-3 ${
-                isFocused ? "flex" : "hidden group-hover:flex"
-              } flex-col`}
-            >
-              <button
-                onMouseDown={(e) => startIncrement("up", e)}
-                className="flex-1 flex items-center justify-center"
-                type="button"
+          {(!isMixed || isCustomMode) &&
+            localValue !== "auto" &&
+            type === "number" && (
+              <div
+                className={`absolute right-1 inset-y-0 w-3 ${
+                  isFocused ? "flex" : "hidden group-hover:flex"
+                } flex-col`}
               >
-                <ChevronUp className="w-2.5 h-2.5 text-[var(--text-secondary)]" />
-              </button>
-              <button
-                onMouseDown={(e) => startIncrement("down", e)}
-                className="flex-1 flex items-center justify-center"
-                type="button"
-              >
-                <ChevronDown className="w-2.5 h-2.5 text-[var(--text-secondary)]" />
-              </button>
-            </div>
-          )}
+                <button
+                  onMouseDown={(e) => startIncrement("up", e)}
+                  className="flex-1 flex items-center justify-center"
+                  type="button"
+                >
+                  <ChevronUp className="w-2.5 h-2.5 text-[var(--text-secondary)]" />
+                </button>
+                <button
+                  onMouseDown={(e) => startIncrement("down", e)}
+                  className="flex-1 flex items-center justify-center"
+                  type="button"
+                >
+                  <ChevronDown className="w-2.5 h-2.5 text-[var(--text-secondary)]" />
+                </button>
+              </div>
+            )}
         </div>
         {showUnit && (
           <ToolSelect

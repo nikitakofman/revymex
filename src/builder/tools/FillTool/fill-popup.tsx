@@ -141,36 +141,6 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
     setFillType(newType);
   };
 
-  // Render media controls for image and video
-  const renderMediaControls = () => (
-    <div className="grid grid-cols-2 gap-3 mt-4">
-      <ToolSelect
-        name="objectFit"
-        label="Fit"
-        value={objectFit.value}
-        onChange={(value) => setNodeStyle({ objectFit: value })}
-        options={[
-          { label: "Fill", value: "cover" },
-          { label: "Fit", value: "contain" },
-          { label: "Stretch", value: "fill" },
-        ]}
-      />
-      <ToolSelect
-        name="objectPosition"
-        label="Position"
-        value={objectPosition.value}
-        onChange={(value) => setNodeStyle({ objectPosition: value })}
-        options={[
-          { label: "Center", value: "center" },
-          { label: "Top", value: "top" },
-          { label: "Bottom", value: "bottom" },
-          { label: "Left", value: "left" },
-          { label: "Right", value: "right" },
-        ]}
-      />
-    </div>
-  );
-
   // Render controls for image or video nodes
   if (
     (selectedNode.type === "image" || selectedNode.type === "video") &&
@@ -212,55 +182,6 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
             />
           </div>
         )}
-
-        {renderMediaControls()}
-
-        {selectedNode.type === "video" && (
-          <div className="flex items-center gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedNode.style.autoplay || false}
-                onChange={(e) => {
-                  setNodeStyle(
-                    { autoplay: e.target.checked },
-                    dragState.selectedIds
-                  );
-                }}
-                className="w-4 h-4 accent-[var(--accent)]"
-              />
-              Autoplay
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedNode.style.loop || false}
-                onChange={(e) => {
-                  setNodeStyle(
-                    { loop: e.target.checked },
-                    dragState.selectedIds
-                  );
-                }}
-                className="w-4 h-4 accent-[var(--accent)]"
-              />
-              Loop
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedNode.style.muted || true}
-                onChange={(e) => {
-                  setNodeStyle(
-                    { muted: e.target.checked },
-                    dragState.selectedIds
-                  );
-                }}
-                className="w-4 h-4 accent-[var(--accent)]"
-              />
-              Muted
-            </label>
-          </div>
-        )}
       </div>
     );
   }
@@ -275,21 +196,28 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
         options={[
           {
             label: "Color",
-            icon: <div className="size-3 bg-pink-200" />,
             value: "solid",
           },
           {
+            label: "Linear",
+
+            value: "linear",
+          },
+          {
+            label: "Radial",
+
+            value: "radial",
+          },
+          {
             label: "Image",
-            icon: <ImageIcon className="w-4 h-4" />,
             value: "image",
           },
           {
             label: "Video",
-            icon: <Video className="w-4 h-4" />,
             value: "video",
           },
         ]}
-        className="grid grid-cols-3 gap-1 p-1 bg-[var(--control-bg)] rounded-md"
+        className="grid grid-cols-5 gap-1 p-1 bg-[var(--control-bg)] rounded-md"
         currentValue={fillType} // Pass current fillType to ensure active state
       />
 
@@ -344,8 +272,6 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
               embedded={true}
             />
           </div>
-
-          {renderMediaControls()}
         </>
       )}
 
@@ -368,53 +294,6 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
               onClose={() => {}}
               embedded={true}
             />
-          </div>
-
-          {renderMediaControls()}
-
-          <div className="flex items-center gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedNode.style.autoplay || false}
-                onChange={(e) => {
-                  setNodeStyle(
-                    { autoplay: e.target.checked },
-                    dragState.selectedIds
-                  );
-                }}
-                className="w-4 h-4 accent-[var(--accent)]"
-              />
-              Autoplay
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedNode.style.loop || false}
-                onChange={(e) => {
-                  setNodeStyle(
-                    { loop: e.target.checked },
-                    dragState.selectedIds
-                  );
-                }}
-                className="w-4 h-4 accent-[var(--accent)]"
-              />
-              Loop
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={selectedNode.style.muted || true}
-                onChange={(e) => {
-                  setNodeStyle(
-                    { muted: e.target.checked },
-                    dragState.selectedIds
-                  );
-                }}
-                className="w-4 h-4 accent-[var(--accent)]"
-              />
-              Muted
-            </label>
           </div>
         </>
       )}

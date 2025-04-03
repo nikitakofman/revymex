@@ -16,6 +16,7 @@ import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import { useDragStart } from "@/builder/context/dnd/useDragStart";
 import Button from "@/components/ui/button";
+import { createPortal } from "react-dom";
 
 export const Frame = ({ children, node }: ElementProps) => {
   const connect = useConnect();
@@ -26,6 +27,7 @@ export const Frame = ({ children, node }: ElementProps) => {
     dragDisp,
     setNodeStyle,
     containerRef,
+    contentRef,
   } = useBuilder();
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartedRef = useRef(false);
@@ -261,7 +263,7 @@ export const Frame = ({ children, node }: ElementProps) => {
           } relative`}
           style={{
             ...node.style,
-            overflow: "visible",
+            minHeight: "100vh",
             pointerEvents: "auto",
           }}
           data-node-id={node.id}
@@ -278,98 +280,113 @@ export const Frame = ({ children, node }: ElementProps) => {
             e.preventDefault();
           }}
         >
-          <div
-            data-viewport-header="true"
-            data-viewport-id={node.id}
-            className="absolute viewport-header overflow-hidden select-none left-0 right-0 bg-[var(--control-bg)] z-[9999] flex items-center"
-            style={{
-              zIndex: 9999,
-              top: `-${scaledHeaderHeight + scaledHeaderMargin}px`,
-              height: `${scaledHeaderHeight}px`,
-              boxShadow: "var(--shadow-sm)",
-              border: `${1 / transform.scale}px solid var(--border-light)`,
-              padding: `0 ${8 / transform.scale}px`,
-              // Fix border radius to scale with zoom
-              borderRadius: `${8 / transform.scale}px`,
-              // Ensure min/max height constraints
-              minHeight: `${Math.min(36, 24 / transform.scale)}px`,
-              maxHeight: `${36 / transform.scale}px`,
-              pointerEvents: "auto",
-            }}
-            onMouseOver={(e) => {
-              e.stopPropagation();
-              if (!dragState.selectedIds.includes(node.id)) {
-                requestAnimationFrame(() => {
-                  dragDisp.setHoverNodeId(node.id);
-                });
-              }
-            }}
-            onMouseOut={(e) => {
-              e.stopPropagation();
-              if (
-                !dragState.selectedIds.includes(node.id) &&
-                dragState.hoverNodeId === node.id
-              ) {
-                requestAnimationFrame(() => {
-                  dragDisp.setHoverNodeId(null);
-                });
-              }
-            }}
-            onClick={handleHeaderClick}
-            onMouseDown={(e) => {
-              if (node.isLocked) {
-                return;
-              } else {
-                handleHeaderMouseDown(e);
-              }
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              // Show context menu for viewport header
-              dragDisp.setContextMenu(e.clientX, e.clientY, node.id, true);
-            }}
-          >
-            <div className="flex pointer-events-none items-center justify-between w-full">
+          {/* Viewport Header rendered in a portal but stays properly positioned */}
+          {contentRef.current &&
+            !dragState.isDragging &&
+            node.position &&
+            createPortal(
               <div
-                className="flex items-center gap-1 text-[var(--text-secondary)]"
+                data-viewport-header="true"
+                data-viewport-id={node.id}
+                className="absolute viewport-header overflow-hidden select-none bg-[var(--control-bg)] z-[9999] flex items-center"
                 style={{
-                  padding: `${6 / transform.scale}px ${8 / transform.scale}px`,
-                  fontSize: `${10 / transform.scale}px`,
+                  // Position relative to the viewport with the same transform as the canvas
+                  position: "absolute",
+                  transformOrigin: "top left",
+                  // transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                  // Position is set in the untransformed coordinate space
+                  left: node.style.left,
+                  top:
+                    parseFloat(String(node.style.top)) -
+                    scaledHeaderHeight -
+                    scaledHeaderMargin,
+                  width: parseFloat(String(node.style.width)),
+                  height: `${scaledHeaderHeight}px`,
+                  boxShadow: "var(--shadow-sm)",
+                  border: `${1 / transform.scale}px solid var(--border-light)`,
+                  padding: `0 ${8 / transform.scale}px`,
+                  borderRadius: `${8 / transform.scale}px`,
+                  minHeight: `${Math.min(36, 24 / transform.scale)}px`,
+                  maxHeight: `${36 / transform.scale}px`,
+                  pointerEvents: "auto",
+                }}
+                onMouseOver={(e) => {
+                  e.stopPropagation();
+                  if (!dragState.selectedIds.includes(node.id)) {
+                    requestAnimationFrame(() => {
+                      dragDisp.setHoverNodeId(node.id);
+                    });
+                  }
+                }}
+                onMouseOut={(e) => {
+                  e.stopPropagation();
+                  if (
+                    !dragState.selectedIds.includes(node.id) &&
+                    dragState.hoverNodeId === node.id
+                  ) {
+                    requestAnimationFrame(() => {
+                      dragDisp.setHoverNodeId(null);
+                    });
+                  }
+                }}
+                onClick={handleHeaderClick}
+                onMouseDown={(e) => {
+                  if (node.isLocked) {
+                    return;
+                  } else {
+                    handleHeaderMouseDown(e);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dragDisp.setContextMenu(e.clientX, e.clientY, node.id, true);
                 }}
               >
-                {node.viewportName || node.id}
-              </div>
-
-              {/* Single ellipsis button - only shown when scale >= 0.15 */}
-              {transform.scale >= 0.15 && (
-                <div className="flex items-center">
-                  <button
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const buttonRect =
-                        e.currentTarget.getBoundingClientRect();
-                      dragDisp.showViewportContextMenu(node.id, {
-                        x: buttonRect.right,
-                        y: buttonRect.bottom,
-                      });
-                    }}
-                    className="flex items-center justify-center  hover:bg-[var(--accent)] text-white transition-colors duration-150"
+                <div className="flex pointer-events-none items-center justify-between w-full">
+                  <div
+                    className="flex items-center gap-1 text-[var(--text-secondary)]"
                     style={{
-                      width: `${24 / transform.scale}px`,
-                      height: `${24 / transform.scale}px`,
-                      // Scale border radius inversely with zoom to maintain appearance
-                      borderRadius: `${6 / transform.scale}px`,
-                      pointerEvents: "auto",
+                      padding: `${6 / transform.scale}px ${
+                        8 / transform.scale
+                      }px`,
+                      fontSize: `${10 / transform.scale}px`,
                     }}
                   >
-                    <Ellipsis size={14 / transform.scale} />
-                  </button>
+                    {node.viewportName || node.id}
+                  </div>
+
+                  {/* Single ellipsis button - only shown when scale >= 0.15 */}
+                  {transform.scale >= 0.15 && (
+                    <div className="flex items-center">
+                      <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const buttonRect =
+                            e.currentTarget.getBoundingClientRect();
+                          dragDisp.showViewportContextMenu(node.id, {
+                            x: buttonRect.right,
+                            y: buttonRect.bottom,
+                          });
+                        }}
+                        className="flex items-center justify-center hover:bg-[var(--accent)] text-white transition-colors duration-150"
+                        style={{
+                          width: `${24 / transform.scale}px`,
+                          height: `${24 / transform.scale}px`,
+                          borderRadius: `${6 / transform.scale}px`,
+                          pointerEvents: "auto",
+                        }}
+                      >
+                        <Ellipsis size={14 / transform.scale} />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>,
+              contentRef.current
+            )}
+
           {/* Background media wrapper */}
           {(node.style.backgroundImage || node.style.backgroundVideo) && (
             <div
@@ -387,7 +404,8 @@ export const Frame = ({ children, node }: ElementProps) => {
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: "cover",
+                    objectFit: node.style.objectFit,
+                    objectPosition: node.style.objectPosition,
                     borderRadius: "inherit",
                     pointerEvents: "none",
                   }}
@@ -403,7 +421,8 @@ export const Frame = ({ children, node }: ElementProps) => {
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: "cover",
+                    objectFit: node.style.objectFit,
+                    objectPosition: node.style.objectPosition,
                     borderRadius: "inherit",
                     pointerEvents: "none",
                   }}
@@ -440,15 +459,19 @@ export const Frame = ({ children, node }: ElementProps) => {
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: "cover",
+                  objectFit: node.style.objectFit,
+                  objectPosition: node.style.objectPosition,
                   borderRadius: "inherit",
                   pointerEvents: "none",
                 }}
                 src={node.style.backgroundVideo}
+                // // autoPlay={node.style.autoPlay || false}
+                // loop={node.style.loop || false}
+                // muted={node.style.muted || true}
+                // controls={node.style.controls || false}
+                // playsInline
                 autoPlay
                 muted
-                loop
-                playsInline
               />
             ) : node.style.backgroundImage ? (
               <Image
@@ -456,7 +479,8 @@ export const Frame = ({ children, node }: ElementProps) => {
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: "cover",
+                  objectFit: node.style.objectFit,
+                  objectPosition: node.style.objectPosition,
                   borderRadius: "inherit",
                   pointerEvents: "none",
                 }}

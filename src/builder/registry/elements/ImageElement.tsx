@@ -22,8 +22,9 @@ export const ImageElement = ({ node }: ElementProps) => {
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
+            objectFit: node.style.objectFit,
             borderRadius: node.style.borderRadius,
+            objectPosition: node.style.objectPosition,
             pointerEvents: "none",
           }}
           src={

@@ -46,7 +46,13 @@ export const SimplifiedToolSelect: React.FC<SimplifiedToolSelectProps> = ({
 };
 
 const Header = () => {
-  const { interfaceState, interfaceDisp, nodeState, nodeDisp } = useBuilder();
+  const {
+    interfaceState,
+    interfaceDisp,
+    nodeState,
+    nodeDisp,
+    setIsEditingText,
+  } = useBuilder();
   const [inputValue, setInputValue] = useState(
     interfaceState.previewWidth?.toString() || "1440"
   );
@@ -107,6 +113,7 @@ const Header = () => {
 
   // Handler for input blur (apply changes)
   const handleInputBlur = () => {
+    setIsEditingText(false);
     const newWidth = Number(inputValue);
     if (!isNaN(newWidth) && newWidth >= 1 && newWidth <= maxWidth) {
       interfaceDisp.setPreviewWidth(newWidth);
@@ -167,6 +174,7 @@ const Header = () => {
               onChange={handleInputChange}
               onBlur={handleInputBlur}
               onKeyDown={handleKeyDown}
+              onSelect={(e) => setIsEditingText(true)}
               min={1}
               max={maxWidth}
               className="w-[60px] h-7 px-2 text-xs 

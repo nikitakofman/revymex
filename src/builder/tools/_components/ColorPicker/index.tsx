@@ -23,6 +23,7 @@ interface ColorPickerProps {
   pseudoElement?: "::before" | "::after";
   displayMode?: "trigger" | "direct";
   containerClassName?: string;
+  contentPadding?: string;
 }
 
 const ColorPreview = ({
@@ -60,15 +61,20 @@ export const ColorPickerContent = ({
   hueRef,
   onClose,
   showHeader = true,
+  contentPadding = "",
 }) => {
   const currentRgb = hsvToRgb(hsv);
   const currentHsl = rgbToHsl(currentRgb);
 
   return (
-    <div className="bg-[var(--bg-surface)] rounded-lg p-0.5 w-full space-y-3">
+    <div
+      className={`bg-[var(--bg-surface)] rounded-lg ${
+        contentPadding ? contentPadding : "p-0.5"
+      } w-full space-y-3`}
+    >
       {showHeader && (
         <div className="flex justify-between items-center">
-          <span className="text-sm font-medium text-[var(--text-primary)]">
+          <span className="text-xs font-medium text-[var(--text-primary)]">
             Color
           </span>
           <div className="flex items-center gap-2">
@@ -331,6 +337,7 @@ export const ColorPicker = ({
   pseudoElement = "::after",
   displayMode = "trigger", // Default to trigger mode for backward compatibility
   containerClassName = "",
+  contentPadding,
 }: ColorPickerProps) => {
   // Use the shared popupRef from useBuilder
   const { setNodeStyle, startRecording, stopRecording, popupRef } =
@@ -554,6 +561,7 @@ export const ColorPicker = ({
           hueRef={hueRef}
           onClose={null}
           showHeader={false}
+          contentPadding={contentPadding}
         />
       </div>
     );
@@ -610,6 +618,7 @@ export const ColorPicker = ({
             hueRef={hueRef}
             onClose={() => setIsOpen(false)}
             showHeader={true}
+            contentPadding={contentPadding}
           />
         </div>
       )}

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useNodeActions } from "./useNodeActions";
 
-export const useKeyboardDrag = () => {
+export const useKeyboardDrag = ({ isEnabled = true }) => {
   const {
     dragState,
     dragDisp,
@@ -11,6 +11,7 @@ export const useKeyboardDrag = () => {
     isMoveCanvasMode,
     setIsMoveCanvasMode,
     setNodeStyle,
+    isEditingText,
   } = useBuilder();
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
@@ -29,7 +30,13 @@ export const useKeyboardDrag = () => {
       return;
     }
 
+    if (!isEnabled) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isEditingText || document.activeElement?.isContentEditable) {
+        return;
+      }
+
       // Handle Alt key for duplication
       if (e.key === "Alt") {
         e.preventDefault();
@@ -54,6 +61,12 @@ export const useKeyboardDrag = () => {
       ) {
         e.preventDefault();
         e.stopPropagation();
+
+        if (isEditingText || document.activeElement?.isContentEditable) {
+          // Skip deletion when editing text - let the editor handle backspace
+          return;
+        }
+
         handleDelete();
       }
 
@@ -84,8 +97,6 @@ export const useKeyboardDrag = () => {
 
       if (e.key.toLowerCase() === "i" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-
-        console.log("HINDING");
         if (dragState.selectedIds.length > 0) {
           setNodeStyle(
             {
@@ -151,6 +162,15 @@ export const useKeyboardDrag = () => {
     nodeState.nodes,
     isMoveCanvasMode,
     setIsMoveCanvasMode,
+    isEditingText,
+    isEnabled,
+    dragDisp,
+    nodeDisp,
+    handleCopy,
+    handlePaste,
+    handleDelete,
+    handleDuplicate,
+    setNodeStyle,
   ]);
 
   // Handle drag start while Alt is pressed

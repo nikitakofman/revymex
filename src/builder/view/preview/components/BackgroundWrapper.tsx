@@ -102,7 +102,8 @@ export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
             fill={true}
             sizes="100vw"
             style={{
-              objectFit: "cover",
+              objectFit: node.style.objectFit || "cover",
+              objectPosition: node.style.objectPosition || "center",
               color: "transparent",
               pointerEvents: "none",
             }}
@@ -114,14 +115,15 @@ export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
         <video
           key={`bg-video-${nodeId}-${backgroundVideo}`}
           src={backgroundVideo}
-          autoPlay
-          loop
-          muted
-          playsInline
+          autoPlay={node.style.autoplay || false}
+          loop={node.style.loop || false}
+          muted={node.style.muted || true}
+          controls={node.style.controls || false}
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
+            objectFit: node.style.objectFit || "cover",
+            objectPosition: node.style.objectPosition || "center",
             borderRadius: "inherit",
             pointerEvents: "none",
           }}

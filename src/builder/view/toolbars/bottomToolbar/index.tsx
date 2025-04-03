@@ -23,6 +23,7 @@ const BottomToolbar = () => {
     setIsTextModeActive,
     isMoveCanvasMode,
     setIsMoveCanvasMode,
+    isMiddleMouseDown,
   } = useBuilder();
 
   // Handle Frame and Text mode toggles
@@ -121,7 +122,7 @@ const BottomToolbar = () => {
             variant="ghost"
             onClick={handleMoveCanvasClick}
             className={
-              isMoveCanvasMode
+              isMoveCanvasMode || isMiddleMouseDown
                 ? "bg-[var(--accent)] hover:bg-[var(--accent)]  text-white"
                 : "hover:text-black dark:hover:text-white"
             }
