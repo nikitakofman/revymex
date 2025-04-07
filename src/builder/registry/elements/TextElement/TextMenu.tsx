@@ -5,12 +5,19 @@ import {
   Bold,
   ChevronDown,
   Italic,
+  LetterText,
+  LineChart,
+  MoveHorizontal,
+  MoveVertical,
   Search,
+  Space,
   UnderlineIcon,
+  UnfoldVertical,
 } from "lucide-react";
 import React, {
   Dispatch,
   SetStateAction,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -20,6 +27,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Editor } from "@tiptap/react";
 import { FixedSizeList as List } from "react-window";
 import SimpleColorPicker from "./SimpleColorPicker";
+import { findParentViewport } from "@/builder/context/utils";
 
 interface TextMenuProps {
   BubbleMenuPortal: ({
@@ -39,6 +47,15 @@ interface TextMenuProps {
   setFontUnit?: Dispatch<SetStateAction<string>>;
   onToolbarInteractionStart: () => void;
   onToolbarInteractionEnd: () => void;
+  handleFontSizeChange: (value: string | number, unit?: string) => void;
+  directUpdateFontSize: (value: string | number, unit: string) => void;
+  handleLineHeightChange: (value: string | number) => void;
+  handleLetterSpacingChange: (value: string | number) => void;
+  lineHeight?: string;
+  setLineHeight?: Dispatch<SetStateAction<string>>;
+  letterSpacing?: string;
+  setLetterSpacing?: Dispatch<SetStateAction<string>>;
+  node: any;
 }
 
 const TextMenu = ({
@@ -47,12 +64,29 @@ const TextMenu = ({
   editor,
   fontSize,
   setFontSize,
-  fontUnit = "px", // Default to px if not provided
-  setFontUnit = () => {}, // No-op default function
+  fontUnit = "px",
+  setFontUnit = () => {},
   onToolbarInteractionStart,
   onToolbarInteractionEnd,
+  handleFontSizeChange,
+  directUpdateFontSize,
+  lineHeight = "normal",
+  setLineHeight = () => {},
+  letterSpacing = "normal",
+  setLetterSpacing = () => {},
+  handleLineHeightChange = () => {},
+  handleLetterSpacingChange = () => {},
+
+  node,
 }: TextMenuProps) => {
-  const { transform, contentRef } = useBuilder();
+  const {
+    transform,
+    contentRef,
+    nodeState,
+    setNodeStyle,
+    setIsTextMenuOpen,
+    dragState,
+  } = useBuilder();
   const [fonts, setFonts] = useState<Array<{ family: string }>>([]);
   const [showFontPicker, setShowFontPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,23 +99,45 @@ const TextMenu = ({
   const loadedFonts = useRef(new Set<string>());
   const selectionBeforeFocus = useRef(null);
 
-  // Detect font size unit on mount
-  useEffect(() => {
-    if (editor) {
-      const attrs = editor.getAttributes("textStyle");
-      if (attrs.fontSize) {
-        // Extract unit from fontSize attribute (e.g., "16px" -> "px", "2.5vw" -> "vw")
-        const unitMatch = attrs.fontSize.match(/[a-z%]+$/i);
-        if (unitMatch && unitMatch[0]) {
-          // Set the unit if it's one we support
-          const detectedUnit = unitMatch[0];
-          if (detectedUnit === "px" || detectedUnit === "vw") {
-            setFontUnit(detectedUnit);
-          }
-        }
+  // Helper function to get the correct viewport width
+  const getViewportWidth = useCallback(() => {
+    if (node && node.parentId) {
+      const parentViewportId = findParentViewport(
+        node.parentId,
+        nodeState.nodes
+      );
+      const viewportNode = nodeState.nodes.find(
+        (n) => n.id === parentViewportId
+      );
+      if (viewportNode && viewportNode.viewportWidth) {
+        return viewportNode.viewportWidth;
       }
     }
-  }, [editor, setFontUnit]);
+    return window.innerWidth;
+  }, [node, nodeState.nodes]);
+
+  // Improved convertBetweenUnits function
+  const convertBetweenUnits = useCallback(
+    (value: number, fromUnit: string, toUnit: string): number => {
+      if (fromUnit === toUnit) return value;
+      const viewportWidth = getViewportWidth();
+      if (fromUnit === "px" && toUnit === "vw") {
+        return (value / viewportWidth) * 100;
+      } else if (fromUnit === "vw" && toUnit === "px") {
+        return (value * viewportWidth) / 100;
+      }
+      return value;
+    },
+    [getViewportWidth]
+  );
+
+  useEffect(() => {
+    setIsTextMenuOpen(true);
+
+    return () => {
+      setIsTextMenuOpen(false);
+    };
+  }, [setIsTextMenuOpen]);
 
   // Fetch Google fonts
   useEffect(() => {
@@ -137,9 +193,7 @@ const TextMenu = ({
     e.preventDefault();
     e.stopPropagation();
     onToolbarInteractionStart();
-
     loadFont(fontFamily);
-
     setTimeout(() => {
       editor.chain().focus().setMark("textStyle", { fontFamily }).run();
       setShowFontPicker(false);
@@ -158,7 +212,6 @@ const TextMenu = ({
     }
   };
 
-  // Set up and clean up click outside listener
   useEffect(() => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -169,122 +222,115 @@ const TextMenu = ({
     e.preventDefault();
     e.stopPropagation();
     onToolbarInteractionStart();
-
-    // Save current selection
     if (editor) {
       selectionBeforeFocus.current = editor.state.selection;
     }
-
-    // Apply the style change
     callback();
-
-    // Return focus to editor
     if (editor) {
       editor.view.focus();
-      // Restore selection if it was lost
       if (selectionBeforeFocus.current && editor.state.selection.empty) {
         editor.view.dispatch(
           editor.state.tr.setSelection(selectionBeforeFocus.current)
         );
       }
     }
-
     onToolbarInteractionEnd();
   };
 
-  // Handler for font size change
-  const convertBetweenUnits = (
-    value: number,
-    fromUnit: string,
-    toUnit: string
-  ): number => {
-    if (fromUnit === toUnit) return value;
-
-    // Get the actual window width for accurate conversion
-    const viewportWidth = window.innerWidth;
-
-    if (fromUnit === "px" && toUnit === "vw") {
-      // Convert px to vw - size relative to viewport width
-      return (value / viewportWidth) * 100;
-    } else if (fromUnit === "vw" && toUnit === "px") {
-      // Convert vw to px - absolute pixel size
-      return (value * viewportWidth) / 100;
-    }
-
-    return value; // Default fallback
-  };
-
-  // Replace the handleFontSizeChange function in TextMenu with this fixed version
-  const handleFontSizeChange = (value: string | number, unit?: string) => {
+  const handlePartialSelection = (value, unit) => {
     if (!editor) return;
 
-    // Save selection before applying style
-    selectionBeforeFocus.current = editor.state.selection;
+    // Get current selection
+    const { from, to } = editor.state.selection;
 
-    // Use the provided unit or fallback to current fontUnit
-    const actualUnit = unit || fontUnit;
-    let newValue = value;
+    // Only process non-empty selections that don't start at the beginning
+    if (editor.state.selection.empty || from <= 1) return false;
 
-    // If there's a unit change, we need to convert the value to maintain visual size
-    if (unit && unit !== fontUnit) {
-      // Convert value to maintain visual size
-      const numericValue = parseFloat(String(value));
+    try {
+      // Parse value
+      const numericValue = parseFloat(value);
+      if (isNaN(numericValue)) return false;
 
-      // Only do conversion if we have a valid number
-      if (!isNaN(numericValue)) {
-        const convertedValue = convertBetweenUnits(
-          numericValue,
-          fontUnit,
-          unit
-        );
+      // Format value
+      const formattedValue =
+        unit === "vw"
+          ? numericValue.toFixed(2)
+          : Math.round(numericValue).toString();
 
-        // Format based on unit type
-        if (unit === "vw") {
-          newValue = parseFloat(convertedValue.toFixed(2)); // 2 decimal places for vw
-        } else {
-          newValue = Math.round(convertedValue); // Integer for px
-        }
-      }
+      // Create font size value with unit
+      const fontSizeValue = `${formattedValue}${unit}`;
 
-      // Update unit state
-      setFontUnit(unit);
+      // KEY FIX: Get current attributes to preserve styles
+      const currentAttrs = editor.getAttributes("textStyle");
+
+      // Create direct transaction
+      const tr = editor.state.tr;
+
+      // Create a mark that combines current attributes with new fontSize
+      const mark = editor.schema.marks.textStyle.create({
+        ...currentAttrs, // Preserve all current styles (color, etc.)
+        fontSize: fontSizeValue, // Only update fontSize
+      });
+
+      // Apply the mark (no need to remove first)
+      tr.addMark(from, to, mark);
+
+      // Execute the transaction
+      editor.view.dispatch(tr);
+
+      return true;
+    } catch (error) {
+      console.error("Error in handlePartialSelection:", error);
+      return false;
     }
-
-    // Apply the new font size with the appropriate unit
-    const newSize = `${newValue}${actualUnit}`;
-    editor.chain().focus().setFontSize(newSize).run();
-
-    // Update font size state with proper formatting
-    setFontSize(
-      typeof newValue === "number"
-        ? actualUnit === "vw"
-          ? newValue.toFixed(2)
-          : Math.round(newValue).toString()
-        : newValue.toString()
-    );
-
-    // Refocus and restore selection if needed
-    if (editor.state.selection.empty && selectionBeforeFocus.current) {
-      editor.view.dispatch(
-        editor.state.tr.setSelection(selectionBeforeFocus.current)
-      );
-    }
-
-    onToolbarInteractionEnd();
   };
 
-  // Render toolbar with fixed position at the top of the screen
+  const getParentViewportWidth = useCallback(() => {
+    const parentViewportId = findParentViewport(node.parentId, nodeState.nodes);
+    const viewportNode = nodeState.nodes.find((n) => n.id === parentViewportId);
+    return viewportNode?.viewportWidth || window.innerWidth;
+  }, [node.parentId, nodeState.nodes]);
+
+  // Helper function to create presets for line height
+
+  // Helper function to create presets for font size
+  const fontSizePresets = [
+    "12",
+    "14",
+    "16",
+    "18",
+    "20",
+    "24",
+    "32",
+    "48",
+    "64",
+    "96",
+  ];
+
+  // Helper function to create presets for line height
+  const lineHeightPresets = ["1", "1.2", "1.5", "1.8", "2", "normal"];
+
+  // Helper function to create presets for letter spacing
+  const letterSpacingPresets = [
+    "normal",
+    "0.05em",
+    "0.1em",
+    "0.15em",
+    "0.2em",
+    "-0.05em",
+  ];
+
   return (
     <BubbleMenuPortal>
       <div
         style={{
           position: "fixed",
           left: "50%",
-          top: "76px", // Position below header
+          top: dragState.dynamicModeNodeId ? "130px" : "76px",
           transform: "translateX(-50%)",
           zIndex: 50,
         }}
-        className="flex text-toolbar bubble-menu-container items-center gap-3 p-1 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
+        className="flex text-toolbar bubble-menu-container items-center gap-2 p-1.5 bg-[var(--bg-surface)] rounded-lg shadow-lg border border-[var(--border-light)]"
         onMouseDown={(e) => {
           e.stopPropagation();
           onToolbarInteractionStart();
@@ -293,7 +339,8 @@ const TextMenu = ({
           e.stopPropagation();
         }}
       >
-        <div className="flex items-center gap-2 px-1 border-r border-[var(--border-light)]">
+        {/* SECTION 1: Font Family */}
+        <div className="flex items-center ">
           <div className="relative" ref={fontPickerRef}>
             <button
               onMouseDown={(e) => {
@@ -306,7 +353,7 @@ const TextMenu = ({
                 e.stopPropagation();
                 setShowFontPicker(!showFontPicker);
               }}
-              className="h-7 px-2 min-w-[100px] text-left truncate bg-[var(--grid-line)] rounded-md flex items-center justify-between gap-2"
+              className="h-7 px-3 min-w-[120px] text-left truncate bg-[var(--grid-line)] rounded-md flex items-center justify-between gap-2"
               style={{
                 fontFamily:
                   editor.getAttributes("textStyle").fontFamily || "inherit",
@@ -338,9 +385,6 @@ const TextMenu = ({
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         onToolbarInteractionStart();
-                      }}
-                      onBlur={() => {
-                        // Don't end interaction on blur - we'll handle it when font picker closes
                       }}
                     />
                     <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-[var(--text-secondary)]" />
@@ -389,34 +433,172 @@ const TextMenu = ({
               </div>
             )}
           </div>
+        </div>
 
-          {/* Custom ToolInput wrapper that maintains selection */}
+        {/* Separator */}
+        <div className="h-8 w-px bg-[var(--border-light)]"></div>
+
+        {/* SECTION 2: Font Size */}
+        <div className="flex items-center px-1">
           <div
             onMouseDown={(e) => {
               e.stopPropagation();
               onToolbarInteractionStart();
             }}
+            className="relative"
           >
             <ToolInput
               type="number"
               customValue={fontSize}
-              min={8}
+              min={1}
               max={100000}
-              step={1}
+              step={0.1}
               showUnit
-              unit={fontUnit} // Pass the current font unit
+              unit={fontUnit}
               label="Size"
-              onCustomChange={handleFontSizeChange}
+              onCustomChange={(value, unit) => {
+                const currentUnit = unit || fontUnit;
+                if (
+                  editor.getHTML().includes("</p><p") &&
+                  currentUnit === "vw"
+                ) {
+                  directUpdateFontSize(value, currentUnit);
+                  return;
+                }
+
+                const { from } = editor.state.selection;
+                const isPartialSelection =
+                  !editor.state.selection.empty && from > 1;
+
+                if (isPartialSelection) {
+                  const handled = handlePartialSelection(value, currentUnit);
+                  if (handled) return;
+                }
+
+                handleFontSizeChange(value, currentUnit);
+              }}
               onUnitChange={(newUnit) => {
-                setFontUnit(newUnit);
-                // When changing unit, update the font size with the new unit
-                handleFontSizeChange(fontSize, newUnit);
+                onToolbarInteractionStart();
+                const numericValue = parseFloat(fontSize);
+                if (isNaN(numericValue)) {
+                  directUpdateFontSize("16", newUnit);
+                  return;
+                }
+
+                if (fontUnit === "vw" && newUnit === "px") {
+                  const viewportWidth = getParentViewportWidth();
+                  const pxValue = Math.min(
+                    Math.round((numericValue * viewportWidth) / 100),
+                    300
+                  );
+                  const isMultiLine = editor.getHTML().includes("</p><p");
+                  setFontUnit(newUnit);
+                  setFontSize(pxValue.toString());
+
+                  if (isMultiLine) {
+                    try {
+                      const currentHTML = editor.getHTML();
+                      const newHTML = currentHTML.replace(
+                        /font-size:\s*([0-9.]+)vw/g,
+                        (match, vwValue) => {
+                          const vw = parseFloat(vwValue);
+                          let px = 16;
+                          if (vw <= 1) px = 12;
+                          else if (vw <= 2) px = 16;
+                          else if (vw <= 3) px = 20;
+                          else if (vw <= 5) px = 24;
+                          else if (vw <= 8) px = 32;
+                          else if (vw <= 12) px = 48;
+                          else if (vw <= 18) px = 64;
+                          else if (vw <= 24) px = 96;
+                          else px = 120;
+                          return `font-size: ${px}px`;
+                        }
+                      );
+                      setNodeStyle(
+                        { text: newHTML },
+                        undefined,
+                        true,
+                        false,
+                        false
+                      );
+                      editor.commands.setContent(newHTML);
+                    } catch (error) {
+                      console.error(
+                        "Error converting VW to PX for multi-line:",
+                        error
+                      );
+                      directUpdateFontSize(pxValue.toString(), newUnit);
+                    }
+                  } else {
+                    editor.chain().focus().setFontSize(`${pxValue}px`).run();
+                    const updatedHtml = editor.getHTML();
+                    setNodeStyle(
+                      { text: updatedHtml },
+                      undefined,
+                      true,
+                      false,
+                      false
+                    );
+                  }
+                  onToolbarInteractionEnd();
+                  return;
+                }
+
+                if (fontUnit === "px" && newUnit === "vw") {
+                  const viewportWidth = getParentViewportWidth();
+                  const convertedValue = (numericValue / viewportWidth) * 100;
+                  const vwValue = Math.round(convertedValue * 100) / 100;
+                  directUpdateFontSize(vwValue.toString(), newUnit);
+                  return;
+                }
+
+                directUpdateFontSize(fontSize, newUnit);
               }}
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-0.5 px-1">
+        {/* Separator */}
+        <div className="h-8 w-px bg-[var(--border-light)]"></div>
+
+        {/* SECTION 5: Color */}
+        <div className="flex items-center">
+          <div
+            className="relative p-1 rounded hover:bg-[var(--bg-hover)]"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToolbarInteractionStart();
+            }}
+          >
+            <SimpleColorPicker
+              onChange={(color) => {
+                if (editor) {
+                  selectionBeforeFocus.current = editor.state.selection;
+                  editor.chain().focus().setColor(color).run();
+                  if (
+                    editor.state.selection.empty &&
+                    selectionBeforeFocus.current
+                  ) {
+                    editor.view.dispatch(
+                      editor.state.tr.setSelection(selectionBeforeFocus.current)
+                    );
+                  }
+                  onToolbarInteractionEnd();
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Separator */}
+        <div className="h-8 w-px bg-[var(--border-light)]"></div>
+
+        {/* SECTION 3: Line Height & Letter Spacing */}
+
+        {/* SECTION 4: Text Formatting */}
+        <div className="flex items-center gap-1 px-1">
           <button
             onMouseDown={(e) =>
               handleToolClick(e, () =>
@@ -458,42 +640,13 @@ const TextMenu = ({
           </button>
         </div>
 
-        <div className="flex items-center gap-0.5 px-1 border-l border-[var(--border-light)]">
-          <div
-            className="relative p-1.5 rounded hover:bg-[var(--bg-hover)]"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onToolbarInteractionStart();
-            }}
-          >
-            <SimpleColorPicker
-              onChange={(color) => {
-                if (editor) {
-                  // Save selection
-                  selectionBeforeFocus.current = editor.state.selection;
+        {/* Separator */}
 
-                  // Apply color
-                  editor.chain().focus().setColor(color).run();
+        {/* Separator */}
+        <div className="h-8 w-px bg-[var(--border-light)]"></div>
 
-                  // Restore selection if needed
-                  if (
-                    editor.state.selection.empty &&
-                    selectionBeforeFocus.current
-                  ) {
-                    editor.view.dispatch(
-                      editor.state.tr.setSelection(selectionBeforeFocus.current)
-                    );
-                  }
-
-                  onToolbarInteractionEnd();
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-0.5 px-1 border-l border-[var(--border-light)]">
+        {/* SECTION 6: Text Alignment */}
+        <div className="flex items-center gap-1 px-1">
           <button
             onMouseDown={(e) =>
               handleToolClick(e, () =>
@@ -539,6 +692,139 @@ const TextMenu = ({
           >
             <AlignRight size={16} />
           </button>
+        </div>
+
+        <div className="h-8 w-px bg-[var(--border-light)]"></div>
+
+        <div className="flex items-center gap-3 px-1">
+          {/* Line Height Control */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onToolbarInteractionStart();
+            }}
+            className="relative"
+          >
+            <div className="flex items-center gap-1">
+              <UnfoldVertical size={16} />
+              <ToolInput
+                type="number"
+                customValue={lineHeight}
+                // label="Height"
+                placeholder="1.5"
+                className="w-12"
+                onCustomChange={(value) => {
+                  handleLineHeightChange(value);
+                }}
+              />
+              {/* <div className="relative">
+                <button
+                  className="p-1 rounded hover:bg-[var(--bg-hover)]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const presetMenu = document.getElementById(
+                      "line-height-presets"
+                    );
+                    if (presetMenu) {
+                      presetMenu.style.display =
+                        presetMenu.style.display === "none" ? "block" : "none";
+                    }
+                  }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                <div
+                  id="line-height-presets"
+                  className="absolute top-full left-0 mt-1 min-w-[120px] bg-[var(--bg-surface)] shadow-[var(--shadow-lg)] rounded-[var(--radius-md)] py-2 z-50 border border-[var(--border-light)]"
+                  style={{ display: "none" }}
+                >
+                  {lineHeightPresets.map((preset) => (
+                    <div
+                      key={preset}
+                      className="group flex items-center gap-3 mx-1.5 px-2 py-2 cursor-pointer rounded-[var(--radius-sm)] hover:bg-[var(--accent)] transition-colors duration-150"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleLineHeightChange(preset);
+                        document.getElementById(
+                          "line-height-presets"
+                        ).style.display = "none";
+                      }}
+                    >
+                      <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-white">
+                        {preset}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div> */}
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-[var(--border-light)]"></div>
+
+          {/* Letter Spacing Control */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onToolbarInteractionStart();
+            }}
+            className="relative"
+          >
+            <div className="flex items-center gap-1">
+              <Space size={16} />
+
+              <ToolInput
+                type="number"
+                customValue={letterSpacing}
+                // label="Spacing"
+                placeholder="normal"
+                className="w-16"
+                onCustomChange={(value) => {
+                  handleLetterSpacingChange(value);
+                }}
+              />
+              {/* <div className="relative">
+                <button
+                  className="p-1 rounded hover:bg-[var(--bg-hover)]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const presetMenu = document.getElementById(
+                      "letter-spacing-presets"
+                    );
+                    if (presetMenu) {
+                      presetMenu.style.display =
+                        presetMenu.style.display === "none" ? "block" : "none";
+                    }
+                  }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                <div
+                  id="letter-spacing-presets"
+                  className="absolute top-full left-0 mt-1 min-w-[120px] bg-[var(--bg-surface)] shadow-[var(--shadow-lg)] rounded-[var(--radius-md)] py-2 z-50 border border-[var(--border-light)]"
+                  style={{ display: "none" }}
+                >
+                  {letterSpacingPresets.map((preset) => (
+                    <div
+                      key={preset}
+                      className="group flex items-center gap-3 mx-1.5 px-2 py-2 cursor-pointer rounded-[var(--radius-sm)] hover:bg-[var(--accent)] transition-colors duration-150"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleLetterSpacingChange(preset);
+                        document.getElementById(
+                          "letter-spacing-presets"
+                        ).style.display = "none";
+                      }}
+                    >
+                      <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-white">
+                        {preset}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div> */}
+            </div>
+          </div>
         </div>
       </div>
     </BubbleMenuPortal>

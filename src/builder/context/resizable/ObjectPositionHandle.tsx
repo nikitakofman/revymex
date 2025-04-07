@@ -215,6 +215,7 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
         borderRadius: "50%",
         backgroundColor: "var(--accent)",
         border: `${borderWidth}px solid white`,
+        cursor: "move",
         zIndex: 1001,
         // Critically, no pointer events until it becomes interactive
         pointerEvents: isInteractive ? "auto" : "none",

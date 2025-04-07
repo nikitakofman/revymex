@@ -61,8 +61,6 @@ export const useMouseUp = () => {
       nodeState.nodes
     );
 
-    console.log("HERE?");
-
     // Determine if we're adding a new element or repositioning an existing one
     const isNewElement = !!dragState.draggedItem;
 
@@ -411,6 +409,8 @@ export const useMouseUp = () => {
           });
         }
 
+        console.log("HERE7?");
+
         if (targetFrame?.dynamicParentId) {
           nodeDisp.updateNode(realNodeId, {
             dynamicParentId: targetFrame.dynamicParentId,
@@ -715,6 +715,10 @@ export const useMouseUp = () => {
 
         nodeDisp.removePlaceholders();
 
+        console.log("moussing up here ? ");
+
+        window.dispatchEvent(new Event("resize"));
+
         // Get dimensions we need to restore
         const dimensions = dragState.nodeDimensions[realNodeId];
 
@@ -790,6 +794,8 @@ export const useMouseUp = () => {
         (n) => n.sharedId === draggedNode.sharedId && n.id !== draggedNode.id
       );
 
+      console.log("HEREOOO");
+
       // Remove all counterparts
       sharedIdCounterparts.forEach((counterpart) => {
         // First find and remove any children of these counterparts
@@ -806,14 +812,31 @@ export const useMouseUp = () => {
         nodeDisp.removeNode(counterpart.id);
       });
 
-      // Clear sharedId from the dragged node to make it a standalone element
-      nodeDisp.updateNode(draggedNode.id, {
-        sharedId: undefined,
-        inViewport: false,
-        dynamicViewportId: null,
-        dynamicParentId: null,
-        variantResponsiveId: null,
-      });
+      if (dragState.dynamicModeNodeId) {
+        console.log("indynamicmode");
+        console.log(
+          "dragState.activeViewportInDynamicMode",
+          dragState.dynamicModeNodeId
+        );
+        console.log("draggedNode.id", dragState.activeViewportInDynamicMode);
+        // Update the node to be a direct child of the current active viewport
+
+        nodeDisp.updateNode(draggedNode.id, {
+          dynamicParentId: dragState.dynamicModeNodeId,
+          dynamicFamilyId: null,
+          // Keep it in the dynamic environment
+          dynamicViewportId: dragState.activeViewportInDynamicMode,
+        });
+      } else {
+        // Clear sharedId from the dragged node to make it a standalone element
+        nodeDisp.updateNode(draggedNode.id, {
+          sharedId: undefined,
+          inViewport: false,
+          dynamicViewportId: null,
+          dynamicParentId: null,
+          variantResponsiveId: null,
+        });
+      }
 
       // Handle additional dragged nodes if needed
       if (dragState.additionalDraggedNodes?.length) {

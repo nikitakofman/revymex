@@ -17,12 +17,13 @@ export const ImageElement = ({ node }: ElementProps) => {
     <ResizableWrapper node={node}>
       <div {...connect(node)} className="relative">
         <Image
+          crossOrigin="anonymous"
           width={200}
           height={200}
           style={{
             width: "100%",
             height: "100%",
-            objectFit: node.style.objectFit,
+            objectFit: node.style.objectFit || "cover",
             borderRadius: node.style.borderRadius,
             objectPosition: node.style.objectPosition,
             pointerEvents: "none",

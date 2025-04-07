@@ -4,6 +4,7 @@ import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { ToolSelect } from "../_components/ToolSelect";
 import { Label } from "../_components/ToolbarAtoms";
 import { ToolbarSwitch } from "../_components/ToolbarSwitch";
+import { ImageCropPopup } from "./image-crop";
 
 export const VideoSettingsControl = ({ selectedNode }) => {
   const { setNodeStyle, dragState } = useBuilder();
@@ -97,6 +98,11 @@ export const VideoSettingsControl = ({ selectedNode }) => {
           onChange={(value) => handleToggle("controls", value)}
         />
       )}
+      {/* 
+      <ImageCropPopup
+        selectedNode={selectedNode}
+        // onClose={() => setIsCropPopupOpen(false)}
+      /> */}
 
       {/* Muted Toggle */}
       <ToolbarSwitch

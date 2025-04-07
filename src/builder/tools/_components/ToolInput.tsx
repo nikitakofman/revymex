@@ -144,8 +144,16 @@ export function ToolInput({
   sliderStep = 1,
   ...props
 }: ToolInputProps) {
-  const { setNodeStyle, dragState, nodeState, startRecording, stopRecording } =
-    useBuilder();
+  const {
+    setNodeStyle,
+    dragState,
+    nodeState,
+    startRecording,
+    stopRecording,
+    isEditingText,
+    setIsEditingText,
+    setIsDraggingChevrons,
+  } = useBuilder();
   const [localValue, setLocalValue] = useState<string | number>(
     value || customValue || "0"
   );
@@ -877,6 +885,8 @@ export function ToolInput({
     e.preventDefault();
     e.stopPropagation();
 
+    setIsDraggingChevrons(true);
+
     const sessionId = startRecording();
 
     currentValueRef.current =
@@ -915,6 +925,8 @@ export function ToolInput({
       e.preventDefault();
       e.stopPropagation();
 
+      setIsDraggingChevrons(false);
+
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
       isDraggingRef.current = false;
@@ -935,6 +947,7 @@ export function ToolInput({
   };
 
   const handleBlur = () => {
+    setIsEditingText(false);
     setIsFocused(false);
   };
 
@@ -942,6 +955,12 @@ export function ToolInput({
   const sliderValue = isMixed
     ? [(sliderMin + sliderMax) / 2]
     : [Number(localValue)];
+
+  useEffect(() => {
+    return () => {
+      setIsEditingText(false);
+    };
+  }, []);
 
   return (
     <div
@@ -992,6 +1011,7 @@ export function ToolInput({
               {...props}
               type={localValue === "auto" ? "text" : "number"} // Change to text input for "auto"
               value={localValue}
+              onSelect={() => setIsEditingText(true)}
               onChange={handleInputChange}
               onFocus={(e) => {
                 e.stopPropagation();

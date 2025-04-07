@@ -17,10 +17,12 @@ export const VideoElement = ({ node }: ElementProps) => {
       <div {...connect(node)}>
         <video
           style={{
+            ...node.style,
             width: "100%",
             height: "100%",
-            objectFit: node.style.objectFit,
+            objectFit: node.style.objectFit || "cover",
             objectPosition: node.style.objectPosition,
+
             pointerEvents: "none",
           }}
           src={

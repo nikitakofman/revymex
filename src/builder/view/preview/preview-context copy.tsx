@@ -12,6 +12,7 @@ import { Node, ResponsiveNode, Viewport } from "./types";
 import { buildResponsiveNodeTree } from "./hooks/useResponsiveNodeTree";
 import { findNodeById, processInitialDynamicNodes } from "./utils/nodeUtils";
 import { buildResponsiveSubtree } from "./utils/sub-tree-builder";
+import { find } from "lodash";
 
 type PreviewContextType = {
   originalNodes: Node[];
@@ -182,6 +183,152 @@ export const PreviewProvider: React.FC<{
   }>({});
 
   // The transformNode function with the fix
+  // Add this to the top of preview-context.tsx (outside of any component)
+  // Enhanced helper function to extract styles from HTML with more thorough regex patterns
+  const extractStylesFromHTML = (html: string) => {
+    if (!html) return null;
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const span = doc.querySelector("span");
+      if (span && span.getAttribute("style")) {
+        const styleText = span.getAttribute("style");
+        const result: any = {};
+
+        // More comprehensive style extraction
+        const styleProps = [
+          { prop: "color", regex: /color:\s*([^;]+)/i },
+          { prop: "fontSize", regex: /font-size:\s*([^;]+)/i },
+          { prop: "fontWeight", regex: /font-weight:\s*([^;]+)/i },
+          { prop: "fontFamily", regex: /font-family:\s*([^;]+)/i },
+          { prop: "lineHeight", regex: /line-height:\s*([^;]+)/i },
+          { prop: "textDecoration", regex: /text-decoration:\s*([^;]+)/i },
+          { prop: "fontStyle", regex: /font-style:\s*([^;]+)/i },
+          { prop: "textAlign", regex: /text-align:\s*([^;]+)/i },
+        ];
+
+        // Apply all regex patterns for more thorough style extraction
+        styleProps.forEach(({ prop, regex }) => {
+          const match = styleText.match(regex);
+          if (match) result[prop] = match[1].trim();
+        });
+
+        return result;
+      }
+    } catch (e) {
+      console.error("Error parsing HTML:", e);
+    }
+    return null;
+  };
+
+  // Helper function to directly apply text styles to DOM element with debugging
+  const applyTextStylesToDom = (
+    element: HTMLElement,
+    styles: any,
+    debugId?: string
+  ) => {
+    if (!styles || !element) return;
+
+    console.log(`🖌️ Applying styles to ${debugId || element.tagName}:`, styles);
+
+    // Set transition first and force reflow
+    element.style.transition = "all 0.3s ease";
+    void element.offsetHeight;
+
+    // Apply all styles with !important
+    if (styles.color)
+      element.style.setProperty("color", styles.color, "important");
+    if (styles.fontSize)
+      element.style.setProperty("font-size", styles.fontSize, "important");
+    if (styles.fontWeight)
+      element.style.setProperty("font-weight", styles.fontWeight, "important");
+    if (styles.fontFamily)
+      element.style.setProperty("font-family", styles.fontFamily, "important");
+    if (styles.lineHeight)
+      element.style.setProperty("line-height", styles.lineHeight, "important");
+    if (styles.textDecoration)
+      element.style.setProperty(
+        "text-decoration",
+        styles.textDecoration,
+        "important"
+      );
+    if (styles.fontStyle)
+      element.style.setProperty("font-style", styles.fontStyle, "important");
+
+    // Force reflow again after applying styles
+    void element.offsetHeight;
+
+    console.log(`✅ Applied styles to ${debugId || element.tagName}:`, {
+      color: element.style.color,
+      fontSize: element.style.fontSize,
+      fontWeight: element.style.fontWeight,
+    });
+  };
+
+  // Try multiple strategies to find the element in the DOM
+  const findElementInDom = (sourceNode: any, actualSourceId: string) => {
+    // Try direct ID match first
+    let element = document.querySelector(`[data-node-id="${actualSourceId}"]`);
+
+    // If not found, try responsive ID
+    if (!element) {
+      element = document.querySelector(
+        `[data-responsive-id="${actualSourceId}"]`
+      );
+    }
+
+    // If not found and we have sharedId and viewportId, try that combo
+    if (!element && sourceNode.sharedId && sourceNode.dynamicViewportId) {
+      element = document.querySelector(
+        `[data-shared-id="${sourceNode.sharedId}"][data-viewport-id="${sourceNode.dynamicViewportId}"]`
+      );
+    }
+
+    // Try finding by sharedId only as a last resort
+    if (!element && sourceNode.sharedId) {
+      const possibleElements = document.querySelectorAll(
+        `[data-shared-id="${sourceNode.sharedId}"]`
+      );
+
+      // Find the element that's in the current viewport
+      if (possibleElements.length > 0 && sourceNode.dynamicViewportId) {
+        for (const el of possibleElements) {
+          const viewportId = el.getAttribute("data-viewport-id");
+          if (viewportId === sourceNode.dynamicViewportId) {
+            element = el;
+            break;
+          }
+        }
+
+        // If still not found, just use the first one as a fallback
+        if (!element && possibleElements.length > 0) {
+          element = possibleElements[0];
+          console.log(
+            `⚠️ Using fallback element with shared ID:`,
+            sourceNode.sharedId
+          );
+        }
+      }
+    }
+
+    // For debugging - try logging all dynamicNode elements
+    if (!element) {
+      console.log(
+        `🔍 Unable to find element. Dumping all dynamic nodes:`,
+        Array.from(document.querySelectorAll(".dynamic-node")).map((el) => ({
+          id: el.getAttribute("data-node-id"),
+          responsive: el.getAttribute("data-responsive-id"),
+          shared: el.getAttribute("data-shared-id"),
+          viewport: el.getAttribute("data-viewport-id"),
+        }))
+      );
+    }
+
+    return element;
+  };
+
+  // Replace the transformNode function with this improved version
+  // The transformNode function with the fix
   const transformNode = useMemo(() => {
     return (sourceId: string, type: string) => {
       console.log(
@@ -281,9 +428,7 @@ export const PreviewProvider: React.FC<{
               if (baseNode) {
                 // Apply DOM changes for text nodes FIRST - before state update for immediate feedback
                 try {
-                  const element = document.querySelector(
-                    `[data-node-id="${actualSourceId}"]`
-                  );
+                  const element = findElementInDom(sourceNode, actualSourceId);
                   if (element) {
                     // Find and revert all text nodes
                     const textElements = element.querySelectorAll(
@@ -514,12 +659,39 @@ export const PreviewProvider: React.FC<{
         backgroundColor: targetNode.style.backgroundColor,
       });
 
-      // Create enhanced variant
+      // Find the appropriate target node for the current viewport
+      let viewportTargetNode = targetNode;
+
+      // If we're not in the desktop viewport, try to find the responsive variant
+      if (sourceNode.dynamicViewportId) {
+        // Get the current viewport ID
+        const currentViewportId = sourceNode.dynamicViewportId;
+
+        // Find target's responsive counterpart that matches this viewport
+        if (targetNode.sharedId) {
+          const responsiveTargets = originalNodes.filter(
+            (n) =>
+              n.sharedId === targetNode.sharedId &&
+              n.dynamicViewportId === currentViewportId
+          );
+
+          if (responsiveTargets.length > 0) {
+            viewportTargetNode = responsiveTargets[0];
+            console.log(
+              `📱 Using viewport-specific target:`,
+              viewportTargetNode.id
+            );
+          }
+        }
+      }
+
+      // Create enhanced variant using the viewport-specific target
       const enhancedVariant = {
-        ...targetNode,
+        ...viewportTargetNode,
         _originalTargetId: connection.targetId,
         targetId: connection.targetId,
         id: actualSourceId,
+        _viewportId: sourceNode.dynamicViewportId, // Add this to track the viewport
       };
 
       // **** CRITICAL FIX: Process the enhancedVariant to preserve text content ****
@@ -540,13 +712,12 @@ export const PreviewProvider: React.FC<{
         id: processedVariant.id,
         targetId: processedVariant.targetId,
         backgroundColor: processedVariant.style.backgroundColor,
+        viewportId: processedVariant._viewportId,
       });
 
       // Apply DOM changes for text nodes FIRST - before state update for immediate feedback
       try {
-        const element = document.querySelector(
-          `[data-node-id="${actualSourceId}"]`
-        );
+        const element = findElementInDom(sourceNode, actualSourceId);
         if (element) {
           // Find all text nodes and update their styles directly
           const textElements = element.querySelectorAll(
@@ -560,13 +731,13 @@ export const PreviewProvider: React.FC<{
             const span = textEl.querySelector("span");
             if (!span) return;
 
-            // Find text nodes in the variant target
+            // Find text nodes in the variant target that match the current viewport
             const variantTextNodes = originalNodes.filter(
               (node) =>
                 node.sharedId === sharedId &&
                 node.type === "text" &&
-                (node.parentId === targetNode.id ||
-                  node.variantParentId === targetNode.id)
+                (node.parentId === viewportTargetNode.id ||
+                  node.variantParentId === viewportTargetNode.id)
             );
 
             if (variantTextNodes.length > 0) {
@@ -637,11 +808,11 @@ export const PreviewProvider: React.FC<{
           });
 
           // Also handle the main text node if it's a text node itself
-          if (targetNode.type === "text") {
+          if (viewportTargetNode.type === "text") {
             const mainSpan = element.querySelector(
               ".dynamic-node-main-content span"
             );
-            if (mainSpan && targetNode.style?.text) {
+            if (mainSpan && viewportTargetNode.style?.text) {
               // Store the original text content
               const mainNodeId = actualSourceId;
               if (!textContentCache.current[mainNodeId][mainNodeId]) {
@@ -653,7 +824,9 @@ export const PreviewProvider: React.FC<{
               mainSpan.style.transition = "all 0.3s ease";
 
               // Extract and apply styles
-              const styles = extractStylesFromHTML(targetNode.style.text);
+              const styles = extractStylesFromHTML(
+                viewportTargetNode.style.text
+              );
               if (styles) {
                 if (styles.color)
                   mainSpan.style.setProperty(
@@ -682,11 +855,12 @@ export const PreviewProvider: React.FC<{
           }
 
           // Apply background color directly for immediate visual feedback
-          if (targetNode.style.backgroundColor) {
-            element.style.backgroundColor = targetNode.style.backgroundColor;
+          if (viewportTargetNode.style.backgroundColor) {
+            element.style.backgroundColor =
+              viewportTargetNode.style.backgroundColor;
             console.log(
-              `🎨 Setting backgroundColor:`,
-              targetNode.style.backgroundColor
+              `🎨 Setting viewport-specific backgroundColor:`,
+              viewportTargetNode.style.backgroundColor
             );
           }
         } else {
@@ -707,6 +881,7 @@ export const PreviewProvider: React.FC<{
             id: processedVariant.id,
             targetId: processedVariant.targetId,
             backgroundColor: processedVariant.style.backgroundColor,
+            viewportId: processedVariant._viewportId,
           },
         });
 

@@ -1,0 +1,47 @@
+{
+    "id": "-BMXKp5BLDGAWxZuB3oDz",
+    "type": "frame",
+    "style": {
+      "position": "absolute",
+      "left": "878.3333065087899px",
+      "top": "748.3333606484495px",
+      "width": "203.33333333333334px",
+      "height": "206.66666666666669px",
+      "backgroundColor": "#97cffc",
+      "flex": "0 0 auto",
+      "display": "flex",
+      "alignItems": "center",
+      "justifyContent": "center",
+      "zIndex": ""
+    },
+    "inViewport": false,
+    "sharedId": "UiddtSxyk-eJMkODIRrhF",
+    "isVariant": true,
+    "dynamicFamilyId": "EqZoyIJhkK59rIpY6URMT",
+    "variantResponsiveId": "wIYYJ2GCF8JxFdZ9KijfY",
+    "variantInfo": {
+      "name": "Variant 349",
+      "id": "variant-247"
+    },
+    "independentStyles": {
+      "position": true,
+      "left": true,
+      "top": true
+    },
+    "variantIndependentSync": {
+      "position": true,
+      "left": true,
+      "top": true
+    },
+    "parentId": null,
+    "dynamicParentId": "Pg1rJrbi1kRe1rgaN2uIA",
+    "variantParentId": "5sTFOTjsvjfCVbOOkYvom",
+    "dynamicViewportId": "viewport-1440",
+    "unsyncFromParentViewport": {},
+    "lowerSyncProps": {},
+    "position": {
+      "x": 878.3333065087899,
+      "y": 748.3333606484495
+    }
+  }
+]

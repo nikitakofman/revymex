@@ -23,6 +23,12 @@ export const FrameNode: React.FC<FrameNodeProps> = ({ nodeId }) => {
     [nodeTree, nodeId]
   );
 
+  useEffect(() => {
+    if (node) {
+      // Debug the responsive styles for this node
+      debugResponsiveNode(node);
+    }
+  }, [node]);
   if (!node) return null;
 
   // Extract styles
@@ -48,13 +54,6 @@ export const FrameNode: React.FC<FrameNodeProps> = ({ nodeId }) => {
   const hasTextChild =
     hasChildren && node.children.some((child) => child.type === "text");
   const shouldRenderOwnText = hasTextContent && !hasTextChild;
-
-  useEffect(() => {
-    if (node) {
-      // Debug the responsive styles for this node
-      debugResponsiveNode(node);
-    }
-  }, [node]);
 
   return (
     <React.Fragment>

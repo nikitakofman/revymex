@@ -196,8 +196,6 @@ const Canvas = () => {
   const isAnyResize =
     !isResizing && !isAdjustingGap && !isRotating && !isAdjustingBorderRadius;
 
-  console.log("styleHelper", dragState.styleHelper);
-
   return (
     <>
       <LoadingScreen isLoading={isLoading} />

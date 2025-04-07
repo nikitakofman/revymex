@@ -404,7 +404,7 @@ export const Frame = ({ children, node }: ElementProps) => {
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: node.style.objectFit,
+                    objectFit: node.style.objectFit || "cover",
                     objectPosition: node.style.objectPosition,
                     borderRadius: "inherit",
                     pointerEvents: "none",
@@ -416,12 +416,11 @@ export const Frame = ({ children, node }: ElementProps) => {
                   playsInline
                 />
               ) : node.style.backgroundImage ? (
-                <Image
-                  fill
+                <img
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: node.style.objectFit,
+                    objectFit: node.style.objectFit || "cover",
                     objectPosition: node.style.objectPosition,
                     borderRadius: "inherit",
                     pointerEvents: "none",
@@ -472,10 +471,10 @@ export const Frame = ({ children, node }: ElementProps) => {
                 // playsInline
                 autoPlay
                 muted
+                loop
               />
             ) : node.style.backgroundImage ? (
-              <Image
-                fill
+              <img
                 style={{
                   width: "100%",
                   height: "100%",

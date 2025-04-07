@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, forwardRef, useImperativeHandle } from "react";
 import { Node } from "./types";
 import { generateViewportContainerRules } from "./utils/cssUtils";
 import { NodeTreeRenderer } from "./components/NodeRenderer/node-tree-renderer";
@@ -10,18 +10,33 @@ import useDynamicFontLoader from "./hooks/useDynamicFont";
 
 type PreviewPlayProps = {
   nodes: Node[];
+  initialDynamicVariants?: { [nodeId: string]: any };
+  onNodeEvent?: (nodeId: string, eventType: string) => void;
 };
 
-const PreviewPlay: React.FC<PreviewPlayProps> = ({ nodes }) => {
+// Create a forwarded ref version of the component
+const PreviewPlay = forwardRef<any, PreviewPlayProps>((props, ref) => {
+  const { nodes, initialDynamicVariants, onNodeEvent } = props;
+
   return (
-    <PreviewProvider nodes={nodes}>
-      <PreviewContent />
+    <PreviewProvider
+      nodes={nodes}
+      initialDynamicVariants={initialDynamicVariants}
+    >
+      <PreviewContent onNodeEvent={onNodeEvent} ref={ref} />
     </PreviewProvider>
   );
-};
+});
 
-const PreviewContent: React.FC = () => {
-  const { originalNodes, viewportBreakpoints } = usePreview();
+// Make sure the component has a display name
+PreviewPlay.displayName = "PreviewPlay";
+
+// Create the content component with ref forwarding
+const PreviewContent = forwardRef<
+  any,
+  { onNodeEvent?: (nodeId: string, eventType: string) => void }
+>(({ onNodeEvent }, ref) => {
+  const { originalNodes, viewportBreakpoints, transformNode } = usePreview();
 
   // Generate CSS for viewports
   const viewportContainerRules = useMemo(() => {
@@ -33,30 +48,62 @@ const PreviewContent: React.FC = () => {
     return originalNodes.filter((node) => node.isViewport);
   }, [originalNodes]);
 
+  // Expose transformNode through the ref
+  useImperativeHandle(ref, () => ({
+    transformNode: (nodeId: string, eventType: string) => {
+      if (transformNode) {
+        transformNode(nodeId, eventType);
+      }
+      if (onNodeEvent) {
+        onNodeEvent(nodeId, eventType);
+      }
+    },
+  }));
+
   useDynamicFontLoader(originalNodes);
 
+  // Enhanced CSS for better transitions, especially for text
   const enhancedTransitionCSS = `
-  .dynamic-node {
-    transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
-  }
-  
-  .dynamic-child {
-    transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
-  }
-`;
-
-  //   const forcedTransitionCSS = `
-  //   [data-node-id] {
-  //     transition-property: all !important;
-  //     transition-duration: 0.5s !important;
-  //     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
-  //     transition-delay: 0s !important;
-  //   }
-
-  //   .dynamic-child {
-  //     will-change: transform, opacity, background-color, width, height !important;
-  //   }
-  // `;
+      /* Base transitions for all dynamic elements */
+      .dynamic-node {
+        transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
+        will-change: transform, opacity, background-color, width, height !important;
+      }
+      
+      .dynamic-child {
+        transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
+        will-change: transform, opacity, background-color, width, height !important;
+      }
+      
+      /* Special handling for text elements */
+      .dynamic-text-content, 
+      [data-child-type="text"] span {
+        transition: all 0.35s cubic-bezier(0.25, 0.1, 0.25, 1.0) !important;
+        will-change: color, font-size, font-weight, font-family, line-height !important;
+      }
+      
+      /* Force hardware acceleration for smoother animations */
+      .dynamic-node, 
+      .dynamic-child,
+      .dynamic-text-content, 
+      [data-child-type="text"] span {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        backface-visibility: hidden;
+        transform: translateZ(0);
+      }
+      
+      /* Add animation keyframes for text properties */
+      @keyframes textColorTransition {
+        from { color: inherit; }
+        to { color: inherit; }
+      }
+      
+      @keyframes textSizeTransition {
+        from { font-size: inherit; }
+        to { font-size: inherit; }
+      }
+    `;
 
   return (
     <div
@@ -65,8 +112,6 @@ const PreviewContent: React.FC = () => {
     >
       <PreviewStyles />
       <style>{viewportContainerRules}</style>
-      {/* <style dangerouslySetInnerHTML={{ __html: forcedTransitionCSS }} /> */}
-
       <style>{enhancedTransitionCSS}</style>
       <ViewportBackgroundStyles />
 
@@ -89,7 +134,13 @@ const PreviewContent: React.FC = () => {
               >
                 <Image
                   alt=""
-                  src={viewport.style.backgroundImage}
+                  src={
+                    viewport.style.backgroundImage.startsWith("url(")
+                      ? viewport.style.backgroundImage.match(
+                          /url\(['"]?(.*?)['"]?\)/i
+                        )?.[1] || ""
+                      : viewport.style.backgroundImage
+                  }
                   fill
                   sizes="100vw"
                   style={{
@@ -134,6 +185,9 @@ const PreviewContent: React.FC = () => {
       </div>
     </div>
   );
-};
+});
+
+// Make sure the inner component has a display name
+PreviewContent.displayName = "PreviewContent";
 
 export default PreviewPlay;

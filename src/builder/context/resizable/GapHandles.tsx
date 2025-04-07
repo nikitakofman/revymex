@@ -48,13 +48,43 @@ export const GapHandles = ({
     e.preventDefault();
     e.stopPropagation();
 
+    // Initialize gap if it doesn't exist or has an invalid value
+    const hasInvalidGap =
+      !node.style.gap ||
+      node.style.gap === "NaNpx" ||
+      node.style.gap === "undefinedpx" ||
+      isNaN(parseInt(node.style.gap));
+
+    // Set initial gap to 0px if it's invalid or missing
+    if (hasInvalidGap) {
+      console.log("Initializing gap to 0px");
+      setNodeStyle({ gap: "0px" }, [node.id], false);
+    }
+
     const sessionId = startRecording();
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const currentGap = parseInt(
-      getComputedStyle(elementRef.current!).gap || "0"
-    );
+
+    // Parse gap from computed style to ensure we get a number
+    let computedGap = getComputedStyle(elementRef.current!).gap;
+    let currentGap = 0;
+
+    // Handle different gap formats (can be "10px 10px" or just "10px")
+    if (computedGap) {
+      if (computedGap.includes(" ")) {
+        // For gap with multiple values, take the first one
+        currentGap = parseInt(computedGap.split(" ")[0] || "0");
+      } else {
+        currentGap = parseInt(computedGap || "0");
+      }
+    }
+
+    // Fallback to 0 if parsing failed
+    if (isNaN(currentGap)) {
+      currentGap = 0;
+    }
+
     const isHorizontal =
       getComputedStyle(elementRef.current!).flexDirection === "row";
 

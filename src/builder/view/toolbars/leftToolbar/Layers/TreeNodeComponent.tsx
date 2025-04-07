@@ -26,6 +26,7 @@ import {
   getNodeViewport,
 } from "./utils";
 import { handleMediaToFrameTransformation } from "@/builder/context/utils";
+import { set } from "lodash";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;
@@ -33,8 +34,14 @@ interface TreeNodeProps {
 }
 
 const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
-  const { dragState, dragDisp, nodeDisp, setNodeStyle, nodeState } =
-    useBuilder();
+  const {
+    dragState,
+    dragDisp,
+    nodeDisp,
+    setNodeStyle,
+    nodeState,
+    setIsEditingText,
+  } = useBuilder();
   const isDynamicMode = !!dragState.dynamicModeNodeId;
   const isDynamicNode = node.id === dragState.dynamicModeNodeId;
   const isDynamicChild = node.dynamicParentId === dragState.dynamicModeNodeId;
@@ -129,6 +136,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       );
     }
     setIsEditing(false);
+    setIsEditingText(false);
   };
 
   const handleToggleVisibility = (e: React.MouseEvent) => {
@@ -899,6 +907,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
+            onSelect={() => setIsEditingText(true)}
             className={cn(
               "text-xs font-medium bg-transparent border border-[var(--border-light)] rounded ml-1 py-1 flex-1 outline-none box-border",
               isSelected ? "text-white" : "text-[var(--text-primary)]",

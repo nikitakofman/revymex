@@ -1,10 +1,16 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import React from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { useBuilder } from "../builderState";
-import { Crown } from "lucide-react"; // Import Crown icon from lucide-react
+import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
+import { useDragStart } from "../dnd/useDragStart";
 
 const NameDisplay = ({ node }: { node: Node }) => {
   const { nodeState, dragState, dragDisp, transform } = useBuilder();
+  const handleDragStart = useDragStart();
+
+  // Store mousedown position and time for drag detection
+  const mouseDownRef = useRef({ x: 0, y: 0, time: 0 });
+  const [isDragging, setIsDragging] = useState(false);
 
   // Get the full node data
   const fullNode = nodeState.nodes.find((nodes) => node.id === nodes.id);
@@ -68,9 +74,60 @@ const NameDisplay = ({ node }: { node: Node }) => {
   const BASE_VERTICAL_OFFSET = 32; // Base offset in pixels at zoom level 1
   const adjustedVerticalOffset = BASE_VERTICAL_OFFSET / transform.scale;
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // Store the initial mouse position and time
+    mouseDownRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      time: Date.now(),
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      // Calculate distance moved
+      const dx = moveEvent.clientX - mouseDownRef.current.x;
+      const dy = moveEvent.clientY - mouseDownRef.current.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // If moved more than 5px, consider it a drag
+      if (distance > 5 && !isDragging) {
+        setIsDragging(true);
+
+        // Start the drag operation
+        handleDragStart(e as any, undefined, node);
+
+        // Clean up event listeners
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", handleMouseUp);
+      }
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      // If this wasn't a drag, it was a click
+      if (!isDragging) {
+        // Only count as a click if it's been less than 300ms
+        const timeDiff = Date.now() - mouseDownRef.current.time;
+        if (timeDiff < 300) {
+          // This is a click - select the node
+          dragDisp.setSelectedIds([node.id]);
+        }
+      }
+
+      // Reset state
+      setIsDragging(false);
+
+      // Clean up event listeners
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    // Add event listeners
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
   return (
     <div
-      className="absolute text-nowrap text-[var(--accent-secondary)] flex items-center"
+      className="absolute text-nowrap text-[var(--accent-secondary)] select-none flex items-center"
       style={{
         fontSize: 12 / transform.scale,
         // Adjust the position based on transform scale
@@ -83,14 +140,21 @@ const NameDisplay = ({ node }: { node: Node }) => {
           : "var(--accent)",
         whiteSpace: "nowrap",
       }}
-      onClick={(e) => {
-        e.stopPropagation(); // Prevent event from bubbling
-        dragDisp.setSelectedIds([node.id]);
-      }}
+      onMouseDown={handleMouseDown}
     >
       {/* Show Crown icon for base dynamic nodes */}
       {isBaseDynamicNode && (
         <Crown
+          fill="#000"
+          style={{
+            marginRight: `${6 / transform.scale}px`,
+            width: `${12 / transform.scale}px`,
+            height: `${12 / transform.scale}px`,
+          }}
+        />
+      )}
+      {isVariant && (
+        <Component
           fill="#000"
           style={{
             marginRight: `${6 / transform.scale}px`,

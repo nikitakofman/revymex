@@ -3844,12 +3844,10 @@ export class NodeDispatcher {
         const variantName = "Variant " + Math.floor(Math.random() * 1000);
         const variantSlug = "variant-" + Math.floor(Math.random() * 1000);
 
-        // IMPROVEMENT: Create a shared variantResponsiveId for all variants of this type
-        // This will directly link all responsive variants of the same type across viewports
-        // Only used for variant nodes, not base nodes
+        // Create a shared variantResponsiveId for all variants of this type
         const variantResponsiveId = nanoid();
 
-        // We'll also track variantResponsiveIds for all children for proper synchronization
+        // Track variantResponsiveIds for all children for proper synchronization
         const childVariantResponsiveIds = new Map();
 
         // Ensure the original node has a sharedId for synchronization
@@ -3866,6 +3864,20 @@ export class NodeDispatcher {
         // Determine if we're duplicating from a variant or base node
         const duplicatingFromVariant = originalNode.isVariant === true;
 
+        // Get all viewports and sort them by width (descending) to establish cascade order
+        const viewports = draft.nodes
+          .filter((n) => n.isViewport)
+          .sort((a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0));
+
+        // Get source viewport ID (the one containing our original node)
+        const sourceViewportId =
+          originalNode.dynamicViewportId ||
+          (originalNode.parentId
+            ? draft.nodes.find(
+                (n) => n.id === originalNode.parentId && n.isViewport
+              )?.id
+            : null);
+
         // Define our source instances to duplicate from
         const dynamicInstances = duplicatingFromVariant
           ? [originalNode]
@@ -3873,25 +3885,121 @@ export class NodeDispatcher {
               (n) => n.sharedId === originalNode.sharedId && n.isDynamic
             );
 
-        // Track the desktop/main variant positions for reference
+        // Track the primary variant positions for reference
         const mainVariantPositions = new Map();
         let firstVariantPosition = null;
 
-        // Create variants for each source instance first
+        // ==========================================
+        // STEP 1: Build a complete node hierarchy map for all source nodes
+        // ==========================================
+
+        // Store all nodes by their ID for quick lookup
+        const nodesById = new Map();
+        draft.nodes.forEach((node) => {
+          nodesById.set(node.id, node);
+        });
+
+        // Map to store complete node hierarchies
+        const nodeHierarchyMap = new Map();
+
+        // Map to track style overrides from source children
+        const sourceChildrenStyles = new Map();
+
+        // Map to track ID mappings for parent-child relationships
+        const idMappings = new Map();
+
+        // Set to track which children were added directly to variants from canvas
+        const canvasAddedChildren = new Set();
+
+        // Function to recursively build a node tree
+        const buildNodeTree = (nodeId, isSourceVariant = false) => {
+          const node = nodesById.get(nodeId);
+          if (!node) return null;
+
+          // Ensure node has a sharedId
+          if (!node.sharedId) {
+            node.sharedId = nanoid();
+          }
+
+          // Get all direct children
+          const children = draft.nodes
+            .filter((n) => n.parentId === nodeId)
+            .map((child) => {
+              // Ensure child has a sharedId
+              if (!child.sharedId) {
+                child.sharedId = nanoid();
+              }
+
+              // If this is from the source variant, store complete style information
+              if (isSourceVariant) {
+                sourceChildrenStyles.set(child.sharedId, {
+                  style: { ...child.style },
+                  independentStyles: { ...(child.independentStyles || {}) },
+                  variantIndependentSync: {
+                    ...(child.variantIndependentSync || {}),
+                  },
+                  inViewport: child.inViewport,
+                  dynamicParentId: child.dynamicParentId,
+                  variantParentId: child.variantParentId,
+                });
+
+                // Check if this is a canvas-added child (only in variant, not in base node)
+                if (
+                  child.isVariant &&
+                  (!child.variantResponsiveId ||
+                    !draft.nodes.some(
+                      (n) => !n.isVariant && n.sharedId === child.sharedId
+                    ))
+                ) {
+                  canvasAddedChildren.add(child.sharedId);
+                }
+              }
+
+              // Create a variant responsive ID for this child type if it doesn't exist
+              if (!childVariantResponsiveIds.has(child.sharedId)) {
+                childVariantResponsiveIds.set(child.sharedId, nanoid());
+              }
+
+              // Recursively build the child's tree
+              return {
+                node: child,
+                children: buildNodeTree(child.id, isSourceVariant),
+              };
+            });
+
+          return children.length > 0 ? children : null;
+        };
+
+        // Build complete node trees for all source instances
+        dynamicInstances.forEach((instance) => {
+          const isSourceVariant =
+            duplicatingFromVariant && instance.id === originalNode.id;
+          nodeHierarchyMap.set(
+            instance.id,
+            buildNodeTree(instance.id, isSourceVariant)
+          );
+        });
+
+        // ==========================================
+        // STEP 2: Create primary variants in each source viewport
+        // ==========================================
+
+        // Create variants for each source instance
         dynamicInstances.forEach((sourceInstance) => {
           const instanceDuplicateId = nanoid();
+
+          // Store ID mapping for parent-child relationships
+          idMappings.set(sourceInstance.id, instanceDuplicateId);
 
           // Use the first created duplicate as our return value
           if (!duplicateId) {
             duplicateId = instanceDuplicateId;
           }
 
-          // Get viewport ID if instance is in a viewport
+          // Get viewport ID
           let viewportId = null;
           if (sourceInstance.parentId) {
-            const parent = draft.nodes.find(
-              (n) => n.id === sourceInstance.parentId
-            );
+            const parent = nodesById.get(sourceInstance.parentId);
             if (parent && parent.isViewport) {
               viewportId = parent.id;
             }
@@ -3928,48 +4036,41 @@ export class NodeDispatcher {
           }
 
           // Store this position for the main variant
-          if (!viewportId || viewportId === "viewport-1440") {
+          const isPrimaryViewport =
+            viewportId === viewports[0]?.id || viewportId === sourceViewportId;
+
+          if (isPrimaryViewport) {
             firstVariantPosition = { x: posX, y: posY };
             mainVariantPositions.set(variantSlug, { x: posX, y: posY });
           }
 
           // Create the duplicate with proper properties
-          const duplicate: Node = {
+          const duplicate = {
             id: instanceDuplicateId,
             type: sourceInstance.type,
             style: {
               ...sourceInstance.style,
-              position: "absolute", // Ensure absolute positioning for variants
+              position: "absolute",
               left: `${posX}px`,
               top: `${posY}px`,
             },
-            // Never make the duplicate a main dynamic node
             isDynamic: false,
-            // Set up the variant relationships
             inViewport: false,
             parentId: null,
-            // Use the same sharedId as the original for synchronization
             sharedId: sourceInstance.sharedId,
-            // Mark as variant
             isVariant: true,
-            // Add variant info
             variantInfo: {
               name: variantName,
               id: variantSlug,
             },
-            // IMPROVEMENT: Set the variantResponsiveId to link with other responsive variants
-            // Only set on variant nodes, not on base nodes
             variantResponsiveId: variantResponsiveId,
-            // Set the dynamicFamilyId to connect to the family
             dynamicFamilyId: familyId,
-            // Use empty independentStyles to track overrides
             independentStyles: {
-              // CRITICAL FIX: Always mark position properties as independent
+              // Always mark position properties as independent
               left: true,
               top: true,
               position: true,
             },
-            // Explicitly set position
             position: {
               x: posX,
               y: posY,
@@ -3978,7 +4079,6 @@ export class NodeDispatcher {
 
           // If duplicating from a variant, copy over all independent styles
           if (duplicatingFromVariant && sourceInstance.independentStyles) {
-            // Preserve all existing independent styles
             Object.keys(sourceInstance.independentStyles).forEach(
               (styleProp) => {
                 duplicate.independentStyles[styleProp] =
@@ -3989,17 +4089,14 @@ export class NodeDispatcher {
 
           // Set proper parent relationships
           if (duplicatingFromVariant) {
-            // CRITICAL FIX: When duplicating from a variant, use the SAME parent relationships
-            // This ensures we maintain the proper hierarchy
             duplicate.dynamicParentId = sourceInstance.dynamicParentId;
             duplicate.variantParentId = sourceInstance.variantParentId;
           } else {
-            // Set parent relationships to the base node we're duplicating from
             duplicate.dynamicParentId = sourceInstance.id;
             duplicate.variantParentId = sourceInstance.id;
           }
 
-          // Set viewport ID if available
+          // Set viewport ID
           if (viewportId) {
             duplicate.dynamicViewportId = viewportId;
           } else if (sourceInstance.dynamicViewportId) {
@@ -4011,134 +4108,186 @@ export class NodeDispatcher {
             duplicate.customName = sourceInstance.customName;
           if (sourceInstance.src) duplicate.src = sourceInstance.src;
           if (sourceInstance.text) duplicate.text = sourceInstance.text;
-          if (sourceInstance.dynamicState)
+          if (sourceInstance.dynamicState) {
             duplicate.dynamicState = JSON.parse(
               JSON.stringify(sourceInstance.dynamicState)
             );
+          }
 
           // Add to nodes array
           draft.nodes.push(duplicate);
+        });
 
-          // If this is a frame, duplicate all its children
-          if (sourceInstance.type === "frame") {
-            const children = getSubtree(draft.nodes, sourceInstance.id, false);
-            const idMap = new Map<string | number, string | number>();
-            idMap.set(sourceInstance.id, instanceDuplicateId);
+        // ==========================================
+        // STEP 3: Create a function to duplicate node hierarchies recursively
+        // ==========================================
 
-            children.forEach((child) => {
-              const childDuplicateId = nanoid();
+        // This function recursively duplicates an entire node hierarchy
+        const duplicateNodeHierarchy = (children, parentId, viewportId) => {
+          if (!children || children.length === 0) return;
 
-              // Ensure the original child has a sharedId
-              if (!child.sharedId) {
-                child.sharedId = nanoid();
-              }
+          children.forEach(({ node: child, children: grandchildren }) => {
+            const childDuplicateId = nanoid();
 
-              // IMPROVEMENT: Create a unique variantResponsiveId for this child if it doesn't have one
-              // This ensures each child in the hierarchy has its own synchronization channel
-              let childResponsiveId;
-              if (!childVariantResponsiveIds.has(child.sharedId)) {
-                childResponsiveId = nanoid();
-                childVariantResponsiveIds.set(
-                  child.sharedId,
-                  childResponsiveId
-                );
-              } else {
-                childResponsiveId = childVariantResponsiveIds.get(
-                  child.sharedId
-                );
-              }
+            // Store this ID mapping
+            idMappings.set(child.id, childDuplicateId);
 
-              // Create duplicate child with same properties
-              const childDuplicate: Node = {
-                id: childDuplicateId,
-                type: child.type,
-                style: { ...child.style },
-                inViewport: false,
-                // Use the same sharedId as the original child for synchronization
-                sharedId: child.sharedId,
-                // Add variant properties if parent is a variant
-                isVariant: true,
-                // Connect to the dynamic family
-                dynamicFamilyId: familyId,
-                // IMPROVEMENT: Assign variantResponsiveId to children as well
-                variantResponsiveId: childResponsiveId,
-                // Use empty independentStyles to track overrides
-                independentStyles: {},
-              };
+            // Get the variantResponsiveId for this child type
+            const childResponsiveId = childVariantResponsiveIds.get(
+              child.sharedId
+            );
 
-              // CRITICAL FIX: Copy over all independent styles from source child
-              if (child.independentStyles) {
-                childDuplicate.independentStyles = {
-                  ...child.independentStyles,
-                };
-              }
+            // Create duplicate child
+            const childDuplicate = {
+              id: childDuplicateId,
+              type: child.type,
+              style: { ...child.style },
+              inViewport: child.inViewport,
+              sharedId: child.sharedId,
+              isVariant: true,
+              dynamicFamilyId: familyId,
+              variantResponsiveId: childResponsiveId,
+              variantInfo: {
+                name: variantName,
+                id: variantSlug,
+              },
+              independentStyles: {
+                position: true,
+                left: true,
+                top: true,
+                ...(child.independentStyles || {}),
+              },
+              variantIndependentSync: {
+                ...(child.variantIndependentSync || {}),
+              },
+              parentId: parentId,
+              dynamicViewportId: viewportId,
+            };
 
-              // CRITICAL FIX: When duplicating from variant, maintain EXACT same parent hierarchy
-              if (duplicatingFromVariant) {
-                childDuplicate.dynamicParentId = child.dynamicParentId;
-                childDuplicate.variantParentId = child.variantParentId;
-              } else {
-                childDuplicate.dynamicParentId = sourceInstance.id;
-                childDuplicate.variantParentId = sourceInstance.id;
-              }
+            // Apply source styles if available
+            const sourceChildStyle = sourceChildrenStyles.get(child.sharedId);
+            if (sourceChildStyle) {
+              // Apply stored inViewport flag
+              childDuplicate.inViewport = sourceChildStyle.inViewport;
 
-              // Set viewport ID if available
-              if (viewportId) {
-                childDuplicate.dynamicViewportId = viewportId;
-              } else if (sourceInstance.dynamicViewportId) {
-                childDuplicate.dynamicViewportId =
-                  sourceInstance.dynamicViewportId;
-              }
-
-              // Copy other needed properties
-              if (child.customName)
-                childDuplicate.customName = child.customName;
-              if (child.src) childDuplicate.src = child.src;
-              if (child.text) childDuplicate.text = child.text;
-              if (child.dynamicState)
-                childDuplicate.dynamicState = JSON.parse(
-                  JSON.stringify(child.dynamicState)
-                );
-
-              // CRITICAL FIX: Set correct parentId for child elements
-              // If direct child of the instance, set to the duplicate
-              if (child.parentId === sourceInstance.id) {
-                childDuplicate.parentId = instanceDuplicateId;
-              } else {
-                // Otherwise look up parent mapping
-                const originalParentId = child.parentId;
-                if (originalParentId) {
-                  const newParentId = idMap.get(originalParentId);
-                  if (newParentId) {
-                    childDuplicate.parentId = newParentId;
-                  } else {
+              // Apply stored styles for independent properties
+              Object.keys(sourceChildStyle.independentStyles || {}).forEach(
+                (styleProp) => {
+                  if (sourceChildStyle.independentStyles[styleProp]) {
+                    childDuplicate.style[styleProp] =
+                      sourceChildStyle.style[styleProp];
+                    childDuplicate.independentStyles[styleProp] = true;
                   }
                 }
+              );
+
+              // Copy variantIndependentSync settings
+              if (sourceChildStyle.variantIndependentSync) {
+                childDuplicate.variantIndependentSync = {
+                  ...sourceChildStyle.variantIndependentSync,
+                };
+              }
+            }
+
+            // Set parent relationships
+            if (duplicatingFromVariant) {
+              // When duplicating from a variant, use similar relationships
+              if (sourceChildStyle && sourceChildStyle.dynamicParentId) {
+                childDuplicate.dynamicParentId =
+                  sourceChildStyle.dynamicParentId;
+              } else {
+                childDuplicate.dynamicParentId = child.dynamicParentId;
               }
 
-              // Store ID mapping for children
-              idMap.set(child.id, childDuplicateId);
-              draft.nodes.push(childDuplicate);
-            });
+              if (sourceChildStyle && sourceChildStyle.variantParentId) {
+                childDuplicate.variantParentId =
+                  sourceChildStyle.variantParentId;
+              } else {
+                childDuplicate.variantParentId = child.variantParentId;
+              }
+            } else {
+              // For base node duplication
+              const originalParentId = child.parentId;
+              const originalParent = nodesById.get(originalParentId);
+
+              if (originalParent && originalParent.isDynamic) {
+                childDuplicate.dynamicParentId = originalParentId;
+              } else {
+                // Parent isn't a dynamic node, use the parent's parent
+                childDuplicate.dynamicParentId =
+                  originalParent?.dynamicParentId || null;
+              }
+
+              childDuplicate.variantParentId = parentId;
+            }
+
+            // Copy other properties
+            if (child.customName) childDuplicate.customName = child.customName;
+            if (child.src) childDuplicate.src = child.src;
+            if (child.text) childDuplicate.text = child.text;
+            if (child.dynamicState) {
+              childDuplicate.dynamicState = JSON.parse(
+                JSON.stringify(child.dynamicState)
+              );
+            }
+
+            // Add to nodes array
+            draft.nodes.push(childDuplicate);
+
+            // Recursively duplicate grandchildren
+            if (grandchildren && grandchildren.length > 0) {
+              duplicateNodeHierarchy(
+                grandchildren,
+                childDuplicateId,
+                viewportId
+              );
+            }
+          });
+        };
+
+        // ==========================================
+        // STEP 4: Duplicate all children hierarchies for primary variants
+        // ==========================================
+
+        // Process each dynamic instance and duplicate its entire hierarchy
+        dynamicInstances.forEach((sourceInstance) => {
+          const duplicateInstanceId = idMappings.get(sourceInstance.id);
+          if (!duplicateInstanceId) return;
+
+          // Get viewport ID
+          let viewportId = null;
+          if (sourceInstance.dynamicViewportId) {
+            viewportId = sourceInstance.dynamicViewportId;
+          } else if (sourceInstance.parentId) {
+            const parent = nodesById.get(sourceInstance.parentId);
+            if (parent && parent.isViewport) {
+              viewportId = parent.id;
+            }
+          }
+
+          // Get the children hierarchy for this instance
+          const children = nodeHierarchyMap.get(sourceInstance.id);
+
+          // Duplicate the entire hierarchy
+          if (children && children.length > 0) {
+            duplicateNodeHierarchy(children, duplicateInstanceId, viewportId);
           }
         });
 
-        // Cross-viewport duplication for variant sources
+        // ==========================================
+        // STEP 5: Cross-viewport duplication
+        // ==========================================
+
         if (duplicatingFromVariant) {
-          // CRITICAL FIX: Get the true base node
-          // When duplicating from a variant, we need to find the original base dynamic node
+          // Get the true base node
           const baseNodeId =
             originalNode.dynamicParentId || originalNode.variantParentId;
-          if (!baseNodeId) {
-            return;
-          }
+          if (!baseNodeId) return;
 
-          const baseNode = draft.nodes.find((n) => n.id === baseNodeId);
-          if (!baseNode || !baseNode.sharedId) {
-            return;
-          }
+          const baseNode = nodesById.get(baseNodeId);
+          if (!baseNode || !baseNode.sharedId) return;
 
-          // Find existing variants with the same ID to get relative positions
+          // Find existing variants to get relative positions
           const existingVariants = draft.nodes.filter(
             (n) =>
               n.isVariant &&
@@ -4165,14 +4314,12 @@ export class NodeDispatcher {
               n.isDynamic
           );
 
-          // For each base instance in other viewports, create variants with proper spacing
+          // For each base instance in other viewports, create variants
           otherBaseInstances.forEach((otherBaseInstance) => {
             // Get viewport ID
             let viewportId = null;
             if (otherBaseInstance.parentId) {
-              const parent = draft.nodes.find(
-                (n) => n.id === otherBaseInstance.parentId
-              );
+              const parent = nodesById.get(otherBaseInstance.parentId);
               if (parent && parent.isViewport) {
                 viewportId = parent.id;
               }
@@ -4180,9 +4327,7 @@ export class NodeDispatcher {
               viewportId = otherBaseInstance.dynamicViewportId;
             }
 
-            if (!viewportId) {
-              return;
-            }
+            if (!viewportId) return;
 
             // Check if this variant already exists
             const variantExists = draft.nodes.some(
@@ -4191,11 +4336,9 @@ export class NodeDispatcher {
                 n.dynamicViewportId === viewportId
             );
 
-            if (variantExists) {
-              return;
-            }
+            if (variantExists) return;
 
-            // Find existing variants in this viewport to determine positioning
+            // Find existing variants in this viewport
             const viewportVariants = draft.nodes.filter(
               (n) =>
                 n.isVariant &&
@@ -4203,7 +4346,7 @@ export class NodeDispatcher {
                 n.dynamicParentId === otherBaseInstance.id
             );
 
-            // Calculate position based on existing variants
+            // Calculate position
             let posX = otherBaseInstance.position?.x || 0;
             let posY = otherBaseInstance.position?.y || 0;
             const width = elementWidth || 300;
@@ -4211,14 +4354,13 @@ export class NodeDispatcher {
             const gap = 60;
 
             if (viewportVariants.length > 0 && firstVariantPosition) {
-              // Find the last existing variant and its position
+              // Find the last existing variant
               const sortedVariants = [...viewportVariants].sort((a, b) => {
                 const aX = a.position?.x || 0;
                 const bX = b.position?.x || 0;
                 return aX - bX;
               });
 
-              // Get the last variant's position
               const lastVariant = sortedVariants[sortedVariants.length - 1];
 
               // If we have a main variant with the same ID, use its relative position
@@ -4232,7 +4374,7 @@ export class NodeDispatcher {
                 correspondingMainVariant.position &&
                 mainPosition
               ) {
-                // Calculate relative offset from the last variant in desktop/main viewport
+                // Calculate relative offset
                 const mainRelativeX =
                   mainPosition.x - correspondingMainVariant.position.x;
                 const mainRelativeY =
@@ -4242,7 +4384,7 @@ export class NodeDispatcher {
                 posX = lastVariant.position.x + mainRelativeX;
                 posY = lastVariant.position.y + mainRelativeY;
               } else {
-                // Otherwise just place it after the last variant
+                // Place it after the last variant
                 switch (direction) {
                   case "right":
                     posX = lastVariant.position.x + width + gap;
@@ -4267,7 +4409,6 @@ export class NodeDispatcher {
               }
             } else {
               // No existing variants, position relative to the base instance
-              // Use the same direction as the desktop variant
               switch (direction) {
                 case "right":
                   posX += width + gap;
@@ -4282,7 +4423,6 @@ export class NodeDispatcher {
                   posY -= height + gap;
                   break;
                 default:
-                  // Default to right if direction is invalid
                   posX += width + gap;
               }
             }
@@ -4290,7 +4430,10 @@ export class NodeDispatcher {
             // Create the new variant
             const newVariantId = nanoid();
 
-            const newVariant: Node = {
+            // Store in mappings
+            idMappings.set(otherBaseInstance.id, newVariantId);
+
+            const newVariant = {
               id: newVariantId,
               type: otherBaseInstance.type,
               style: {
@@ -4310,11 +4453,9 @@ export class NodeDispatcher {
                 name: variantName,
                 id: variantSlug,
               },
-              // IMPROVEMENT: Set the same variantResponsiveId to link with variants in other viewports
               variantResponsiveId: variantResponsiveId,
               dynamicFamilyId: familyId,
               independentStyles: {
-                // CRITICAL FIX: Always mark position properties as independent
                 left: true,
                 top: true,
                 position: true,
@@ -4326,9 +4467,8 @@ export class NodeDispatcher {
               },
             };
 
-            // CRITICAL FIX: If duplicating from a variant with independent styles
+            // Copy independent styles
             if (duplicatingFromVariant && originalNode.independentStyles) {
-              // Copy ALL independent styles from the original variant
               Object.keys(originalNode.independentStyles).forEach(
                 (styleProp) => {
                   if (
@@ -4343,7 +4483,7 @@ export class NodeDispatcher {
               );
             }
 
-            // Copy over other properties
+            // Copy other properties
             if (otherBaseInstance.customName)
               newVariant.customName = otherBaseInstance.customName;
             if (otherBaseInstance.src) newVariant.src = otherBaseInstance.src;
@@ -4357,99 +4497,93 @@ export class NodeDispatcher {
 
             draft.nodes.push(newVariant);
 
-            // Duplicate children if needed
-            if (otherBaseInstance.type === "frame") {
-              const children = getSubtree(
-                draft.nodes,
-                otherBaseInstance.id,
-                false
-              );
-              const idMap = new Map<string | number, string | number>();
-              idMap.set(otherBaseInstance.id, newVariantId);
+            // ==========================================
+            // STEP 6: Build similar hierarchies for cross-viewport variants
+            // ==========================================
 
-              children.forEach((child) => {
-                const childId = nanoid();
+            // Get original hierarchy from source viewport
+            const sourceVariantId = originalNode.id;
+            const sourceHierarchy = nodeHierarchyMap.get(
+              duplicatingFromVariant ? sourceVariantId : baseNodeId
+            );
 
-                if (!child.sharedId) {
-                  child.sharedId = nanoid();
-                }
+            // If we have a hierarchy, duplicate it for this viewport
+            if (sourceHierarchy && sourceHierarchy.length > 0) {
+              duplicateNodeHierarchy(sourceHierarchy, newVariantId, viewportId);
+            }
 
-                // IMPROVEMENT: Use the same childVariantResponsiveId across viewports
-                // Reuse the same one we created earlier for this sharedId
-                let childResponsiveId;
-                if (!childVariantResponsiveIds.has(child.sharedId)) {
-                  // This should rarely happen - means we're seeing a child that wasn't in the source
-                  childResponsiveId = nanoid();
-                  childVariantResponsiveIds.set(
-                    child.sharedId,
-                    childResponsiveId
-                  );
-                } else {
-                  childResponsiveId = childVariantResponsiveIds.get(
-                    child.sharedId
-                  );
-                }
+            // Additionally duplicate any canvas-added children
+            const sourceCanvasChildren = draft.nodes.filter(
+              (n) =>
+                n.parentId === sourceVariantId &&
+                canvasAddedChildren.has(n.sharedId)
+            );
 
-                const childDuplicate: Node = {
-                  id: childId,
-                  type: child.type,
-                  style: { ...child.style },
-                  dynamicParentId: otherBaseInstance.id,
-                  inViewport: false,
-                  sharedId: child.sharedId,
-                  isVariant: true,
-                  variantParentId: otherBaseInstance.id,
+            if (sourceCanvasChildren.length > 0) {
+              // Recursively duplicate canvas-added children
+              const duplicateCanvasChild = (child, newParentId) => {
+                const childDuplicateId = nanoid();
+
+                // Get variantResponsiveId
+                const childResponsiveId = childVariantResponsiveIds.get(
+                  child.sharedId
+                );
+
+                // Create the duplicate
+                const childDuplicate = {
+                  ...child,
+                  id: childDuplicateId,
+                  parentId: newParentId,
                   dynamicViewportId: viewportId,
-                  dynamicFamilyId: familyId,
-                  // IMPROVEMENT: Set the same variantResponsiveId as the child in desktop viewport
-                  variantResponsiveId: childResponsiveId,
-                  independentStyles: {},
+                  variantInfo: {
+                    name: variantName,
+                    id: variantSlug,
+                  },
+                  variantResponsiveId: childResponsiveId || nanoid(),
                 };
 
-                // CRITICAL FIX: Copy all independent styles from original source variant's children
-                if (duplicatingFromVariant) {
-                  // Find the corresponding child in the original variant
-                  const originalVariantChild = draft.nodes.find(
-                    (n) =>
-                      n.parentId === originalNode.id &&
-                      n.sharedId === child.sharedId
-                  );
+                // Apply source styles if available
+                const sourceChildStyle = sourceChildrenStyles.get(
+                  child.sharedId
+                );
+                if (sourceChildStyle) {
+                  // Apply stored inViewport flag
+                  childDuplicate.inViewport = sourceChildStyle.inViewport;
 
-                  // If found and it has independent styles, copy them
-                  if (
-                    originalVariantChild &&
-                    originalVariantChild.independentStyles
-                  ) {
-                    childDuplicate.independentStyles = {
-                      ...originalVariantChild.independentStyles,
-                    };
-                  }
-                }
-
-                if (child.customName)
-                  childDuplicate.customName = child.customName;
-                if (child.src) childDuplicate.src = child.src;
-                if (child.text) childDuplicate.text = child.text;
-                if (child.dynamicState) {
-                  childDuplicate.dynamicState = JSON.parse(
-                    JSON.stringify(child.dynamicState)
-                  );
-                }
-
-                if (child.parentId === otherBaseInstance.id) {
-                  childDuplicate.parentId = newVariantId;
-                } else {
-                  const originalParentId = child.parentId;
-                  if (originalParentId) {
-                    const newParentId = idMap.get(originalParentId);
-                    if (newParentId) {
-                      childDuplicate.parentId = newParentId;
+                  // Apply stored styles for independent properties
+                  Object.keys(sourceChildStyle.independentStyles || {}).forEach(
+                    (styleProp) => {
+                      if (sourceChildStyle.independentStyles[styleProp]) {
+                        childDuplicate.style[styleProp] =
+                          sourceChildStyle.style[styleProp];
+                        childDuplicate.independentStyles =
+                          childDuplicate.independentStyles || {};
+                        childDuplicate.independentStyles[styleProp] = true;
+                      }
                     }
-                  }
+                  );
                 }
 
-                idMap.set(child.id, childId);
+                // Add to nodes
                 draft.nodes.push(childDuplicate);
+
+                // Get and duplicate children of this canvas child
+                const canvasChildChildren = draft.nodes.filter(
+                  (n) => n.parentId === child.id
+                );
+
+                if (canvasChildChildren.length > 0) {
+                  canvasChildChildren.forEach((grandchild) => {
+                    duplicateCanvasChild(grandchild, childDuplicateId);
+                  });
+                }
+
+                return childDuplicateId;
+              };
+
+              // Start duplication for all canvas-added children
+              sourceCanvasChildren.forEach((canvasChild) => {
+                duplicateCanvasChild(canvasChild, newVariantId);
               });
             }
           });

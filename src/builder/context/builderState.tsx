@@ -101,6 +101,10 @@ interface BuilderContextType {
   isFontSizeHandleActive: boolean;
   setIsFontSizeHandleActive: React.Dispatch<React.SetStateAction<boolean>>;
   isMiddleMouseDown: boolean;
+  isDraggingChevrons: boolean;
+  setIsDraggingChevrons: React.Dispatch<React.SetStateAction<boolean>>;
+  isTextMenuOpen: boolean;
+  setIsTextMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface RecordingSession {
@@ -139,9 +143,11 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [isResizing, setIsResizing] = useState(false);
   const [isAdjustingGap, setIsAdjustingGap] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [isTextMenuOpen, setIsTextMenuOpen] = useState(false);
   const [isEditingText, setIsEditingText] = useState(false);
   const [isAdjustingBorderRadius, setIsAdjustingBorderRadius] = useState(false);
   const [isFontSizeHandleActive, setIsFontSizeHandleActive] = useState(false);
+  const [isDraggingChevrons, setIsDraggingChevrons] = useState(false);
   const dragDimensionsRef = useRef<DragDimensions>({});
   const selectedIdsRef = useRef(null);
   const popupRef = useRef(null);
@@ -492,6 +498,10 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     isFontSizeHandleActive,
     setIsFontSizeHandleActive,
     isMiddleMouseDown,
+    isDraggingChevrons,
+    setIsDraggingChevrons,
+    isTextMenuOpen,
+    setIsTextMenuOpen,
   };
 
   return (

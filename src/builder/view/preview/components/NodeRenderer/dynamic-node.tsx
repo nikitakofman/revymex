@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect, useRef, useState } from "react";
 import { usePreview } from "../../preview-context";
 import { findNodeById } from "../../utils/nodeUtils";
 import {
@@ -23,7 +23,7 @@ const getActiveBreakpoint = (width, breakpoints) => {
 };
 
 export const DynamicNode = ({ nodeId }) => {
-  const [renderCounter, setRenderCounter] = React.useState(0);
+  const [renderCounter, setRenderCounter] = useState(0);
   const {
     nodeTree,
     dynamicVariants,
@@ -34,7 +34,19 @@ export const DynamicNode = ({ nodeId }) => {
     setDynamicVariants,
   } = usePreview();
 
-  const prevDynamicVariantsRef = React.useRef(dynamicVariants);
+  const adjustedCurrentViewport = useMemo(() => {
+    // Check if the current viewport exactly matches any breakpoint
+    const exactMatch = viewportBreakpoints.some(
+      (bp) => bp.width === currentViewport
+    );
+    // If it's an exact match, subtract a small amount
+    return exactMatch ? currentViewport - 0.1 : currentViewport;
+  }, [currentViewport, viewportBreakpoints]);
+
+  const prevDynamicVariantsRef = useRef(dynamicVariants);
+  const componentMountedRef = useRef(false);
+  // Force component to properly re-render on initial mount and variant changes
+  const [forceNestedUpdate, setForceNestedUpdate] = useState(0);
 
   // Get sorted breakpoints from largest to smallest
   const sortedBreakpoints = useMemo(() => {
@@ -53,7 +65,6 @@ export const DynamicNode = ({ nodeId }) => {
     if (responsiveVersions.length === 0) return childNode;
 
     // Special case for exact boundary values
-    // If we're exactly at a breakpoint value, use the child for that breakpoint
     const exactBreakpoint = viewportBreakpoints.find(
       (bp) => bp.width === viewportWidth
     );
@@ -67,12 +78,10 @@ export const DynamicNode = ({ nodeId }) => {
     }
 
     // Normal case - find closest smaller or equal breakpoint
-    // Sort breakpoints largest to smallest
     const sortedBreakpoints = [...viewportBreakpoints].sort(
       (a, b) => b.width - a.width
     );
 
-    // Find the first breakpoint that's smaller than or equal to the current width
     for (const breakpoint of sortedBreakpoints) {
       if (breakpoint.width <= viewportWidth) {
         const childForBreakpoint = responsiveVersions.find(
@@ -84,7 +93,6 @@ export const DynamicNode = ({ nodeId }) => {
       }
     }
 
-    // Fallback to the original node
     return childNode;
   };
 
@@ -97,7 +105,7 @@ export const DynamicNode = ({ nodeId }) => {
 
   // Get the current viewport breakpoint.
   const currentViewportObj = getActiveBreakpoint(
-    currentViewport,
+    adjustedCurrentViewport,
     viewportBreakpoints
   );
 
@@ -115,7 +123,6 @@ export const DynamicNode = ({ nodeId }) => {
     if (exactMatch) return exactMatch;
 
     // If no exact match, find the most appropriate responsive node
-    // Get all responsive versions of this node
     const responsiveNodes = originalNodes.filter(
       (n) => n.sharedId === baseNode.sharedId && n.dynamicViewportId
     );
@@ -135,7 +142,7 @@ export const DynamicNode = ({ nodeId }) => {
     });
 
     // Find the closest responsive node for current viewport
-    const currentWidth = currentViewport;
+    const currentWidth = adjustedCurrentViewport;
     const bestMatch = sortedNodes.find((n) => {
       const vp = viewportBreakpoints.find((v) => v.id === n.dynamicViewportId);
       return vp && vp.width <= currentWidth;
@@ -147,15 +154,48 @@ export const DynamicNode = ({ nodeId }) => {
     currentViewportObj,
     originalNodes,
     viewportBreakpoints,
-    currentViewport,
+    adjustedCurrentViewport,
   ]);
 
   // Look up the active variant using the responsive base node's id.
   const activeVariant = dynamicVariants[responsiveBaseNode.id];
   const currentVariant = activeVariant || responsiveBaseNode;
 
+  // Force a re-render whenever the component mounts to ensure proper rendering
+  useEffect(() => {
+    if (!componentMountedRef.current) {
+      componentMountedRef.current = true;
+      setRenderCounter((prev) => prev + 1);
+      setForceNestedUpdate((prev) => prev + 1);
+      const timer = setTimeout(() => {
+        setRenderCounter((prev) => prev + 1);
+        setForceNestedUpdate((prev) => prev + 1);
+      }, 10);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Update when dynamic variants change
+  useEffect(() => {
+    if (!activeVariant) return;
+    setForceNestedUpdate((prev) => prev + 1);
+    const timer = setTimeout(() => {
+      const rootElement = document.querySelector(`#dynamic-node-${nodeId}`);
+      if (rootElement) {
+        rootElement.offsetHeight;
+        rootElement.setAttribute("data-variant-update", forceNestedUpdate);
+        const allChildren = rootElement.querySelectorAll(".dynamic-child");
+        allChildren.forEach((child) => {
+          child.setAttribute("data-variant-update", forceNestedUpdate);
+          child.offsetHeight;
+        });
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [dynamicVariants, nodeId, activeVariant, forceNestedUpdate]);
+
   // Update render counter when dynamicVariants change for the responsive base node.
-  React.useEffect(() => {
+  useEffect(() => {
     if (
       prevDynamicVariantsRef.current[responsiveBaseNode.id] !==
       dynamicVariants[responsiveBaseNode.id]
@@ -168,32 +208,20 @@ export const DynamicNode = ({ nodeId }) => {
   // Enhanced media query generation with non-overlapping breakpoints
   const generateEnhancedResponsiveCSS = (node, breakpoints) => {
     if (!node || !node.sharedId) return "";
-
-    // Get all responsive nodes with the same sharedId
     const responsiveNodes = originalNodes.filter(
       (n) => n.sharedId === node.sharedId && n.dynamicViewportId
     );
-
     if (responsiveNodes.length === 0) return "";
-
-    // Sort breakpoints from largest to smallest
     const sortedBreakpoints = [...breakpoints].sort(
       (a, b) => b.width - a.width
     );
-
-    // Create CSS rules for each viewport with non-overlapping bounds
     let cssRules = "";
-
-    // Desktop styles (largest viewport)
     const largestBreakpoint = sortedBreakpoints[0];
     if (largestBreakpoint) {
       const largestNode =
         responsiveNodes.find(
           (n) => n.dynamicViewportId === largestBreakpoint.id
         ) || node;
-
-      // Largest viewport styles (min-width only to avoid overlap)
-      // FIXED: Changed boundary condition to avoid exact pixel issues
       cssRules += `
         @media (min-width: ${
           sortedBreakpoints[1] ? sortedBreakpoints[1].width : 0
@@ -228,22 +256,15 @@ export const DynamicNode = ({ nodeId }) => {
         }
       `;
     }
-
-    // Middle breakpoints
     for (let i = 1; i < sortedBreakpoints.length - 1; i++) {
       const currentBreakpoint = sortedBreakpoints[i];
       const nextBreakpoint = sortedBreakpoints[i + 1];
-
       const responsiveNode = responsiveNodes.find(
         (n) => n.dynamicViewportId === currentBreakpoint.id
       );
-
       if (responsiveNode) {
-        // FIXED: Use exact pixel boundaries to prevent overlap
-        // Added a tiny offset (0.02px) to maxWidth to avoid exact breakpoint values
         const minWidth = nextBreakpoint.width;
         const maxWidth = currentBreakpoint.width - 0.02;
-
         cssRules += `
           @media (min-width: ${minWidth}px) and (max-width: ${maxWidth}px) {
             #dynamic-node-${nodeId} {
@@ -277,16 +298,12 @@ export const DynamicNode = ({ nodeId }) => {
         `;
       }
     }
-
-    // Smallest viewport styles
     const smallestBreakpoint = sortedBreakpoints[sortedBreakpoints.length - 1];
     if (smallestBreakpoint) {
       const smallestNode = responsiveNodes.find(
         (n) => n.dynamicViewportId === smallestBreakpoint.id
       );
-
       if (smallestNode) {
-        // FIXED: Subtracted 0.02 from max-width to avoid exact breakpoint
         cssRules += `
           @media (max-width: ${smallestBreakpoint.width - 0.02}px) {
             #dynamic-node-${nodeId} {
@@ -320,7 +337,6 @@ export const DynamicNode = ({ nodeId }) => {
         `;
       }
     }
-
     return cssRules;
   };
 
@@ -339,16 +355,13 @@ export const DynamicNode = ({ nodeId }) => {
   );
 
   const responsiveNode = useMemo(() => {
-    // Use the same getChildForViewport function we defined above
-    return getChildForViewport(baseNode, currentViewport);
-  }, [baseNode, currentViewport, viewportBreakpoints]);
+    return getChildForViewport(baseNode, adjustedCurrentViewport);
+  }, [baseNode, adjustedCurrentViewport, viewportBreakpoints]);
 
   // Compute the merged style based solely on base node, responsive overrides, and variant.
   const mergedStyle = useMemo(() => {
-    // Base style from the node
     const baseStyle = { ...baseNode.style };
 
-    // Apply responsive styles
     if (responsiveNode && responsiveNode.id !== baseNode.id) {
       if (responsiveNode.independentStyles) {
         Object.keys(responsiveNode.independentStyles).forEach((key) => {
@@ -364,32 +377,23 @@ export const DynamicNode = ({ nodeId }) => {
       }
     }
 
-    // Apply variant styles if active - FIXED FOR PARENT NODES
     if (activeVariant) {
       const targetId =
         activeVariant.targetId || activeVariant._originalTargetId;
       const targetNode = originalNodes.find((n) => n.id === targetId);
-
-      // Get style from target node or from activeVariant
       const variantStyle = targetNode
         ? { ...targetNode.style }
         : { ...activeVariant.style };
 
-      // Clean up positioning properties for relative positioning
       variantStyle.position = "relative";
       delete variantStyle.left;
       delete variantStyle.top;
       delete variantStyle.right;
       delete variantStyle.bottom;
-
-      // Only apply transition during variant changes
       variantStyle.transition = "all 0.3s ease";
-
-      // Return the variant style to completely replace the base style
       return variantStyle;
     }
 
-    // No transition for responsive changes
     return baseStyle;
   }, [baseNode.style, activeVariant, originalNodes, responsiveNode]);
 
@@ -398,12 +402,14 @@ export const DynamicNode = ({ nodeId }) => {
     e.stopPropagation();
     const clickedNode = originalNodes.find((n) => n.id === targetNodeId);
     if (!clickedNode) return;
+
+    // Check connections on the responsive version of the node, not just the base node
     if (
       targetNodeId === responsiveBaseNode.id &&
-      baseNode.dynamicConnections &&
-      baseNode.dynamicConnections.length > 0
+      responsiveBaseNode.dynamicConnections &&
+      responsiveBaseNode.dynamicConnections.length > 0
     ) {
-      const connection = baseNode.dynamicConnections.find(
+      const connection = responsiveBaseNode.dynamicConnections.find(
         (conn) => conn.type === "click"
       );
       if (connection) {
@@ -479,18 +485,14 @@ export const DynamicNode = ({ nodeId }) => {
       (n) => n.parentId === parentId
     );
 
-    // Special handling for exact breakpoint boundaries
     const exactBreakpoint = viewportBreakpoints.find(
-      (bp) => bp.width === currentViewport
+      (bp) => bp.width === adjustedCurrentViewport
     );
 
     if (exactBreakpoint) {
-      // Find the largest breakpoint
       const largestBreakpoint = sortedBreakpoints[0];
 
-      // If we're at an exact breakpoint that's not the largest
       if (exactBreakpoint.id !== largestBreakpoint.id) {
-        // Find the parent node for this exact breakpoint
         const breakpointParent = originalNodes.find(
           (n) =>
             n.sharedId === baseNode.sharedId &&
@@ -498,7 +500,6 @@ export const DynamicNode = ({ nodeId }) => {
         );
 
         if (breakpointParent) {
-          // Use children from this parent instead
           const breakpointChildren = originalNodes.filter(
             (n) => n.parentId === breakpointParent.id
           );
@@ -512,21 +513,54 @@ export const DynamicNode = ({ nodeId }) => {
     return childrenForParent;
   }, [
     parentId,
-    currentViewport,
+    adjustedCurrentViewport,
     viewportBreakpoints,
     baseNode,
     originalNodes,
     sortedBreakpoints,
   ]);
 
+  const parseTextContent = (html) => {
+    if (!html) return { text: "", styles: {} };
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const span = doc.querySelector("span");
+
+      if (span) {
+        // Extract the text content without HTML tags
+        const textContent = span.textContent || "";
+
+        // Extract the styles
+        const styles = {};
+        if (span.getAttribute("style")) {
+          const styleText = span.getAttribute("style");
+
+          const colorMatch = styleText.match(/color:\s*([^;]+)/i);
+          if (colorMatch) styles.color = colorMatch[1].trim();
+
+          const fontSizeMatch = styleText.match(/font-size:\s*([^;]+)/i);
+          if (fontSizeMatch) styles.fontSize = fontSizeMatch[1].trim();
+
+          // Add other style extractions as needed
+        }
+
+        return { text: textContent, styles };
+      }
+    } catch (e) {
+      console.error("Error parsing HTML:", e);
+    }
+
+    return { text: "", styles: {} };
+  };
+
   // Recursive render function for a node and its children.
-  // Use sharedId (if available) as the key so that React reuses the same DOM element.
   const renderNode = (nodeId) => {
     const node = originalNodes.find((n) => n.id === nodeId);
     if (!node) return null;
 
-    // Use the getChildForViewport function defined above
-    const responsiveChild = getChildForViewport(node, currentViewport);
+    const responsiveChild = getChildForViewport(node, adjustedCurrentViewport);
 
     let childStyle = { ...node.style };
     if (responsiveChild && responsiveChild.id !== node.id) {
@@ -543,6 +577,7 @@ export const DynamicNode = ({ nodeId }) => {
         Object.assign(childStyle, responsiveChild.style);
       }
     }
+
     if (activeVariant) {
       const targetId =
         activeVariant.targetId || activeVariant._originalTargetId;
@@ -550,6 +585,7 @@ export const DynamicNode = ({ nodeId }) => {
         const variantChild = originalNodes.find(
           (n) => n.sharedId === node.sharedId && n.parentId === targetId
         );
+
         if (variantChild) {
           childStyle = {
             ...variantChild.style,
@@ -558,26 +594,22 @@ export const DynamicNode = ({ nodeId }) => {
             top: 0,
             right: "auto",
             bottom: "auto",
-            // Only set transition for variants
-            transition: activeVariant ? "all 0.3s ease" : "none",
+            transition: "all 0.3s ease",
           };
         }
       }
     }
 
-    // Get children for this node, with special handling for exact breakpoints
     let childrenForNode = originalNodes.filter((n) => n.parentId === node.id);
 
-    // Special handling for exact breakpoint boundaries
     const exactBreakpoint = viewportBreakpoints.find(
-      (bp) => bp.width === currentViewport
+      (bp) => bp.width === adjustedCurrentViewport
     );
 
     if (
       exactBreakpoint &&
       responsiveChild.dynamicViewportId === exactBreakpoint.id
     ) {
-      // For nodes at exact breakpoints, use the children directly from the responsive child
       const breakpointChildren = originalNodes.filter(
         (n) => n.parentId === responsiveChild.id
       );
@@ -590,6 +622,7 @@ export const DynamicNode = ({ nodeId }) => {
     const isInteractive =
       node.isDynamic ||
       (node.dynamicConnections && node.dynamicConnections.length > 0);
+
     const interactiveProps = {
       onClick: (e) => handleClick(e, node.id),
       onMouseEnter: (e) => handleMouseEnter(e, node.id),
@@ -599,12 +632,12 @@ export const DynamicNode = ({ nodeId }) => {
       "data-shared-id": node.sharedId || undefined,
       "data-viewport-id":
         responsiveChild.dynamicViewportId || node.dynamicViewportId,
+      "data-variant-update": forceNestedUpdate,
       key: node.sharedId || node.id,
       className: `dynamic-child ${node.customName || ""}`,
       style: {
         cursor: isInteractive ? "pointer" : undefined,
         ...childStyle,
-        // Only set transition for variants
         transition: activeVariant ? "all 0.3s ease" : "none",
       },
     };
@@ -628,12 +661,88 @@ export const DynamicNode = ({ nodeId }) => {
           />
         );
       case "text":
+        // Parse HTML content to extract the text content and its styles separately
+        const parseTextContent = (html) => {
+          if (!html) return { content: "", style: {} };
+
+          try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, "text/html");
+            const span = doc.querySelector("span");
+
+            if (span) {
+              // Get the raw text content without HTML tags
+              const textContent = span.textContent || "";
+
+              // Extract the styles
+              const styleAttr = span.getAttribute("style") || "";
+              const styles = {};
+
+              const colorMatch = styleAttr.match(/color:\s*([^;]+)/i);
+              if (colorMatch) styles.color = colorMatch[1].trim();
+
+              const fontSizeMatch = styleAttr.match(/font-size:\s*([^;]+)/i);
+              if (fontSizeMatch) styles.fontSize = fontSizeMatch[1].trim();
+
+              const fontWeightMatch = styleAttr.match(
+                /font-weight:\s*([^;]+)/i
+              );
+              if (fontWeightMatch)
+                styles.fontWeight = fontWeightMatch[1].trim();
+
+              // Extract other style properties...
+
+              return { content: textContent, style: styles };
+            }
+          } catch (e) {
+            console.error("Error parsing HTML:", e);
+          }
+
+          return { content: "", style: {} };
+        };
+
+        // Extract text content and styles
+        const parsedText = parseTextContent(childStyle.text);
+
         return (
           <div
             {...interactiveProps}
             data-child-type="text"
-            dangerouslySetInnerHTML={{ __html: childStyle.text || "" }}
-          />
+            style={{
+              ...interactiveProps.style,
+              // Remove text-specific properties
+              color: undefined,
+              fontSize: undefined,
+              fontWeight: undefined,
+              fontFamily: undefined,
+              lineHeight: undefined,
+              textAlign: undefined,
+              // Other properties...
+            }}
+          >
+            <p
+              className="text-inherit"
+              style={{ textAlign: childStyle.textAlign || "center" }}
+            >
+              <span
+                style={{
+                  color: parsedText.style.color || childStyle.color,
+                  fontSize: parsedText.style.fontSize || childStyle.fontSize,
+                  fontWeight:
+                    parsedText.style.fontWeight || childStyle.fontWeight,
+                  fontFamily:
+                    parsedText.style.fontFamily || childStyle.fontFamily,
+                  lineHeight:
+                    parsedText.style.lineHeight || childStyle.lineHeight,
+                  transition: "all 0.3s ease", // Always apply transition
+                  display: "inline-block",
+                }}
+              >
+                {/* Use the extracted text content directly instead of dangerouslySetInnerHTML */}
+                {parsedText.content}
+              </span>
+            </p>
+          </div>
         );
       case "frame":
         const hasBackground =
@@ -671,7 +780,6 @@ export const DynamicNode = ({ nodeId }) => {
                       backgroundImage: `url(${childStyle.backgroundImage})`,
                       backgroundSize: "cover",
                       backgroundPosition: "center",
-                      // Only apply transition for variants
                       transition: activeVariant ? "all 0.3s ease" : "none",
                     }}
                   />
@@ -756,30 +864,27 @@ export const DynamicNode = ({ nodeId }) => {
     .dynamic-child {
       transition: ${activeVariant ? "all 0.3s ease" : "none"} !important;
     }
+    
+    /* Force FOUC prevention */
+    .dynamic-node[data-render-count="${renderCounter}"] {
+      visibility: visible !important;
+    }
   `;
 
   const filterPositionProps = (style) => {
     if (!style) return {};
-
-    // Create a shallow copy of the style object
     const result = { ...style };
-
-    // Remove position properties that shouldn't be applied directly
     const excludeProps = ["left", "top", "right", "bottom"];
     excludeProps.forEach((prop) => {
       delete result[prop];
     });
-
-    // Always ensure position is relative
     result.position = "relative";
-
     return result;
   };
 
-  // Dynamic CSS generation that converts all variant style properties to CSS
+  // Dynamic CSS generation for variant styles
   const variantOverrideCSS = useMemo(() => {
     if (!activeVariant || !activeVariant.style) return "";
-
     const variantStyle = activeVariant.style;
     const cssRules = Object.entries(variantStyle)
       .filter(
@@ -791,7 +896,6 @@ export const DynamicNode = ({ nodeId }) => {
           key !== "bottom"
       )
       .map(([key, value]) => {
-        // Convert camelCase to kebab-case for CSS properties
         const cssKey = key.replace(
           /([A-Z])/g,
           (match) => `-${match.toLowerCase()}`
@@ -802,12 +906,100 @@ export const DynamicNode = ({ nodeId }) => {
 
     return `
       /* Dynamic override for all variant styles */
-      #dynamic-node-${nodeId}[data-variant-id="${activeVariant.id}"] {
+      #dynamic-node-${nodeId}[data-variant-id="${activeVariant.id}"]#dynamic-node-${nodeId}[data-variant-id="${activeVariant.id}"] {
+        position: relative !important;
+        ${cssRules}
+      }
+      
+      /* Ensure correct initial state by using render counter */
+      #dynamic-node-${nodeId}[data-render-count="${renderCounter}"][data-variant-id="${activeVariant.id}"] {
+        position: relative !important;
+        ${cssRules}
+      }
+      
+      /* Force update for nested children in variants with data attributes */
+      #dynamic-node-${nodeId}[data-variant-update="${forceNestedUpdate}"][data-variant-id="${activeVariant.id}"] {
         position: relative !important;
         ${cssRules}
       }
     `;
-  }, [activeVariant, nodeId]);
+  }, [activeVariant, nodeId, renderCounter, forceNestedUpdate]);
+
+  // Additional styles to force style application on initial load
+  const initialLoadCSS = `
+    @keyframes forceRepaint {
+      0% { opacity: 0.999; }
+      100% { opacity: 1; }
+    }
+    
+    #dynamic-node-${nodeId} {
+      animation: forceRepaint 0.001s;
+      will-change: opacity;
+    }
+    
+    #dynamic-node-${nodeId}[data-render-count="${renderCounter}"] {
+      animation: forceRepaint 0.001s;
+      will-change: opacity;
+    }
+    
+    .dynamic-child[data-variant-update="${forceNestedUpdate}"] {
+      animation: forceRepaint 0.001s;
+      will-change: opacity, background-color, transform;
+    }
+  `;
+
+  // Enhanced CSS for variant child styles
+  const variantChildrenCSS = useMemo(() => {
+    if (!activeVariant || !activeVariant.targetId) return "";
+    const targetId = activeVariant.targetId || activeVariant._originalTargetId;
+    if (!targetId) return "";
+    let cssRules = "";
+
+    const generateVariantChildRules = (parentId, level = 0) => {
+      const variantChildren = originalNodes.filter(
+        (node) => node.parentId === parentId
+      );
+
+      variantChildren.forEach((variantChild) => {
+        if (variantChild.sharedId) {
+          const variantStyleProps = Object.entries(variantChild.style || {})
+            .filter(
+              ([key]) =>
+                key !== "position" &&
+                key !== "left" &&
+                key !== "top" &&
+                key !== "right" &&
+                key !== "bottom"
+            )
+            .map(([key, value]) => {
+              const cssKey = key.replace(
+                /([A-Z])/g,
+                (match) => `-${match.toLowerCase()}`
+              );
+              return `${cssKey}: ${value} !important;`;
+            })
+            .join("\n");
+
+          cssRules += `
+            /* Level ${level} variant child styling */
+            #dynamic-node-${nodeId} [data-shared-id="${variantChild.sharedId}"][data-variant-update="${forceNestedUpdate}"] {
+              ${variantStyleProps}
+            }
+          `;
+
+          if (variantChild.id) {
+            generateVariantChildRules(variantChild.id, level + 1);
+          }
+        }
+      });
+    };
+
+    generateVariantChildRules(targetId);
+
+    return cssRules;
+  }, [activeVariant, nodeId, originalNodes, forceNestedUpdate]);
+
+  // Update text content for smooth text style transitions.
 
   return (
     <>
@@ -816,8 +1008,9 @@ export const DynamicNode = ({ nodeId }) => {
       {responsiveCSS && <style>{responsiveCSS}</style>}
       {backgroundImageCSS && <style>{backgroundImageCSS}</style>}
       {mediaQueryContent && <style>{mediaQueryContent}</style>}
-      {/* Add the variant override CSS at the end to take highest priority */}
       {variantOverrideCSS && <style>{variantOverrideCSS}</style>}
+      {variantChildrenCSS && <style>{variantChildrenCSS}</style>}
+      <style>{initialLoadCSS}</style>
 
       <div
         id={`dynamic-node-${nodeId}`}
@@ -828,16 +1021,15 @@ export const DynamicNode = ({ nodeId }) => {
         data-responsive-id={responsiveNode.id}
         data-viewport-id={currentViewportObj?.id}
         data-render-count={renderCounter}
+        data-variant-update={forceNestedUpdate}
         className="dynamic-node"
         style={{
-          // Only include non-responsive styles in the inline styles
           cursor: baseNode.isDynamic ? "pointer" : undefined,
           position: "relative",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flex: "0 0 auto",
-          // Directly apply variant background color to inline style as well
           ...(activeVariant ? filterPositionProps(activeVariant.style) : {}),
         }}
         onClick={(e) => handleClick(e, responsiveBaseNode.id)}
@@ -862,12 +1054,6 @@ export const DynamicNode = ({ nodeId }) => {
                   backgroundImage: `url(${mergedStyle.backgroundImage})`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
-                  position: "absolute",
-                  inset: 0,
-                  backgroundImage: `url(${mergedStyle.backgroundImage})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  // Only apply transition for variants
                   transition: activeVariant ? "all 0.3s ease" : "none",
                 }}
               />
@@ -909,17 +1095,48 @@ export const DynamicNode = ({ nodeId }) => {
                 />
               );
             case "text":
+              // Parse the HTML to extract content and styles
+              const mainParsedText = parseTextContent(mergedStyle.text);
+
               return (
                 <div
                   className="dynamic-node-main-content"
-                  dangerouslySetInnerHTML={{ __html: mergedStyle.text || "" }}
                   style={{
                     width: "100%",
                     height: "100%",
                     position: "relative",
                     zIndex: 1,
                   }}
-                />
+                >
+                  <p
+                    className="text-inherit"
+                    style={{ textAlign: mergedStyle.textAlign || "center" }}
+                  >
+                    <span
+                      style={{
+                        color: mainParsedText.style.color || mergedStyle.color,
+                        fontSize:
+                          mainParsedText.style.fontSize || mergedStyle.fontSize,
+                        fontWeight:
+                          mainParsedText.style.fontWeight ||
+                          mergedStyle.fontWeight,
+                        fontFamily:
+                          mainParsedText.style.fontFamily ||
+                          mergedStyle.fontFamily,
+                        lineHeight:
+                          mainParsedText.style.lineHeight ||
+                          mergedStyle.lineHeight,
+                        transition: "all 0.3s ease", // Always apply transition
+                        display: "block",
+                        width: "100%",
+                        height: "100%",
+                      }}
+                    >
+                      {/* Use the extracted text content directly */}
+                      {mainParsedText.content}
+                    </span>
+                  </p>
+                </div>
               );
             case "video":
               return (

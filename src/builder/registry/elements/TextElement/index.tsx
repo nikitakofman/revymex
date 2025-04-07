@@ -21,6 +21,127 @@ import { Plugin, PluginKey } from "prosemirror-state";
 import TextMenu from "./TextMenu";
 import { findParentViewport } from "@/builder/context/utils";
 
+// Add this extension to your list of extensions in TextElement.jsx
+
+const LineHeightExtension = Extension.create({
+  name: "lineHeight",
+  addOptions() {
+    return { types: ["textStyle"] };
+  },
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: (element) => element.style.lineHeight,
+            renderHTML: (attributes) => {
+              if (!attributes.lineHeight) return {};
+              return { style: `line-height: ${attributes.lineHeight}` };
+            },
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setLineHeight:
+        (lineHeight) =>
+        ({ chain }) =>
+          chain().setMark("textStyle", { lineHeight }).run(),
+    };
+  },
+});
+
+const LetterSpacingExtension = Extension.create({
+  name: "letterSpacing",
+  addOptions() {
+    return { types: ["textStyle"] };
+  },
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          letterSpacing: {
+            default: null,
+            parseHTML: (element) => element.style.letterSpacing,
+            renderHTML: (attributes) => {
+              if (!attributes.letterSpacing) return {};
+              return { style: `letter-spacing: ${attributes.letterSpacing}` };
+            },
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setLetterSpacing:
+        (letterSpacing) =>
+        ({ chain }) =>
+          chain().setMark("textStyle", { letterSpacing }).run(),
+    };
+  },
+});
+
+// -----------------------
+// SpacePreservingExtension
+// -----------------------
+const SpacePreservingExtension = Extension.create({
+  name: "spacePreserving",
+
+  addKeyboardShortcuts() {
+    return {
+      Space: ({ editor }) => {
+        // Get the current cursor position
+        const { from, to, empty } = editor.state.selection;
+
+        // Only intercept if there's no selection (just a cursor)
+        if (empty) {
+          // Check if the previous character was a space
+          const before = editor.state.doc.textBetween(
+            Math.max(0, from - 1),
+            from
+          );
+
+          if (before === " ") {
+            // If previous character was a space, insert a non-breaking space
+            editor.chain().insertContent("\u00A0").run();
+            return true; // Mark as handled
+          }
+        }
+
+        // Let normal space key handling occur
+        return false;
+      },
+    };
+  },
+
+  addInputRules() {
+    return [
+      // This fixes the case where you paste text with multiple spaces
+      {
+        find: / {2,}/g,
+        handler: ({ state, range, match }) => {
+          const spaces = match[0];
+          const spaceCount = spaces.length;
+
+          // Create a mixture of spaces and non-breaking spaces
+          const replacement = " " + "\u00A0".repeat(spaceCount - 1);
+
+          // Create a transaction to replace the matched text
+          const tr = state.tr.insertText(replacement, range.from, range.to);
+
+          return tr;
+        },
+      },
+    ];
+  },
+});
+
 // -----------------------
 // PreserveFormattingExtension
 // -----------------------
@@ -154,6 +275,18 @@ const FontFamilyExtension = Extension.create({
   },
 });
 
+const preserveSpaces = (html) => {
+  if (!html) return html;
+
+  // Replace multiple spaces with non-breaking spaces (&nbsp;)
+  // But keep one regular space at the beginning of each sequence
+  return html.replace(/( +)/g, (match) => {
+    if (match.length <= 1) return match; // Keep single spaces as-is
+    // Replace all but the first space with &nbsp;
+    return " " + "\u00A0".repeat(match.length - 1);
+  });
+};
+
 // -----------------------
 // FontSize Extension
 // -----------------------
@@ -222,6 +355,12 @@ const TextElement = ({ node }: ElementProps) => {
   const toolbarInteractionRef = useRef(false);
   const [fontSize, setFontSize] = useState<string>("16");
   const selectionBeforeFocus = useRef(null);
+  const [displayUnit, setDisplayUnit] = useState<string>("px");
+  const hasVwUnitsRef = useRef(false);
+  const lastUpdatedContentRef = useRef<string | null>(null);
+  const preventExitRef = useRef(true);
+  const [lineHeight, setLineHeight] = useState("normal");
+  const [letterSpacing, setLetterSpacing] = useState("normal");
 
   const connect = useConnect();
   const {
@@ -238,15 +377,98 @@ const TextElement = ({ node }: ElementProps) => {
   } = useBuilder();
   const isNodeSelected = dragState.selectedIds.includes(node.id);
 
-  const [fontUnit, setFontUnit] = useState<string>("px"); // New state for the font unit
-
   const getParentViewportWidth = useCallback(() => {
     const parentViewportId = findParentViewport(node.parentId, nodeState.nodes);
     const viewportNode = nodeState.nodes.find((n) => n.id === parentViewportId);
     return viewportNode?.viewportWidth || window.innerWidth;
   }, [node.parentId, nodeState.nodes]);
 
-  // Initialize the editor with necessary extensions including our PreserveFormattingExtension.
+  // Extract VW value from text element for UI display
+  const extractVwValue = useCallback((html) => {
+    if (!html || !html.includes("vw")) return null;
+
+    try {
+      // First check for direct vw value
+      const vwMatch = html.match(/font-size:\s*([0-9.]+)vw/);
+      if (vwMatch && vwMatch[1]) {
+        return parseFloat(vwMatch[1]);
+      }
+
+      // Then check for data attribute
+      const dataMatch = html.match(/data-vw-size:\s*([0-9.]+)vw/);
+      if (dataMatch && dataMatch[1]) {
+        return parseFloat(dataMatch[1]);
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error extracting VW value:", error);
+      return null;
+    }
+  }, []);
+
+  const convertUnits = useCallback(
+    (value, fromUnit, toUnit, referenceWidth) => {
+      if (fromUnit === toUnit) return value;
+
+      if (fromUnit === "px" && toUnit === "vw") {
+        // Convert px to vw using the reference width
+        return (value / referenceWidth) * 100;
+      } else if (fromUnit === "vw" && toUnit === "px") {
+        // Convert vw to px using the reference width
+        return (value * referenceWidth) / 100;
+      }
+
+      return value; // Default fallback
+    },
+    []
+  );
+
+  // Convert HTML content from VW units to PX units for editing
+  const convertHtmlVwToPx = useCallback((html, viewportWidth) => {
+    if (!html || !html.includes("vw") || !viewportWidth) return html;
+
+    try {
+      // Replace all vw font-size values with calculated px values
+      return html.replace(/font-size:\s*([0-9.]+)vw/g, (match, vwValue) => {
+        const pixelValue = (parseFloat(vwValue) * viewportWidth) / 100;
+        // Store original vw value as data attribute
+        return `font-size: ${Math.round(
+          pixelValue
+        )}px; data-vw-size: ${vwValue}vw`;
+      });
+    } catch (error) {
+      console.error("Error converting VW to PX:", error);
+      return html;
+    }
+  }, []);
+
+  // Convert HTML content from PX units to VW units for saving
+  const convertHtmlPxToVw = useCallback((html, viewportWidth) => {
+    if (!html || !viewportWidth) return html;
+
+    try {
+      // First check for data-vw-size attributes (preferred)
+      if (html.includes("data-vw-size")) {
+        // Replace px values with their corresponding vw values from data attributes
+        return html.replace(
+          /font-size:\s*([0-9.]+)px;\s*data-vw-size:\s*([0-9.]+)vw/g,
+          "font-size: $2vw"
+        );
+      }
+
+      // Fallback: calculated conversion
+      return html.replace(/font-size:\s*([0-9.]+)px/g, (match, pxValue) => {
+        const vwValue = (parseFloat(pxValue) / viewportWidth) * 100;
+        return `font-size: ${vwValue.toFixed(2)}vw`;
+      });
+    } catch (error) {
+      console.error("Error converting PX to VW:", error);
+      return html;
+    }
+  }, []);
+
+  // Initialize the editor with necessary extensions
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -257,63 +479,31 @@ const TextElement = ({ node }: ElementProps) => {
       Color,
       FontSizeExtension,
       FontFamilyExtension,
+      LineHeightExtension, // Add this line
+      LetterSpacingExtension, // Add this line
       TextAlign.configure({ types: ["paragraph", "heading"] }),
       PreserveFormattingExtension,
       PasteHandler,
+      SpacePreservingExtension,
     ],
-    // Store a snapshot of current text to avoid race conditions
     content:
       node.style.text && node.style.text.trim() !== ""
         ? node.style.text
         : '<p class="text-inherit"><span>Text</span></p>',
     editable: false,
-
-    // Add this to prevent style changes during selection
     editorProps: {
       handleTextInput: (view, from, to, text) => {
-        // This preserves marks during text input
-        return false; // Let TipTap handle it normally
+        // Prevent exiting edit mode when typing
+        preventExitRef.current = true;
+        return false; // Let TipTap handle text input normally
       },
       transformPasted: (slice) => {
-        // This preserves current styles during paste
         return slice; // Return unmodified slice
       },
     },
     onUpdate: ({ editor }) => {
-      let html = editor.getHTML();
-
-      // First detect if the original text had vw units
-      const originalHadVw = node.style.text && node.style.text.includes("vw");
-
-      // If the original text had vw but the current HTML has px, convert back to vw
-      if (originalHadVw && html.includes("px") && !html.includes("vw")) {
-        html = preserveVwUnits(html);
-      }
-
-      if (html !== node.style.text && node.type === "text" && isEditing) {
-        // Only allow updates while actually editing
-        // Check if this text has independent styles
-        if (node.independentStyles?.text) {
-          // If node has independent styles set, only update this specific node
-          // without syncing to other viewports
-          setNodeStyle(
-            { text: html },
-            undefined, // Only update this node
-            true,
-            false,
-            false
-          );
-        } else {
-          // Standard behavior - update and sync
-          setNodeStyle(
-            { text: html },
-            undefined, // IMPORTANT: Only update this specific node
-            true,
-            false,
-            false
-          );
-        }
-      }
+      // Prevent updating node style here to avoid exiting edit mode
+      // We'll update in separate handlers
     },
     onSelectionUpdate: ({ editor }) => {
       if (isEditing && isNodeSelected) {
@@ -325,158 +515,65 @@ const TextElement = ({ node }: ElementProps) => {
           setHasSelection(!isEmpty);
         }
 
-        const attrs = editor.getAttributes("textStyle");
+        // Only update if we're not in an active toolbar interaction
+        if (!toolbarInteractionRef.current) {
+          const attrs = editor.getAttributes("textStyle");
 
-        if (attrs.fontSize) {
-          // Check if there's a data-vw-size in the fontSize attribute
-          const vwMatch = attrs.fontSize.match(/data-vw-size:\s*([0-9.]+)vw/);
-          if (vwMatch && vwMatch[1]) {
-            // If we have a data-vw-size, use it for font size and set unit to vw
-            setFontSize(vwMatch[1]);
-            setFontUnit("vw");
-          } else {
-            // Otherwise use the px value
-            const sizeValue = attrs.fontSize.replace(/[^\d.]/g, "") || "16";
-            setFontSize(sizeValue);
-
-            // Extract unit (px, vw, etc.)
-            const unitMatch = attrs.fontSize.match(/[a-z%]+$/i);
-            if (unitMatch && unitMatch[0]) {
-              const detectedUnit = unitMatch[0];
-              // Only update if it's a unit we support
-              if (detectedUnit === "px" || detectedUnit === "vw") {
-                setFontUnit(detectedUnit);
+          // Handle font size (existing code)
+          if (attrs.fontSize) {
+            // Check for data-vw-size attribute first
+            const vwMatch = attrs.fontSize.match(/data-vw-size:\s*([0-9.]+)vw/);
+            if (vwMatch && vwMatch[1] && displayUnit === "vw") {
+              // If we have a data-vw-size and are in VW mode, use it
+              setFontSize(vwMatch[1]);
+            } else {
+              // Otherwise extract the pixel value if we're in PX mode
+              if (displayUnit === "px") {
+                const sizeValue = attrs.fontSize.replace(/[^\d.]/g, "") || "16";
+                setFontSize(sizeValue);
               }
             }
+          }
+
+          // Extract line height
+          if (attrs.lineHeight) {
+            setLineHeight(attrs.lineHeight);
+          }
+
+          // Extract letter spacing
+          if (attrs.letterSpacing) {
+            setLetterSpacing(attrs.letterSpacing);
           }
         }
       }
     },
   });
 
+  // Check if node has VW units when first rendering
   useEffect(() => {
-    if (
-      editor &&
-      isEditing &&
-      node.style.text &&
-      node.style.text.includes("vw")
-    ) {
-      // Get the original vw values
-      const vwMatches = [
-        ...node.style.text.matchAll(/font-size:\s*([0-9.]+)vw/g),
-      ];
-      if (vwMatches && vwMatches.length > 0) {
-        const vwValue = vwMatches[0][1];
+    if (node.style.text) {
+      const hasVwUnits = node.style.text.includes("vw");
+      hasVwUnitsRef.current = hasVwUnits;
 
-        // Force the font unit to vw in the UI
-        setFontUnit("vw");
-        setFontSize(vwValue);
+      if (hasVwUnits) {
+        setDisplayUnit("vw");
 
-        // Force the editor content to use vw
-        const currentHtml = editor.getHTML();
-        if (currentHtml.includes("px") && !currentHtml.includes("vw")) {
-          // Replace px with vw while maintaining the correct visual size
-          const correctedHtml = currentHtml.replace(
-            /font-size:\s*([0-9.]+)px/g,
-            `font-size: ${vwValue}vw`
-          );
+        // Extract VW value for UI display
+        const vwValue = extractVwValue(node.style.text);
+        if (vwValue !== null) {
+          setFontSize(vwValue.toFixed(2));
+        }
+      } else {
+        setDisplayUnit("px");
 
-          // Only update if something changed
-          if (correctedHtml !== currentHtml) {
-            // Store selection
-            const selection = editor.state.selection;
-
-            // Set corrected content
-            editor.commands.setContent(correctedHtml);
-
-            // Restore selection
-            if (selection && !selection.empty) {
-              editor.commands.setTextSelection({
-                from: selection.from,
-                to: selection.to,
-              });
-            }
-          }
+        // Extract PX value for UI display
+        const pxMatch = node.style.text.match(/font-size:\s*([0-9.]+)px/);
+        if (pxMatch && pxMatch[1]) {
+          setFontSize(pxMatch[1]);
         }
       }
     }
-  }, [editor, isEditing, node.style.text]);
-
-  /**
-   * Converts between units (px and vw) based on a reference viewport width
-   * @param {number} value - The numeric value to convert
-   * @param {string} fromUnit - The source unit ('px' or 'vw')
-   * @param {string} toUnit - The target unit ('px' or 'vw')
-   * @param {number} referenceWidth - The viewport width to use as reference
-   * @returns {number} - The converted value
-   */
-  const convertUnits = (value, fromUnit, toUnit, referenceWidth) => {
-    if (fromUnit === toUnit) return value;
-
-    if (fromUnit === "px" && toUnit === "vw") {
-      // Convert px to vw using the reference width
-      return (value / referenceWidth) * 100;
-    } else if (fromUnit === "vw" && toUnit === "px") {
-      // Convert vw to px using the reference width
-      return (value * referenceWidth) / 100;
-    }
-
-    return value; // Default fallback
-  };
-
-  // Function to intercept and update HTML content with simulated px values for vw units
-  const updateVwUnitsForEditor = (html, viewportWidth) => {
-    if (!html || !html.includes("vw") || !viewportWidth) return html;
-
-    // Use regex to replace vw values with calculated px values while preserving the original vw value
-    return html.replace(/font-size:\s*([0-9.]+)vw/g, (match, vwValue) => {
-      const pixelValue = (parseFloat(vwValue) * viewportWidth) / 100;
-      return `font-size: ${pixelValue.toFixed(
-        2
-      )}px; data-vw-size: ${vwValue}vw`;
-    });
-  };
-
-  const preserveVwUnits = (html) => {
-    if (!html) return html;
-
-    // Even if data-vw-size isn't present, try to get vw values from the original node
-    if (node.style.text && node.style.text.includes("vw")) {
-      // Extract all vw values from the original text
-      const vwMatches = [
-        ...node.style.text.matchAll(/font-size:\s*([0-9.]+)vw/g),
-      ];
-      if (vwMatches && vwMatches.length > 0) {
-        // For each match, replace the corresponding px value in the current HTML
-        let updatedHtml = html;
-        vwMatches.forEach((match) => {
-          const vwValue = match[1];
-          // Replace any font-size with px with the original vw value
-          updatedHtml = updatedHtml.replace(
-            /font-size:\s*([0-9.]+)px(?:;\s*data-vw-size:\s*[0-9.]+vw)?/,
-            `font-size: ${vwValue}vw`
-          );
-        });
-        return updatedHtml;
-      }
-    }
-
-    // If we have data-vw-size attributes, use those
-    if (html.includes("data-vw-size")) {
-      return html.replace(
-        /(font-size:\s*)([0-9.]+)px;\s*data-vw-size:\s*([0-9.]+)vw/g,
-        (match, prefix, px, vw) => `${prefix}${vw}vw`
-      );
-    }
-
-    return html;
-  };
-
-  // Helper function to update font-size in HTML
-  const updateFontSizeInHTML = (html, newSize) => {
-    // Simple replacement - you might need something more robust for complex cases
-    return html.replace(/(font-size:)[^;]*/, `$1 ${newSize}`);
-  };
+  }, [node.style.text, extractVwValue]);
 
   // Mark the initial edit as complete after a delay.
   useEffect(() => {
@@ -488,74 +585,161 @@ const TextElement = ({ node }: ElementProps) => {
     }
   }, [isEditing, editor]);
 
-  // Sync external node content with the editor.
+  // Function to safely update node content without exiting edit mode
+  const safeUpdateNodeContent = useCallback(
+    (html) => {
+      if (!editor || html === lastUpdatedContentRef.current) return;
+
+      try {
+        // Store this content to prevent duplicate updates
+        lastUpdatedContentRef.current = html;
+
+        // Process the HTML based on display unit
+        let finalHtml = html;
+        if (displayUnit === "vw") {
+          finalHtml = convertHtmlPxToVw(html, getParentViewportWidth());
+        }
+
+        finalHtml = preserveSpaces(finalHtml);
+
+        // Update node style WITHOUT exiting edit mode
+        preventExitRef.current = true;
+        setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+      } catch (error) {
+        console.error("Error in safeUpdateNodeContent:", error);
+      }
+    },
+    [
+      editor,
+      displayUnit,
+      convertHtmlPxToVw,
+      getParentViewportWidth,
+      setNodeStyle,
+    ]
+  );
+
+  // Add a periodic content saver to prevent losing changes
   useEffect(() => {
-    if (editor && node.style.text) {
-      // Only sync from node to editor if we're not currently editing
-      // This prevents circular update issues
-      if (!isEditing) {
+    if (!isEditing || !editor) return;
+
+    const saveInterval = setInterval(() => {
+      const currentContent = editor.getHTML();
+      if (
+        currentContent !== lastUpdatedContentRef.current &&
+        currentContent !== node.style.text
+      ) {
+        safeUpdateNodeContent(currentContent);
+      }
+    }, 2000); // Save every 2 seconds
+
+    return () => clearInterval(saveInterval);
+  }, [isEditing, editor, node.style.text, safeUpdateNodeContent]);
+
+  // When loading node content into the editor
+  useEffect(() => {
+    if (editor && node.style.text && !isEditing) {
+      try {
+        // Reset the content tracking ref
+        lastUpdatedContentRef.current = null;
+
+        const hasVwUnits = node.style.text.includes("vw");
+        hasVwUnitsRef.current = hasVwUnits;
+
+        if (hasVwUnits) {
+          // If the node has VW units, convert to PX for editing but display VW
+          setDisplayUnit("vw");
+
+          // Extract the VW value for UI display
+          const vwValue = extractVwValue(node.style.text);
+          if (vwValue !== null) {
+            setFontSize(vwValue.toFixed(2));
+          }
+
+          // Convert to pixels for editing
+          const viewportWidth = getParentViewportWidth();
+          const pxContent = convertHtmlVwToPx(node.style.text, viewportWidth);
+
+          // Set content with pixels but data-vw-size attributes
+          editor.commands.setContent(pxContent);
+        } else {
+          // For PX content, just load as is
+          setDisplayUnit("px");
+          editor.commands.setContent(node.style.text);
+
+          // Extract PX value for UI display
+          const pxMatch = node.style.text.match(/font-size:\s*([0-9.]+)px/);
+          if (pxMatch && pxMatch[1]) {
+            setFontSize(pxMatch[1]);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading node content:", error);
         editor.commands.setContent(node.style.text);
       }
     }
-  }, [editor, node.style.text, isEditing]);
+  }, [
+    editor,
+    node.style.text,
+    isEditing,
+    convertHtmlVwToPx,
+    getParentViewportWidth,
+    extractVwValue,
+  ]);
 
-  // When node is deselected, turn off editing.
+  // When node is deselected, exit edit mode
   useEffect(() => {
-    if (!isNodeSelected) {
+    if (!isNodeSelected && isEditing) {
+      // When exiting edit mode, convert to VW units if needed
+      if (editor) {
+        try {
+          const currentHtml = editor.getHTML();
+          if (currentHtml !== node.style.text) {
+            let finalHtml = currentHtml;
+
+            // Convert to VW if that's the display unit
+            if (displayUnit === "vw") {
+              finalHtml = convertHtmlPxToVw(
+                currentHtml,
+                getParentViewportWidth()
+              );
+            }
+
+            finalHtml = preserveSpaces(finalHtml);
+
+            // Update node with final HTML
+            setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+          }
+        } catch (error) {
+          console.error("Error saving content on deselect:", error);
+        }
+      }
+
+      // Exit edit mode
       setIsEditing(false);
       setIsEditingText(false);
       setHasSelection(false);
       setInitialEditComplete(false);
+
       if (editor) {
         window.getSelection()?.removeAllRanges();
         editor.setEditable(false);
       }
     }
-  }, [isNodeSelected, editor, setIsEditingText]);
-
-  // Process vw units for the editor display
-  useEffect(() => {
-    if (editor && node.style.text) {
-      // Find parent viewport
-      const parentViewportId = findParentViewport(
-        node.parentId,
-        nodeState.nodes
-      );
-      const viewportNode = nodeState.nodes.find(
-        (n) => n.id === parentViewportId
-      );
-
-      // Only process if we're not editing (to avoid cursor issues) and the content has vw units
-      if (
-        viewportNode?.viewportWidth &&
-        !isEditing &&
-        node.style.text.includes("vw")
-      ) {
-        // Convert vw to px for display in the editor
-        const updatedHTML = updateVwUnitsForEditor(
-          node.style.text,
-          viewportNode.viewportWidth
-        );
-
-        // Only update if the content has changed
-        if (updatedHTML !== editor.getHTML()) {
-          // Check if node content is different from what the editor has
-          const currentEditorHTML = editor.getHTML();
-
-          // Only update if the node has valid content and it differs from the editor
-          if (
-            node.style.text.trim() !== "" &&
-            currentEditorHTML !== updatedHTML
-          ) {
-            editor.commands.setContent(updatedHTML);
-          }
-        }
-      }
-    }
-  }, [editor, node.style.text, nodeState.nodes, isEditing, node.parentId]);
+  }, [
+    isNodeSelected,
+    editor,
+    setIsEditingText,
+    isEditing,
+    displayUnit,
+    convertHtmlPxToVw,
+    getParentViewportWidth,
+    setNodeStyle,
+    node.style.text,
+  ]);
 
   const handleToolbarInteractionStart = useCallback(() => {
     toolbarInteractionRef.current = true;
+    preventExitRef.current = true;
   }, []);
 
   const handleToolbarInteractionEnd = useCallback(() => {
@@ -567,76 +751,348 @@ const TextElement = ({ node }: ElementProps) => {
     }, 10);
   }, [editor, isEditing]);
 
-  // Handler for font size change that considers the parent viewport width
-  const handleFontSizeChange = (value, unit) => {
-    if (!editor) return;
+  // Handler for font size change that works correctly with selections
+  const handleFontSizeChange = useCallback(
+    (value, unit) => {
+      if (!editor) return;
 
-    // Save selection before applying style
-    selectionBeforeFocus.current = editor.state.selection;
+      // Simple start of toolbar interaction
+      toolbarInteractionRef.current = true;
 
-    // Use the provided unit or fallback to current fontUnit
-    const actualUnit = unit || fontUnit;
-    let newValue = parseFloat(value);
+      try {
+        // Parse numeric value
+        let numericValue = parseFloat(value);
+        if (isNaN(numericValue)) return;
 
-    if (isNaN(newValue)) return;
+        // Get viewport width for calculations
+        const viewportWidth = getParentViewportWidth();
 
-    // Get the parent viewport width
-    const viewportWidth = getParentViewportWidth();
+        // Check if multi-line text
+        const isMultiLine = editor.getHTML().includes("</p><p");
 
-    // If there's a unit change, convert values accordingly
-    if (unit && unit !== fontUnit) {
-      // Convert value to maintain visual size
-      const convertedValue = convertUnits(
-        newValue,
-        fontUnit,
-        unit,
-        viewportWidth
-      );
+        // Detect unit change
+        const isUnitChange = unit && unit !== displayUnit;
 
-      // Format based on unit type
-      if (unit === "vw") {
-        newValue = parseFloat(convertedValue.toFixed(2)); // 2 decimal places for vw
-      } else {
-        newValue = Math.round(convertedValue); // Integer for px
+        // Convert the value if changing units
+        if (isUnitChange) {
+          if (displayUnit === "px" && unit === "vw") {
+            // px to vw conversion
+            numericValue = (numericValue / viewportWidth) * 100;
+          } else if (displayUnit === "vw" && unit === "px") {
+            // vw to px conversion
+            numericValue = (numericValue * viewportWidth) / 100;
+            // Cap at reasonable size
+            numericValue = Math.min(numericValue, 300);
+          }
+
+          // Update unit display state
+          setDisplayUnit(unit);
+        }
+
+        // Format value based on unit
+        const formattedValue =
+          unit === "vw" || displayUnit === "vw"
+            ? numericValue.toFixed(2)
+            : Math.round(numericValue).toString();
+
+        // Update display
+        setFontSize(formattedValue);
+
+        // ====== MULTI-LINE TEXT WITH VW HANDLING ======
+        // (This part is necessary from the new version)
+        if (isMultiLine && (unit === "vw" || displayUnit === "vw")) {
+          // Use HTML-based approach for multi-line text
+          let htmlContent = editor.getHTML();
+
+          // The unit we're using now
+          const finalUnit = unit || displayUnit;
+
+          // Format value for HTML
+          const htmlValue =
+            finalUnit === "vw"
+              ? numericValue.toFixed(2)
+              : Math.round(numericValue);
+
+          // Replace all font sizes
+          htmlContent = htmlContent.replace(
+            /font-size:\s*([0-9.]+)(px|vw|em|rem|%)(?:;\s*data-vw-size:\s*[0-9.]+vw)?/g,
+            `font-size: ${htmlValue}${finalUnit}`
+          );
+
+          // Save updates
+          if (finalUnit === "vw") {
+            setNodeStyle({ text: htmlContent }, undefined, true, false, false);
+          }
+
+          if (finalUnit !== "vw") {
+            // Set content
+            editor.commands.setContent(htmlContent);
+          }
+        }
+        // ====== SINGLE-LINE TEXT & UNIT CHANGES ======
+        // (This part uses the original version's simplicity)
+        else {
+          // For unit changes, select all text
+          if (isUnitChange) {
+            const docSize = editor.state.doc.content.size;
+            editor.commands.setTextSelection({ from: 0, to: docSize });
+          }
+
+          // Apply font size - USING THE ORIGINAL SIMPLE APPROACH
+          const finalUnit = unit || displayUnit;
+          const fontSizeValue = `${formattedValue}${finalUnit}`;
+
+          // THE KEY: Simple chain approach that works with partial selections
+          editor.chain().focus().setFontSize(fontSizeValue).run();
+
+          // Update node content
+          const updatedHtml = editor.getHTML();
+          setNodeStyle({ text: updatedHtml }, undefined, true, false, false);
+        }
+      } catch (error) {
+        console.error("Error in handleFontSizeChange:", error);
+      } finally {
+        // End toolbar interaction with a short delay
+        setTimeout(() => {
+          toolbarInteractionRef.current = false;
+          if (editor) editor.view.focus();
+        }, 10);
       }
+    },
+    [editor, displayUnit, getParentViewportWidth, setNodeStyle]
+  );
 
-      // Update the font unit state
-      setFontUnit(unit);
-    }
+  // Special handler for increment/decrement changes
+  const directUpdateFontSize = useCallback(
+    (value, unit) => {
+      if (!editor) return;
 
-    // Update font size state with proper formatting
-    setFontSize(
-      actualUnit === "vw"
-        ? newValue.toFixed(2)
-        : Math.round(newValue).toString()
-    );
+      // Start toolbar interaction
+      toolbarInteractionRef.current = true;
 
-    // Set the font size in the editor
-    if (actualUnit === "vw") {
-      // For vw units, calculate the equivalent pixel size for display
-      const pixelSize = (newValue * viewportWidth) / 100;
-      // Apply both values - pixels for display and vw as data attribute
-      editor
-        .chain()
-        .focus()
-        .setFontSize(
-          `${pixelSize.toFixed(2)}px; data-vw-size: ${newValue.toFixed(2)}vw`
-        )
-        .run();
-    } else {
-      // For other units, just apply directly
-      editor.chain().focus().setFontSize(`${newValue}${actualUnit}`).run();
-    }
+      try {
+        // Parse numeric value
+        const numericValue = parseFloat(value);
+        if (isNaN(numericValue)) return;
 
-    // Refocus and restore selection if needed
-    if (editor.state.selection.empty && selectionBeforeFocus.current) {
-      editor.view.dispatch(
-        editor.state.tr.setSelection(selectionBeforeFocus.current)
-      );
-    }
+        // Get viewport width
+        const viewportWidth = getParentViewportWidth();
 
-    handleToolbarInteractionEnd();
-  };
+        // Check if multi-line text
+        const isMultiLine = editor.getHTML().includes("</p><p");
+
+        // For multi-line text, use special handling
+        if (isMultiLine) {
+          // Format value based on unit
+          const formattedValue =
+            unit === "vw"
+              ? Math.round(numericValue * 100) / 100 // 2 decimal places for VW
+              : Math.round(numericValue); // Integer for PX
+
+          // Get HTML content
+          let updatedHtml = editor.getHTML();
+
+          // Replace all font sizes
+          updatedHtml = updatedHtml.replace(
+            /font-size:\s*([0-9.]+)(px|vw|em|rem|%)(?:;\s*data-vw-size:\s*[0-9.]+vw)?/g,
+            `font-size: ${formattedValue}${unit}`
+          );
+
+          // Set node style directly
+          setNodeStyle({ text: updatedHtml }, undefined, true, false, false);
+
+          // Update editor content
+          if (isEditing) {
+            // Prepare editor content
+            let editorContent;
+            if (unit === "vw") {
+              // Convert VW to PX for display
+              const pxEquivalent = Math.round(
+                (formattedValue * viewportWidth) / 100
+              );
+              editorContent = updatedHtml.replace(
+                /font-size:\s*([0-9.]+)vw/g,
+                `font-size: ${pxEquivalent}px; data-vw-size: $1vw`
+              );
+            } else {
+              editorContent = updatedHtml;
+            }
+
+            // Save selection
+            const selection = editor.state.selection;
+
+            // Update content
+            editor.commands.setContent(editorContent);
+
+            // Try to restore selection
+            try {
+              editor.view.dispatch(editor.state.tr.setSelection(selection));
+              editor.view.focus();
+            } catch (e) {}
+
+            // Update UI state
+            setFontSize(formattedValue.toString());
+            setDisplayUnit(unit);
+          }
+        }
+        // For single-line text
+        else {
+          // Format value based on unit
+          const finalValue =
+            unit === "vw"
+              ? Math.round(numericValue * 100) / 100 // 2 decimal places for VW
+              : Math.round(numericValue); // Integer for PX
+
+          // Create font size string
+          const fontSizeValue = `${finalValue}${unit}`;
+
+          // THE KEY: Simple chain approach - use the original version's approach
+          editor.chain().focus().setFontSize(fontSizeValue).run();
+
+          // Update node style
+          setTimeout(() => {
+            const updatedHtml = editor.getHTML();
+            setNodeStyle({ text: updatedHtml }, undefined, true, false, false);
+          }, 10);
+
+          // Update UI state
+          setFontSize(finalValue.toString());
+          setDisplayUnit(unit);
+        }
+      } catch (error) {
+        console.error("Error in directUpdateFontSize:", error);
+      } finally {
+        // End toolbar interaction
+        setTimeout(() => {
+          toolbarInteractionRef.current = false;
+          if (editor) editor.view.focus();
+        }, 10);
+      }
+    },
+    [editor, isEditing, getParentViewportWidth, setNodeStyle]
+  );
+
+  const handleLineHeightChange = useCallback(
+    (value) => {
+      if (!editor) return;
+
+      // Start toolbar interaction
+      toolbarInteractionRef.current = true;
+      preventExitRef.current = true;
+
+      try {
+        // Parse value and set lineHeight state
+        const lineHeightValue = value;
+        setLineHeight(lineHeightValue);
+
+        // Check if multi-line text
+        const isMultiLine = editor.getHTML().includes("</p><p");
+
+        // For multi-line text
+        if (isMultiLine) {
+          let htmlContent = editor.getHTML();
+
+          // Replace all line height styles
+          htmlContent = htmlContent.replace(
+            /line-height:\s*([^;'"]+)/g,
+            `line-height: ${lineHeightValue}`
+          );
+
+          // If no line-height found, add it to each paragraph
+          if (!htmlContent.includes("line-height")) {
+            htmlContent = htmlContent.replace(
+              /<p([^>]*)>/g,
+              `<p$1 style="line-height: ${lineHeightValue}">`
+            );
+          }
+
+          // Update editor content
+          editor.commands.setContent(htmlContent);
+
+          // Save updates
+          const updatedHtml = editor.getHTML();
+          safeUpdateNodeContent(updatedHtml);
+        } else {
+          // For single-line text, use the standard approach
+          editor.chain().focus().setLineHeight(lineHeightValue).run();
+
+          // Update node content
+          const updatedHtml = editor.getHTML();
+          safeUpdateNodeContent(updatedHtml);
+        }
+      } catch (error) {
+        console.error("Error in handleLineHeightChange:", error);
+      } finally {
+        // End toolbar interaction
+        setTimeout(() => {
+          toolbarInteractionRef.current = false;
+          if (editor) editor.view.focus();
+        }, 10);
+      }
+    },
+    [editor, safeUpdateNodeContent]
+  );
+
+  const handleLetterSpacingChange = useCallback(
+    (value) => {
+      if (!editor) return;
+
+      // Start toolbar interaction
+      toolbarInteractionRef.current = true;
+      preventExitRef.current = true;
+
+      try {
+        // Parse value and set letterSpacing state
+        const letterSpacingValue = value;
+        setLetterSpacing(letterSpacingValue);
+
+        // Check if multi-line text
+        const isMultiLine = editor.getHTML().includes("</p><p");
+
+        // For multi-line text
+        if (isMultiLine) {
+          let htmlContent = editor.getHTML();
+
+          // Replace all letter spacing styles
+          htmlContent = htmlContent.replace(
+            /letter-spacing:\s*([^;'"]+)/g,
+            `letter-spacing: ${letterSpacingValue}`
+          );
+
+          // If no letter-spacing found, add it to spans
+          if (!htmlContent.includes("letter-spacing")) {
+            htmlContent = htmlContent.replace(
+              /<span([^>]*)>/g,
+              `<span$1 style="letter-spacing: ${letterSpacingValue}">`
+            );
+          }
+
+          // Update editor content
+          editor.commands.setContent(htmlContent);
+
+          // Save updates
+          const updatedHtml = editor.getHTML();
+          safeUpdateNodeContent(updatedHtml);
+        } else {
+          // For single-line text, use the standard approach
+          editor.chain().focus().setLetterSpacing(letterSpacingValue).run();
+
+          // Update node content
+          const updatedHtml = editor.getHTML();
+          safeUpdateNodeContent(updatedHtml);
+        }
+      } catch (error) {
+        console.error("Error in handleLetterSpacingChange:", error);
+      } finally {
+        // End toolbar interaction
+        setTimeout(() => {
+          toolbarInteractionRef.current = false;
+          if (editor) editor.view.focus();
+        }, 10);
+      }
+    },
+    [editor, safeUpdateNodeContent]
+  );
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -644,6 +1100,11 @@ const TextElement = ({ node }: ElementProps) => {
 
       // Check if click is inside the text node
       const isClickInside = target.closest(`[data-node-id="${node.id}"]`);
+
+      // If we're inside the element and edit mode was just activated, don't process this event
+      if (isClickInside && preventExitRef.current) {
+        return; // Skip processing this click entirely
+      }
 
       // Expanded check for toolbar elements and input controls
       const isClickOnToolbar =
@@ -675,22 +1136,32 @@ const TextElement = ({ node }: ElementProps) => {
 
       // Only deselect if clicking outside both the node and any toolbar element
       if (!isClickInside && !isClickOnToolbar && editor) {
-        // CRITICAL FIX: Only update the node text if we were actually in editing mode
-        // This prevents accidental updates when just selecting and then clicking away
-        if (isEditing) {
-          const currentHtml = editor.getHTML();
-          if (currentHtml !== node.style.text) {
-            // Always use the node ID to prevent updating unrelated nodes
-            setNodeStyle(
-              { text: currentHtml },
-              undefined, // IMPORTANT: Only update this specific node
-              true,
-              false,
-              false
-            );
+        try {
+          // Only update the node text if we were actually in editing mode
+          if (isEditing) {
+            const currentHtml = editor.getHTML();
+
+            if (currentHtml !== node.style.text) {
+              // If display unit is VW, convert to VW before saving
+              let finalHtml = currentHtml;
+              if (displayUnit === "vw") {
+                finalHtml = convertHtmlPxToVw(
+                  currentHtml,
+                  getParentViewportWidth()
+                );
+              }
+
+              finalHtml = preserveSpaces(finalHtml);
+
+              // Update the node content
+              setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+            }
           }
+        } catch (error) {
+          console.error("Error in handleClickOutside:", error);
         }
 
+        // Now exit edit mode
         window.getSelection()?.removeAllRanges();
         setHasSelection(false);
         setIsEditing(false);
@@ -706,6 +1177,9 @@ const TextElement = ({ node }: ElementProps) => {
       setNodeStyle,
       setIsEditingText,
       isEditing,
+      displayUnit,
+      convertHtmlPxToVw,
+      getParentViewportWidth,
     ]
   );
 
@@ -814,7 +1288,7 @@ const TextElement = ({ node }: ElementProps) => {
     };
   }, [editor]);
 
-  // Handle CMD+A to modify selection range and fix formatting preservation
+  // Handle CMD+A to modify selection range
   useEffect(() => {
     if (!editor || !isEditing) return;
 
@@ -822,12 +1296,13 @@ const TextElement = ({ node }: ElementProps) => {
       // Only handle CMD+A (or CTRL+A)
       if ((e.metaKey || e.ctrlKey) && e.key === "a") {
         e.preventDefault(); // Prevent default CMD+A behavior
+        preventExitRef.current = true;
 
         // Select from position 1 to end-1 instead of 0 to end
-        // This ensures marks are preserved as they are with Shift+Arrow
+        // This ensures marks are preserved
         const docSize = editor.state.doc.content.size;
 
-        // Use the editor's commands to set the selection range
+        // Set the selection range
         editor.commands.setTextSelection({
           from: 1,
           to: docSize - 1,
@@ -841,114 +1316,221 @@ const TextElement = ({ node }: ElementProps) => {
     return () => document.removeEventListener("keydown", handleCmdA);
   }, [editor, isEditing]);
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    if (node.isDynamic && dragState.dynamicModeNodeId === null) {
-      dragDisp.setDynamicModeNodeId(node.id);
-    } else {
-      if (isNodeSelected) {
-        e.stopPropagation();
-        e.preventDefault();
-
-        if (isEditing && initialEditComplete) {
-          if (editor) {
-            editor.view.focus();
-          }
-          return;
-        }
-
-        if (!isEditing) {
-          if (editor) {
-            // IMPORTANT: Capture current state to avoid race conditions
-            const currentNodeText = node.style.text;
-
-            // Only use the editor if we have valid content
-            if (currentNodeText && currentNodeText.trim() !== "") {
-              // Process content for display with parent-viewport-relative vw scaling
-              if (currentNodeText.includes("vw")) {
-                const viewportWidth = getParentViewportWidth();
-                // Convert vw to absolute px for display but keep vw in data attributes
-                const processedContent = updateVwUnitsForEditor(
-                  currentNodeText,
-                  viewportWidth
-                );
-
-                // Apply the processed content
-                editor.commands.setContent(processedContent);
-
-                // Set UI to show vw
-                const vwMatch = currentNodeText.match(
-                  /font-size:\s*([0-9.]+)vw/
-                );
-                if (vwMatch && vwMatch[1]) {
-                  setFontSize(vwMatch[1]);
-                  setFontUnit("vw");
-                }
-              } else {
-                editor.commands.setContent(currentNodeText);
-              }
-            } else {
-              // If no valid content, set default text
-              editor.commands.setContent(
-                '<p class="text-inherit"><span>Text</span></p>'
-              );
-            }
-          }
-
-          setIsEditing(true);
-          setIsEditingText(true);
-          setInitialEditComplete(false);
-        }
-      }
-    }
-  };
-
+  // Add key event listener to prevent exiting edit mode when typing
   useEffect(() => {
     if (!editor || !isEditing) return;
 
-    // Save the entire HTML when editing starts
-    const originalHTML = node.style.text;
+    const handleKeyDown = (e) => {
+      preventExitRef.current = true;
+    };
 
-    const handleSelectionChange = () => {
-      // If selection changes and HTML content remains the same,
-      // it's probably just a cursor movement, not a content edit
-      if (editor.getHTML() === originalHTML) {
-        // Do nothing - this is important to not trigger style changes
-        return;
+    const handleKeyUp = (e) => {
+      preventExitRef.current = true;
+
+      // Save content after typing
+      setTimeout(() => {
+        if (editor && isEditing) {
+          const currentContent = editor.getHTML();
+          safeUpdateNodeContent(currentContent);
+        }
+      }, 100);
+    };
+
+    // Add events to editor DOM element
+    const editorElement = document.querySelector(
+      `[data-node-id="${node.id}"] .ProseMirror`
+    );
+    if (editorElement) {
+      editorElement.addEventListener("keydown", handleKeyDown);
+      editorElement.addEventListener("keyup", handleKeyUp);
+
+      return () => {
+        editorElement.removeEventListener("keydown", handleKeyDown);
+        editorElement.removeEventListener("keyup", handleKeyUp);
+      };
+    }
+  }, [editor, isEditing, node.id, safeUpdateNodeContent]);
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (node.isDynamic && dragState.dynamicModeNodeId === null) {
+        dragDisp.setDynamicModeNodeId(node.id);
+      } else {
+        if (isNodeSelected) {
+          e.stopPropagation();
+          e.preventDefault();
+
+          if (isEditing && initialEditComplete) {
+            if (editor) {
+              editor.view.focus();
+            }
+            return;
+          }
+
+          if (!isEditing) {
+            try {
+              // Set preventExitRef to true immediately to prevent click outside handling
+              preventExitRef.current = true;
+
+              // Reset content tracking
+              lastUpdatedContentRef.current = null;
+
+              // Check if the text has VW units
+              const hasVwUnits =
+                node.style.text && node.style.text.includes("vw");
+              hasVwUnitsRef.current = hasVwUnits;
+
+              if (editor) {
+                if (hasVwUnits) {
+                  // For VW units, we need special handling
+                  setDisplayUnit("vw");
+
+                  // Extract the VW value for the UI
+                  const vwValue = extractVwValue(node.style.text);
+                  if (vwValue !== null) {
+                    setFontSize(vwValue.toFixed(2));
+                  }
+
+                  // Convert VW to PX for editing
+                  const viewportWidth = getParentViewportWidth();
+                  const pxContent = convertHtmlVwToPx(
+                    node.style.text,
+                    viewportWidth
+                  );
+
+                  // Set editor content with PX values + data attributes
+                  editor.commands.setContent(pxContent);
+                } else if (node.style.text && node.style.text.trim() !== "") {
+                  // For regular PX content
+                  setDisplayUnit("px");
+                  editor.commands.setContent(node.style.text);
+
+                  // Extract PX value for UI
+                  const pxMatch = node.style.text.match(
+                    /font-size:\s*([0-9.]+)px/
+                  );
+                  if (pxMatch && pxMatch[1]) {
+                    setFontSize(pxMatch[1]);
+                  }
+                } else {
+                  // Default for empty nodes
+                  setDisplayUnit("px");
+                  editor.commands.setContent(
+                    '<p class="text-inherit"><span>Text</span></p>'
+                  );
+                  setFontSize("16");
+                }
+
+                // Make editor editable
+                editor.setEditable(true);
+              }
+
+              // Enter edit mode
+              setIsEditing(true);
+              setIsEditingText(true);
+              setInitialEditComplete(false);
+
+              // Use a timeout to focus the editor after React has updated the DOM
+              setTimeout(() => {
+                if (editor) {
+                  editor.view.focus();
+
+                  // Maintain the preventExitRef flag to ensure clicks don't immediately exit
+                  preventExitRef.current = true;
+
+                  // Position cursor or select text after focusing
+                  safeSimulateSelection(editor);
+                }
+              }, 50);
+
+              // Keep preventExitRef true for a while to prevent mousedown events from exiting
+              setTimeout(() => {
+                preventExitRef.current = true;
+              }, 300);
+            } catch (error) {
+              console.error("Error in handleDoubleClick:", error);
+
+              // Fallback to basic edit mode
+              if (editor) {
+                editor.commands.setContent(
+                  node.style.text ||
+                    '<p class="text-inherit"><span>Text</span></p>'
+                );
+                editor.setEditable(true);
+                setIsEditing(true);
+                setIsEditingText(true);
+
+                // Focus after a brief delay
+                setTimeout(() => {
+                  editor.view.focus();
+                }, 50);
+              }
+            }
+          }
+        }
       }
-    };
-
-    editor.on("selectionUpdate", handleSelectionChange);
-
-    return () => {
-      editor.off("selectionUpdate", handleSelectionChange);
-    };
-  }, [editor, isEditing, node.style.text]);
+    },
+    [
+      node,
+      isNodeSelected,
+      isEditing,
+      initialEditComplete,
+      editor,
+      dragState.dynamicModeNodeId,
+      dragDisp,
+      extractVwValue,
+      convertHtmlVwToPx,
+      getParentViewportWidth,
+      setIsEditingText,
+      safeSimulateSelection,
+    ]
+  );
 
   const handleBlur = useCallback(
     (e) => {
+      // Don't exit edit mode on blur - this prevents issues when clicking toolbar
       if (toolbarInteractionRef.current) {
         e.preventDefault();
         return;
       }
 
+      // Still save content on blur
       if (
         !editor?.view.hasFocus() &&
         !toolbarInteractionRef.current &&
         isEditing
       ) {
         const currentHtml = editor?.getHTML();
+
         if (currentHtml !== node.style.text) {
-          setNodeStyle(
-            { text: currentHtml },
-            undefined, // IMPORTANT: Only update this specific node
-            true,
-            false,
-            false
-          );
+          try {
+            // Process HTML based on display unit
+            let finalHtml = currentHtml;
+            if (displayUnit === "vw") {
+              finalHtml = convertHtmlPxToVw(
+                currentHtml,
+                getParentViewportWidth()
+              );
+            }
+
+            // Update node style WITHOUT exiting edit mode
+            preventExitRef.current = true;
+            setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+          } catch (error) {
+            console.error("Error in handleBlur:", error);
+          }
         }
       }
     },
-    [editor, node.style.text, setNodeStyle, isEditing]
+    [
+      editor,
+      node.style.text,
+      setNodeStyle,
+      isEditing,
+      displayUnit,
+      convertHtmlPxToVw,
+      getParentViewportWidth,
+    ]
   );
 
   const style: CSSProperties = {
@@ -961,45 +1543,88 @@ const TextElement = ({ node }: ElementProps) => {
     ...node.style,
   };
 
+  // Adjust the VW display for proper viewport visualization
   const adjustTextForViewport = useCallback(() => {
-    if (!editor || !isEditing || !node.style.text.includes("vw")) return;
+    if (!editor || !isEditing) return;
 
     try {
+      // Check if we have VW units to process
+      const hasVwUnits =
+        editor.getHTML().includes("vw") ||
+        editor.getHTML().includes("data-vw-size");
+
+      if (!hasVwUnits) return;
+
       const viewportWidth = getParentViewportWidth();
+      if (!viewportWidth) return;
+
+      // Get the editor element DOM node
       const editorElement = document.querySelector(
         `[data-node-id="${node.id}"] .ProseMirror`
       );
+
       if (!editorElement) return;
 
-      // Find spans with vw units
-      const spans = editorElement.querySelectorAll('span[style*="vw"]');
-      spans.forEach((span) => {
-        const style = span.getAttribute("style") || "";
-        const vwMatch = style.match(/font-size:\s*([0-9.]+)vw/);
+      // Find all spans with font-size styling
+      const spans = editorElement.querySelectorAll('span[style*="font-size"]');
 
-        if (vwMatch && vwMatch[1]) {
-          const vwValue = parseFloat(vwMatch[1]);
-          const pxValue = (vwValue * viewportWidth) / 100;
+      // Find all paragraphs (to handle line breaks)
+      const paragraphs = editorElement.querySelectorAll("p");
 
-          // Apply computed pixel value directly
-          span.style.fontSize = `${pxValue}px`;
-          // Store original vw value as data attribute
-          span.dataset.vwSize = vwValue;
+      // Process both direct spans and paragraphs
+      const allElements = [...spans, ...paragraphs];
+
+      allElements.forEach((element) => {
+        try {
+          const style = element.getAttribute("style") || "";
+
+          // First check for VW in style
+          const vwMatch = style.match(/font-size:\s*([0-9.]+)vw/);
+          if (vwMatch && vwMatch[1]) {
+            const vwValue = parseFloat(vwMatch[1]);
+            const pxValue = (vwValue * viewportWidth) / 100;
+
+            // Apply pixel value for display but keep VW data
+            element.style.fontSize = `${pxValue.toFixed(0)}px`;
+            element.dataset.vwSize = vwValue.toString();
+          }
+
+          // Then check for data-vw-size attribute
+          else if (element.dataset.vwSize) {
+            const vwValue = parseFloat(element.dataset.vwSize);
+            const pxValue = (vwValue * viewportWidth) / 100;
+
+            // Just update the pixel size
+            element.style.fontSize = `${pxValue.toFixed(0)}px`;
+          }
+        } catch (err) {
+          console.error("Error processing element:", err);
         }
       });
-    } catch (err) {
-      console.error("Error adjusting text for viewport:", err);
-    }
-  }, [editor, isEditing, node.id, node.style.text, getParentViewportWidth]);
 
-  // Add this effect to call the function when needed
+      // Also handle any direct style attribute on the editor element itself
+      if (editorElement.style.fontSize && editorElement.dataset.vwSize) {
+        const vwValue = parseFloat(editorElement.dataset.vwSize);
+        const pxValue = (vwValue * viewportWidth) / 100;
+        editorElement.style.fontSize = `${pxValue.toFixed(0)}px`;
+      }
+    } catch (err) {
+      console.error("Error in adjustTextForViewport:", err);
+    }
+  }, [editor, isEditing, node.id, getParentViewportWidth]);
+
+  // Setup DOM observer to adjust viewport when content changes
   useEffect(() => {
-    if (isEditing && node.style.text?.includes("vw")) {
+    if (isEditing && displayUnit === "vw") {
       // Initial adjustment
       adjustTextForViewport();
 
-      // Set up observer to handle dynamic changes
-      const observer = new MutationObserver(adjustTextForViewport);
+      // Monitor for changes requiring viewport adjustment
+      const observer = new MutationObserver(() => {
+        adjustTextForViewport();
+        preventExitRef.current = true; // Prevent edit mode exit
+      });
+
       const editorElement = document.querySelector(
         `[data-node-id="${node.id}"] .ProseMirror`
       );
@@ -1009,12 +1634,232 @@ const TextElement = ({ node }: ElementProps) => {
           childList: true,
           subtree: true,
           attributes: true,
+          characterData: true,
         });
       }
 
       return () => observer.disconnect();
     }
-  }, [isEditing, node.style.text, adjustTextForViewport]);
+  }, [isEditing, displayUnit, node.id, adjustTextForViewport]);
+
+  // ===== ADD THIS TO TextElement.jsx =====
+
+  // New method: Direct DOM-based font size adjustment for partial selections
+  // This bypasses TipTap's selection handling entirely when needed
+  const handleFontSizeWithDOM = useCallback(
+    (value, unit) => {
+      if (!editor) return;
+
+      // Start toolbar interaction
+      toolbarInteractionRef.current = true;
+      preventExitRef.current = true;
+
+      try {
+        // Parse numeric value
+        const numericValue = parseFloat(value);
+        if (isNaN(numericValue)) return;
+
+        // Format value based on unit
+        const formattedValue =
+          unit === "vw"
+            ? numericValue.toFixed(2)
+            : Math.round(numericValue).toString();
+
+        // Update display in UI
+        setFontSize(formattedValue);
+
+        // Get selection information
+        const selection = editor.state.selection;
+        const { from, to } = selection;
+        const hasPartialSelection = !selection.empty && from > 1;
+
+        // For multi-line text with VW units, use existing special handling
+        const isMultiLine = editor.getHTML().includes("</p><p");
+        if (isMultiLine && (unit === "vw" || displayUnit === "vw")) {
+          directUpdateFontSize(value, unit || displayUnit);
+          return;
+        }
+
+        // For complete selection or unit change, use existing approach
+        if (!hasPartialSelection || unit !== displayUnit) {
+          if (unit !== displayUnit) {
+            setDisplayUnit(unit);
+          }
+          directUpdateFontSize(value, unit || displayUnit);
+          return;
+        }
+
+        // For partial selection, use DOM-based approach
+        // This is the key to fixing the "bouncing" issue
+        const editorElement = document.querySelector(
+          `[data-node-id="${node.id}"] .ProseMirror`
+        );
+        if (!editorElement) return;
+
+        // 1. Force browser focus on editor
+        editor.view.focus();
+
+        // 2. Create a transaction that flags we're in a special operation
+        // This prevents other handlers from interfering
+        editor.view.dispatch(
+          editor.state.tr.setMeta("fontSizeOperation", true)
+        );
+
+        // 3. Get window selection for direct DOM manipulation
+        const domSelection = window.getSelection();
+        if (!domSelection || domSelection.rangeCount === 0) return;
+
+        // 4. Get the selected range
+        const range = domSelection.getRangeAt(0);
+        if (!range) return;
+
+        // 5. Create document fragment with the selected content
+        const fragment = range.cloneContents();
+        if (!fragment) return;
+
+        // 6. Prepare new spans with updated styling
+        const tempDiv = document.createElement("div");
+        tempDiv.appendChild(fragment);
+
+        // 7. Apply font size to all text nodes within the selection
+        const spanNodes = tempDiv.querySelectorAll("span");
+        if (spanNodes.length === 0) {
+          // If no spans found, wrap text in span
+          const newSpan = document.createElement("span");
+          newSpan.style.fontSize = `${formattedValue}${unit || displayUnit}`;
+          while (tempDiv.firstChild) {
+            newSpan.appendChild(tempDiv.firstChild);
+          }
+          tempDiv.appendChild(newSpan);
+        } else {
+          // Update all spans in the selection
+          spanNodes.forEach((span) => {
+            span.style.fontSize = `${formattedValue}${unit || displayUnit}`;
+          });
+        }
+
+        // 8. Replace the selected content with our modified version
+        range.deleteContents();
+        range.insertNode(tempDiv);
+
+        // 9. Clean up the temporary div (unwrap it)
+        while (tempDiv.firstChild) {
+          tempDiv.parentNode.insertBefore(tempDiv.firstChild, tempDiv);
+        }
+        tempDiv.parentNode.removeChild(tempDiv);
+
+        // 10. Update selection
+        domSelection.removeAllRanges();
+        domSelection.addRange(range);
+
+        // 11. Update editor content from DOM
+        // This is a key step - it synchronizes the editor state with our DOM changes
+        const newContent = editorElement.innerHTML;
+        editor.commands.setContent(newContent);
+
+        // 12. Re-select the text
+        setTimeout(() => {
+          editor.commands.setTextSelection({ from, to });
+          editor.view.focus();
+        }, 0);
+
+        // 13. Update node content
+        setTimeout(() => {
+          const updatedHtml = editor.getHTML();
+          safeUpdateNodeContent(updatedHtml);
+        }, 10);
+      } catch (error) {
+        console.error("Error in handleFontSizeWithDOM:", error);
+      } finally {
+        // End toolbar interaction with longer delay
+        setTimeout(() => {
+          toolbarInteractionRef.current = false;
+        }, 100);
+      }
+    },
+    [editor, node.id, displayUnit, directUpdateFontSize, safeUpdateNodeContent]
+  );
+
+  const applyFontSizeToSelection = useCallback(
+    (fontSize, unit) => {
+      if (!editor) return;
+
+      // Lock toolbar interaction for the entire operation
+      toolbarInteractionRef.current = true;
+      preventExitRef.current = true;
+
+      try {
+        // Save current selection state
+        const currentSelection = editor.state.selection;
+        const hasSelection = !currentSelection.empty;
+
+        // Parse value
+        const numericValue = parseFloat(fontSize);
+        if (isNaN(numericValue)) return;
+
+        // Format value based on unit
+        const formattedValue =
+          unit === "vw"
+            ? Math.round(numericValue * 100) / 100 // 2 decimal places for VW
+            : Math.round(numericValue); // Integer for px
+
+        // Create font size string
+        const fontSizeValue = `${formattedValue}${unit}`;
+
+        // CRITICAL: For mid-text selections, we need to:
+        // 1. Create a transaction that applies the mark directly to the selection
+        // 2. Dispatch the transaction manually to ensure precision
+        // 3. Force focus on the editor
+        if (hasSelection) {
+          const { from, to } = currentSelection;
+
+          // Create the transaction
+          const tr = editor.state.tr;
+
+          // Get any existing marks to preserve
+          const currentMarks = editor.schema.marks.textStyle.create({
+            ...editor.getAttributes("textStyle"),
+            fontSize: fontSizeValue,
+          });
+
+          // Add the mark to the exact selection range
+          tr.addMark(from, to, currentMarks);
+
+          // Dispatch the transaction
+          editor.view.dispatch(tr);
+
+          // Force focus and restore selection
+          editor.view.focus();
+
+          // Update node style after a delay to ensure changes are processed
+          setTimeout(() => {
+            const updatedHtml = editor.getHTML();
+            safeUpdateNodeContent(updatedHtml);
+          }, 20);
+        }
+        // For whole-text changes, use the standard approach
+        else {
+          editor.chain().focus().setFontSize(fontSizeValue).run();
+
+          // Update node content
+          const updatedHtml = editor.getHTML();
+          safeUpdateNodeContent(updatedHtml);
+        }
+
+        // Update UI state
+        setFontSize(formattedValue.toString());
+      } catch (error) {
+        console.error("Error in applyFontSizeToSelection:", error);
+      } finally {
+        // Keep toolbar interaction flag active longer to prevent interference
+        setTimeout(() => {
+          toolbarInteractionRef.current = false;
+          if (editor) editor.view.focus();
+        }, 150); // Longer timeout to ensure stability
+      }
+    },
+    [editor, safeUpdateNodeContent]
+  );
 
   return (
     <ResizableWrapper node={node}>
@@ -1026,12 +1871,19 @@ const TextElement = ({ node }: ElementProps) => {
             editor={editor}
             fontSize={fontSize}
             setFontSize={setFontSize}
-            fontUnit={fontUnit} // Pass the current font unit
-            setFontUnit={setFontUnit} // Pass the setter function
+            fontUnit={displayUnit}
+            setFontUnit={setDisplayUnit}
+            lineHeight={lineHeight} // Add this line
+            setLineHeight={setLineHeight} // Add this line
+            letterSpacing={letterSpacing} // Add this line
+            setLetterSpacing={setLetterSpacing} // Add this line
             onToolbarInteractionStart={handleToolbarInteractionStart}
             onToolbarInteractionEnd={handleToolbarInteractionEnd}
-            handleFontSizeChange={handleFontSizeChange} // Pass our custom handler
-            node={node} // Pass the node to the menu
+            handleFontSizeChange={handleFontSizeChange}
+            directUpdateFontSize={directUpdateFontSize}
+            handleLineHeightChange={handleLineHeightChange} // Add this line
+            handleLetterSpacingChange={handleLetterSpacingChange} // Add this line
+            node={node}
           />
         )}
         <div
@@ -1054,18 +1906,20 @@ const TextElement = ({ node }: ElementProps) => {
             if (isEditing && isNodeSelected) {
               e.stopPropagation();
               setIsEditingText(true);
+              preventExitRef.current = true;
             }
           }}
           onMouseDown={(e) => {
             if (isEditing && isNodeSelected) {
-              console.log("bruh");
               setIsEditingText(true);
               e.stopPropagation();
+              preventExitRef.current = true;
             }
           }}
           onMouseUp={(e) => {
             if (isEditing && isNodeSelected) {
               e.stopPropagation();
+              preventExitRef.current = true;
             }
           }}
         >

@@ -5,7 +5,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 
 const ConnectionTypeModal: React.FC = () => {
-  const { dragState, dragDisp, nodeDisp } = useBuilder();
+  const { dragState, dragDisp, nodeDisp, nodeState } = useBuilder();
   const { connectionTypeModal } = dragState;
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = React.useState(false);
@@ -44,6 +44,85 @@ const ConnectionTypeModal: React.FC = () => {
     }
   }, [connectionTypeModal.show]);
 
+  // Function to find responsive counterparts of a node across all viewports
+  const findResponsiveCounterparts = (nodeId: string | number) => {
+    const counterparts: string[] = [];
+    const node = nodeState.nodes.find((n) => n.id === nodeId);
+
+    if (!node || !node.variantResponsiveId) return counterparts;
+
+    // Find all nodes with the same variantResponsiveId (responsive siblings)
+    const responsiveNodes = nodeState.nodes.filter(
+      (n) =>
+        n.variantResponsiveId === node.variantResponsiveId && n.id !== nodeId
+    );
+
+    responsiveNodes.forEach((responsiveNode) => {
+      counterparts.push(responsiveNode.id.toString());
+    });
+
+    return counterparts;
+  };
+
+  // Function to create connections across responsive counterparts
+  const createResponsiveConnections = (
+    sourceId: string | number,
+    targetId: string | number,
+    connectionType: "click" | "hover" | "mouseLeave"
+  ) => {
+    // Get source and target nodes
+    const sourceNode = nodeState.nodes.find((n) => n.id === sourceId);
+    const targetNode = nodeState.nodes.find((n) => n.id === targetId);
+
+    if (!sourceNode || !targetNode) return;
+
+    // Find the responsive counterparts
+    const sourceCounterparts = findResponsiveCounterparts(sourceId);
+    const targetCounterparts = findResponsiveCounterparts(targetId);
+
+    console.log("Source Counterparts:", sourceCounterparts);
+    console.log("Target Counterparts:", targetCounterparts);
+
+    // Map targets to their viewport IDs for easier matching
+    const targetsByViewport = new Map();
+
+    targetNode.dynamicViewportId &&
+      targetsByViewport.set(targetNode.dynamicViewportId, targetId);
+
+    targetCounterparts.forEach((counterpartId) => {
+      const counterpart = nodeState.nodes.find((n) => n.id === counterpartId);
+      if (counterpart && counterpart.dynamicViewportId) {
+        targetsByViewport.set(counterpart.dynamicViewportId, counterpartId);
+      }
+    });
+
+    // For each source counterpart, find the target in the same viewport and connect them
+    sourceCounterparts.forEach((sourceCounterpartId) => {
+      const counterpart = nodeState.nodes.find(
+        (n) => n.id === sourceCounterpartId
+      );
+
+      if (counterpart && counterpart.dynamicViewportId) {
+        const viewportId = counterpart.dynamicViewportId;
+        const matchingTargetId = targetsByViewport.get(viewportId);
+
+        if (matchingTargetId) {
+          console.log(
+            `Creating responsive connection: ${sourceCounterpartId} -> ${matchingTargetId} (${connectionType})`
+          );
+
+          // Create the connection in this viewport
+          nodeDisp.addUniqueDynamicConnection(
+            sourceCounterpartId,
+            matchingTargetId,
+            connectionType,
+            dragState.dynamicModeNodeId
+          );
+        }
+      }
+    });
+  };
+
   if (!connectionTypeModal.show) return null;
 
   const handleClose = () => {
@@ -64,14 +143,16 @@ const ConnectionTypeModal: React.FC = () => {
     const { sourceId, targetId } = connectionTypeModal;
 
     if (sourceId && targetId) {
-      // Use the addUniqueDynamicConnection method directly
-      // This enforces one connection per type per source node
+      // Create the primary connection
       nodeDisp.addUniqueDynamicConnection(
         sourceId,
         targetId,
         type,
         dragState.dynamicModeNodeId
       );
+
+      // Then cascade the connection to all responsive counterparts
+      createResponsiveConnections(sourceId, targetId, type);
     }
 
     // Hide the modal

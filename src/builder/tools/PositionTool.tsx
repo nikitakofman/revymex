@@ -27,8 +27,6 @@ export const PositionTool = () => {
     .find((n) => n.id === dragState.selectedIds[0])
     ?.id.includes("viewport");
 
-  console.log("viewportNode", viewportNode);
-
   const position = positionStyle.mixed
     ? "static"
     : (positionStyle.value as string);

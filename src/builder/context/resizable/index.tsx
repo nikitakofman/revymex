@@ -97,6 +97,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     isEditingText,
     isFontSizeHandleActive,
     isMiddleMouseDown,
+    isDraggingChevrons,
+    isTextMenuOpen,
   } = useBuilder();
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
@@ -495,8 +497,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       {/* Only render visual helpers for unlocked nodes */}
       {!isMoveCanvasMode &&
         !isEditingText &&
+        !isTextMenuOpen &&
         !isFontSizeHandleActive &&
-        !isMiddleMouseDown && (
+        !isMiddleMouseDown &&
+        !isDraggingChevrons && (
           <VisualHelpers
             elementRef={elementRef}
             node={node}

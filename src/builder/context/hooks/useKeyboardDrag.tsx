@@ -20,6 +20,22 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
   const isAltPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
 
+  // Add this to track when we've already handled the Alt key duplication for this drag
+  const altDuplicationHandledRef = useRef(false);
+
+  // Reset the Alt state when window loses focus
+  useEffect(() => {
+    const handleBlur = () => {
+      isAltPressedRef.current = false;
+      altDuplicationHandledRef.current = false;
+    };
+
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
   // Handle keyboard shortcuts
   useEffect(() => {
     if (
@@ -42,8 +58,10 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
         e.preventDefault();
         isAltPressedRef.current = true;
 
-        if (dragState.isDragging) {
+        // Only duplicate immediately if we're already dragging
+        if (dragState.isDragging && !altDuplicationHandledRef.current) {
           handleDuplicate();
+          altDuplicationHandledRef.current = true;
         }
       }
 
@@ -70,6 +88,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
         handleDelete();
       }
 
+      // Other key handlers remain the same...
       // Handle Copy
       if (e.key === "c" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -94,7 +113,6 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
       }
 
       // Hide element (display none)
-
       if (e.key.toLowerCase() === "i" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         if (dragState.selectedIds.length > 0) {
@@ -135,6 +153,8 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Alt") {
         isAltPressedRef.current = false;
+        // Reset the duplication handled flag
+        altDuplicationHandledRef.current = false;
       }
 
       if (e.code === "Space") {
@@ -175,17 +195,17 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
 
   // Handle drag start while Alt is pressed
   useEffect(() => {
-    if (dragState.isDragging && isAltPressedRef.current) {
-      handleDuplicate();
-    }
-  }, [dragState.isDragging]);
-
-  // Reset flags when drag ends
-  useEffect(() => {
-    if (!dragState.isDragging) {
+    if (dragState.isDragging) {
+      if (isAltPressedRef.current && !altDuplicationHandledRef.current) {
+        handleDuplicate();
+        altDuplicationHandledRef.current = true;
+      }
+    } else {
+      // Reset the flag when drag ends
+      altDuplicationHandledRef.current = false;
       dragDisp.setDuplicatedFromAlt(false);
     }
-  }, [dragState.isDragging]);
+  }, [dragState.isDragging, handleDuplicate, dragDisp]);
 
   return {
     isAltPressed: isAltPressedRef.current,

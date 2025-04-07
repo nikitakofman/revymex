@@ -41,6 +41,31 @@ export const ConnectionHandle: React.FC<{
     const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
     if (!targetNode) return nodeId;
 
+    // FIXED: If this node doesn't have a dynamicFamilyId, it should be directly targeted without redirection
+    if (!targetNode.dynamicFamilyId) {
+      return nodeId;
+    }
+
+    // ADDED FOR BASE NODE: If this is a direct child of a base node, return the base node
+    if (targetNode.dynamicParentId && !targetNode.isVariant) {
+      const baseNode = nodeState.nodes.find(
+        (n) => n.id === targetNode.dynamicParentId
+      );
+      if (baseNode && baseNode.isDynamic) {
+        return baseNode.id;
+      }
+    }
+
+    // ADDED FOR BASE NODE: Check direct parent relationship
+    if (targetNode.parentId) {
+      const parentNode = nodeState.nodes.find(
+        (n) => n.id === targetNode.parentId
+      );
+      if (parentNode && parentNode.isDynamic) {
+        return parentNode.id;
+      }
+    }
+
     // If this is the main dynamic node or has no parent, it's already the top
     if (nodeId === dragState.dynamicModeNodeId || !targetNode.parentId) {
       return nodeId;
@@ -186,6 +211,12 @@ export const ConnectionHandle: React.FC<{
     }
   }, [dragState.connectionTypeModal, node.id, dragState.selectedIds]);
 
+  // Helper function to check if a node has a dynamicFamilyId
+  const hasDynamicFamilyId = (nodeId: string | number): boolean => {
+    const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
+    return !!targetNode?.dynamicFamilyId;
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -233,6 +264,11 @@ export const ConnectionHandle: React.FC<{
             targetId !== node.id &&
             !sourceAncestors.includes(targetId)
           ) {
+            // CRITICAL FIX: Check if this is a node that should be ignored
+            if (!hasDynamicFamilyId(targetId)) {
+              continue; // Skip nodes without dynamicFamilyId - they cannot be targets
+            }
+
             // Find the topmost parent in the dynamic system
             const topmostParentId = findTopmostParent(targetId);
 
@@ -269,6 +305,14 @@ export const ConnectionHandle: React.FC<{
 
       // If we have a hover target, show the connection type modal
       if (currentHoverTarget) {
+        // CRITICAL FIX: Double-check that the target has a dynamicFamilyId
+        if (!hasDynamicFamilyId(currentHoverTarget.id)) {
+          // Clean up and exit if target doesn't have dynamicFamilyId
+          window.removeEventListener("mousemove", handleMouseMove);
+          window.removeEventListener("mouseup", handleMouseUp);
+          return;
+        }
+
         console.log("Showing modal for target:", currentHoverTarget.id);
 
         // Ensure our source node remains selected
@@ -281,8 +325,6 @@ export const ConnectionHandle: React.FC<{
           x: upEvent.clientX,
           y: upEvent.clientY,
         });
-
-        // Keep the hover target for visual indication during modal display
       } else {
         // If no hover target, check if we're over any valid target
         const elementsUnder = document.elementsFromPoint(
@@ -300,11 +342,21 @@ export const ConnectionHandle: React.FC<{
               targetId !== node.id &&
               !sourceAncestors.includes(targetId)
             ) {
+              // CRITICAL FIX: Skip nodes without dynamicFamilyId - they cannot be targets
+              if (!hasDynamicFamilyId(targetId)) {
+                continue;
+              }
+
               // Find the topmost parent in the dynamic system
               const topmostParentId = findTopmostParent(targetId);
 
               // Skip if this is an ancestor of the source node
               if (sourceAncestors.includes(topmostParentId)) {
+                continue;
+              }
+
+              // CRITICAL FIX: Skip if topmost parent doesn't have dynamicFamilyId
+              if (!hasDynamicFamilyId(topmostParentId)) {
                 continue;
               }
 
@@ -325,14 +377,14 @@ export const ConnectionHandle: React.FC<{
               });
 
               // Set hover target for visual indication during modal display
-              const topmostElement = document.querySelector(
+              const targetElement = document.querySelector(
                 `[data-node-id="${topmostParentId}"]`
               );
 
-              if (topmostElement) {
+              if (targetElement) {
                 setHoverTarget({
                   id: topmostParentId,
-                  rect: topmostElement.getBoundingClientRect(),
+                  rect: targetElement.getBoundingClientRect(),
                 });
               }
 

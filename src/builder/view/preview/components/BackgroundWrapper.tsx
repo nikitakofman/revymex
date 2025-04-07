@@ -98,7 +98,11 @@ export const BackgroundWrapper: React.FC<BackgroundWrapperProps> = ({
           <Image
             alt=""
             loading="lazy"
-            src={backgroundImage}
+            src={
+              backgroundImage.startsWith("url(")
+                ? backgroundImage.match(/url\(['"]?(.*?)['"]?\)/i)?.[1] || ""
+                : backgroundImage
+            }
             fill={true}
             sizes="100vw"
             style={{
