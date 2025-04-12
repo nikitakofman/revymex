@@ -54,151 +54,38 @@ export const ArrowConnectors = () => {
     );
   }, [nodeState.nodes, activeViewportId]);
 
-  // Get nodes that should show connections based on the current viewport and selection
-  const relevantNodes = useMemo(() => {
-    if (!dragState.dynamicModeNodeId || !activeViewportId) return [];
-
-    // Find the main dynamic node for this viewport
-    const mainViewportNode = nodeState.nodes.find(
-      (n) => n.isDynamic && n.dynamicViewportId === activeViewportId
-    );
-
-    if (!mainViewportNode) return [];
-
-    // Get all nodes in this viewport that are part of the dynamic system
-    const systemNodes: Node[] = [];
-
-    // Add main viewport node
-    systemNodes.push(mainViewportNode);
-
-    // Add all nodes with the main viewport node as their dynamic parent
-    nodeState.nodes.forEach((node) => {
-      if (
-        (node.dynamicParentId === mainViewportNode.id ||
-          node.parentId === mainViewportNode.id) &&
-        node.dynamicViewportId === activeViewportId
-      ) {
-        systemNodes.push(node);
-
-        // Also add children of variants
-        if (node.isVariant) {
-          nodeState.nodes.forEach((childNode) => {
-            if (childNode.parentId === node.id) {
-              systemNodes.push(childNode);
-            }
-          });
-        }
-      }
-    });
-
-    // If no nodes are selected, don't show any arrows
-    if (dragState.selectedIds.length === 0) {
-      return [];
-    }
-
-    // Find all nodes that have connections in this viewport
-    const nodesWithConnections: Node[] = [];
-
-    // Find all nodes that could be connection sources or targets
-    for (const node of nodesInActiveViewport) {
-      // Add nodes that have dynamic connections
-      if (node.dynamicConnections && node.dynamicConnections.length > 0) {
-        nodesWithConnections.push(node);
-      }
-
-      // Add nodes that are targets of dynamic connections
-      const isTarget = nodesInActiveViewport.some((potentialSource) =>
-        potentialSource.dynamicConnections?.some(
-          (conn) =>
-            conn.targetId === node.id &&
-            potentialSource.dynamicViewportId === activeViewportId
-        )
-      );
-
-      if (isTarget && !nodesWithConnections.includes(node)) {
-        nodesWithConnections.push(node);
-      }
-    }
-
-    // Filter to include selected nodes or nodes connected to selected nodes
-    const selectedNodesInSystem = systemNodes.filter((node) => {
-      // Direct selection
-      if (dragState.selectedIds.includes(node.id)) {
-        return true;
-      }
-
-      // Has a connection to/from a selected node
-      for (const selectedId of dragState.selectedIds) {
-        // Check if this node has a connection to the selected node
-        if (
-          node.dynamicConnections?.some((conn) => conn.targetId === selectedId)
-        ) {
-          return true;
-        }
-
-        // Check if the selected node has a connection to this node
-        const selectedNode = nodeState.nodes.find((n) => n.id === selectedId);
-        if (
-          selectedNode?.dynamicConnections?.some(
-            (conn) => conn.targetId === node.id
-          )
-        ) {
-          return true;
-        }
-      }
-
-      return false;
-    });
-
-    return [...selectedNodesInSystem, ...nodesWithConnections];
-  }, [
-    nodeState.nodes,
-    dragState.dynamicModeNodeId,
-    dragState.selectedIds,
-    activeViewportId,
-    nodesInActiveViewport,
-  ]);
-
   // Find all relevant connections in the current viewport
+  // FIXED: Only include connections where the source OR target is directly selected
   const relevantConnections = useMemo(() => {
-    if (!activeViewportId) return [];
+    if (!activeViewportId || dragState.selectedIds.length === 0) return [];
 
     const result = [];
     const processedConnections = new Set();
 
-    // Check all nodes in the active viewport
-    for (const node of nodesInActiveViewport) {
-      // Skip nodes without connections
-      if (!node.dynamicConnections || node.dynamicConnections.length === 0)
-        continue;
+    // Direct connections from selected nodes
+    for (const selectedId of dragState.selectedIds) {
+      const selectedNode = nodeState.nodes.find((n) => n.id === selectedId);
+      if (!selectedNode) continue;
 
-      // Check each connection
-      for (const conn of node.dynamicConnections) {
-        // Create a unique identifier for this connection
-        const connectionKey = `${conn.sourceId}-${conn.targetId}-${conn.type}`;
+      // Check outgoing connections from the selected node
+      if (
+        selectedNode.dynamicConnections &&
+        selectedNode.dynamicConnections.length > 0
+      ) {
+        for (const conn of selectedNode.dynamicConnections) {
+          // Skip if we've already processed this connection
+          const connectionKey = `${conn.sourceId}-${conn.targetId}-${conn.type}`;
+          if (processedConnections.has(connectionKey)) continue;
+          processedConnections.add(connectionKey);
 
-        // Skip if we've already processed this connection
-        if (processedConnections.has(connectionKey)) continue;
-        processedConnections.add(connectionKey);
+          // Get the target node
+          const targetNode = nodeState.nodes.find(
+            (n) => n.id === conn.targetId
+          );
+          // Skip if the target doesn't exist or isn't in the same viewport
+          if (!targetNode || targetNode.dynamicViewportId !== activeViewportId)
+            continue;
 
-        // Get the target node
-        const targetNode = nodeState.nodes.find((n) => n.id === conn.targetId);
-
-        // Skip if the target doesn't exist or isn't in the same viewport
-        if (!targetNode || targetNode.dynamicViewportId !== activeViewportId)
-          continue;
-
-        // Check if the source or target is selected, or if a parent of either is selected
-        const isSourceSelected = dragState.selectedIds.includes(conn.sourceId);
-        const isTargetSelected = dragState.selectedIds.includes(conn.targetId);
-
-        // Include connections where either the source or target is selected
-        if (
-          isSourceSelected ||
-          isTargetSelected ||
-          isNodeOrParentSelected(conn.sourceId) ||
-          isNodeOrParentSelected(conn.targetId)
-        ) {
           result.push({
             ...conn,
             connectionKey,
@@ -209,32 +96,40 @@ export const ArrowConnectors = () => {
       }
     }
 
-    return result;
-  }, [nodesInActiveViewport, activeViewportId, dragState.selectedIds]);
+    // Direct connections to selected nodes (incoming connections)
+    for (const node of nodesInActiveViewport) {
+      // Skip nodes without connections
+      if (!node.dynamicConnections || node.dynamicConnections.length === 0)
+        continue;
 
-  // Helper function to check if a node or any of its parents is selected
-  function isNodeOrParentSelected(nodeId: string | number): boolean {
-    const node = nodeState.nodes.find((n) => n.id === nodeId);
-    if (!node) return false;
+      // Check each connection for a selected target
+      for (const conn of node.dynamicConnections) {
+        // Skip if the target is not selected
+        if (!dragState.selectedIds.includes(conn.targetId)) continue;
 
-    // Check if the node itself is selected
-    if (dragState.selectedIds.includes(nodeId)) return true;
+        // Create a unique identifier for this connection
+        const connectionKey = `${conn.sourceId}-${conn.targetId}-${conn.type}`;
 
-    // Check if any parent is selected
-    let currentNode = node;
-    while (currentNode.parentId) {
-      if (dragState.selectedIds.includes(currentNode.parentId)) return true;
+        // Skip if we've already processed this connection
+        if (processedConnections.has(connectionKey)) continue;
+        processedConnections.add(connectionKey);
 
-      const parentNode = nodeState.nodes.find(
-        (n) => n.id === currentNode.parentId
-      );
-      if (!parentNode) break;
-
-      currentNode = parentNode;
+        result.push({
+          ...conn,
+          connectionKey,
+          sourceId: conn.sourceId,
+          targetId: conn.targetId,
+        });
+      }
     }
 
-    return false;
-  }
+    return result;
+  }, [
+    nodesInActiveViewport,
+    activeViewportId,
+    dragState.selectedIds,
+    nodeState.nodes,
+  ]);
 
   // Group connections by source-target pair
   const connectionGroups = useMemo(() => {
@@ -385,12 +280,6 @@ export const ArrowConnectors = () => {
   };
 
   // Debugging info
-  console.log("Active Viewport:", activeViewportId);
-  console.log(
-    "Relevant Nodes:",
-    relevantNodes.map((n) => n.id)
-  );
-  console.log("Relevant Connections:", relevantConnections);
 
   return (
     <div className="absolute inset-0 pointer-events-none z-50">

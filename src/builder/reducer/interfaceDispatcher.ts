@@ -6,7 +6,8 @@ export interface InterfaceState {
   isCmsOpen: boolean;
   isPreviewOpen: boolean;
   isPagesOpen: boolean;
-  isComponentsOpen: boolean;
+  isLibraryOpen: boolean;
+  isUIKitsOpen: boolean;
   isTyping: boolean;
   previewWidth: number | null;
 }
@@ -24,7 +25,7 @@ export class InterfaceDispatcher {
           draft.isLayersOpen = false;
           draft.isCmsOpen = false;
           draft.isPagesOpen = false;
-          draft.isComponentsOpen = false;
+          draft.isLibraryOpen = false;
           draft.isPreviewOpen = false;
         }
       })
@@ -39,7 +40,7 @@ export class InterfaceDispatcher {
           draft.isInsertOpen = false;
           draft.isCmsOpen = false;
           draft.isPagesOpen = false;
-          draft.isComponentsOpen = false;
+          draft.isLibraryOpen = false;
           draft.isPreviewOpen = false;
         }
       })
@@ -54,7 +55,7 @@ export class InterfaceDispatcher {
           draft.isInsertOpen = false;
           draft.isLayersOpen = false;
           draft.isPagesOpen = false;
-          draft.isComponentsOpen = false;
+          draft.isLibraryOpen = false;
           draft.isPreviewOpen = false;
         }
       })
@@ -70,17 +71,17 @@ export class InterfaceDispatcher {
           draft.isInsertOpen = false;
           draft.isPreviewOpen = false;
           draft.isLayersOpen = false;
-          draft.isComponentsOpen = false;
+          draft.isLibraryOpen = false;
         }
       })
     );
   }
 
-  toggleComponents() {
+  toggleLibrary() {
     this.setState(
       produce((draft) => {
-        draft.isComponentsOpen = !draft.isComponentsOpen;
-        if (draft.isComponentsOpen) {
+        draft.isLibraryOpen = !draft.isLibraryOpen;
+        if (draft.isLibraryOpen) {
           draft.isCmsOpen = false;
           draft.isInsertOpen = false;
           draft.isPreviewOpen = false;
@@ -99,7 +100,22 @@ export class InterfaceDispatcher {
           draft.isCmsOpen = false;
           draft.isInsertOpen = false;
           draft.isLayersOpen = false;
-          draft.isComponentsOpen = false;
+          draft.isLibraryOpen = false;
+          draft.isPagesOpen = false;
+        }
+      })
+    );
+  }
+
+  toggleUIKits() {
+    this.setState(
+      produce((draft) => {
+        draft.isUIKitsOpen = !draft.isUIKitsOpen;
+        if (draft.isUIKitsOpen) {
+          draft.isCmsOpen = false;
+          draft.isInsertOpen = false;
+          draft.isLayersOpen = false;
+          draft.isLibraryOpen = false;
           draft.isPagesOpen = false;
         }
       })

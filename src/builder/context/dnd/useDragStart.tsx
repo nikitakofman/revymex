@@ -38,7 +38,6 @@ export const useDragStart = () => {
 
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
     // Check if the click is on a resize handle or its parent resize handle container
-
     if (dragState.recordingSessionId && !dragState.isDragging) {
       console.warn(
         "Inconsistent state detected: recordingSessionId exists but not dragging. Resetting state."
@@ -428,12 +427,42 @@ export const useDragStart = () => {
     } else {
       dragDisp.setDragSource("canvas");
 
+      // Get the element
+      const element = document.querySelector(
+        `[data-node-id="${node.id}"]`
+      ) as HTMLElement;
+
+      // Calculate initial position
       const currentLeft = parseFloat(node.style.left as string) || 0;
       const currentTop = parseFloat(node.style.top as string) || 0;
 
-      const mouseOffsetX1 = (e.clientX - elementRect.left) / transform.scale;
-      const mouseOffsetY1 = (e.clientY - elementRect.top) / transform.scale;
+      // Calculate mouse offset
+      const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
+      const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
 
+      // IMPORTANT: Apply the same calculateAndUpdateDimensions logic for percentage widths
+      // This fixes the issue with percentage/flex-fill dimensions in dynamic mode
+      const { finalWidth, finalHeight } = calculateAndUpdateDimensions({
+        node,
+        element,
+        transform,
+        setNodeStyle,
+        preventUnsync: true,
+      });
+
+      // Store dimensions so they're available to the drag component
+      const isFillMode = element.style.flex === "1 0 0px";
+
+      // Save the dimensions for reference during drag
+      dragDisp.setNodeDimensions(node.id, {
+        width: element.style.width,
+        height: element.style.height,
+        isFillMode: isFillMode,
+        finalWidth,
+        finalHeight,
+      });
+
+      // Update style to absolute positioning for dragging
       setNodeStyle(
         {
           position: "absolute",
@@ -443,13 +472,14 @@ export const useDragStart = () => {
         [node.id]
       );
 
+      // Set up dragging
       dragDisp.setIsDragging(true);
 
       dragDisp.setDraggedNode(node, {
         x: currentLeft,
         y: currentTop,
-        mouseX: mouseOffsetX1,
-        mouseY: mouseOffsetY1,
+        mouseX: mouseOffsetX,
+        mouseY: mouseOffsetY,
       });
 
       if (selectedIds.length > 1) {
@@ -463,6 +493,27 @@ export const useDragStart = () => {
               `[data-node-id="${id}"]`
             ) as HTMLElement;
             if (!el) return null;
+
+            // IMPORTANT: Apply the same dimension conversion for additional nodes
+            const {
+              finalWidth: additionalWidth,
+              finalHeight: additionalHeight,
+            } = calculateAndUpdateDimensions({
+              node: otherNode,
+              element: el,
+              transform,
+              setNodeStyle,
+              preventUnsync: true,
+            });
+
+            // Save dimensions for reference during drag
+            dragDisp.setNodeDimensions(otherNode.id, {
+              width: el.style.width,
+              height: el.style.height,
+              isFillMode: el.style.flex === "1 0 0px",
+              finalWidth: additionalWidth as string,
+              finalHeight: additionalHeight as string,
+            });
 
             const rect = el.getBoundingClientRect();
 

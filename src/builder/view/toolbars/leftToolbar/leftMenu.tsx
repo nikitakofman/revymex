@@ -1,5 +1,14 @@
 import React from "react";
-import { Database, Plus, File, Component, Globe, Palette } from "lucide-react";
+import {
+  Database,
+  Plus,
+  File,
+  Component,
+  Globe,
+  Palette,
+  Library,
+  LibraryBig,
+} from "lucide-react";
 import Button from "@/components/ui/button";
 import { useBuilder } from "@/builder/context/builderState";
 import { Tooltip } from "react-tooltip";
@@ -15,7 +24,7 @@ const LeftMenu = () => {
       if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
       if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
       if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isComponentsOpen) interfaceDisp.toggleComponents();
+      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
       interfaceDisp.toggleInsert();
     }
   };
@@ -28,7 +37,7 @@ const LeftMenu = () => {
       if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
       if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
       if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isComponentsOpen) interfaceDisp.toggleComponents();
+      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
       interfaceDisp.togglePages();
     }
   };
@@ -41,21 +50,34 @@ const LeftMenu = () => {
       if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
       if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
       if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isComponentsOpen) interfaceDisp.toggleComponents();
+      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
       interfaceDisp.toggleCms();
     }
   };
 
-  const handleComponentsClick = () => {
-    if (interfaceState.isComponentsOpen) {
-      interfaceDisp.toggleComponents();
+  const handleLibraryClick = () => {
+    if (interfaceState.isLibraryOpen) {
+      interfaceDisp.toggleLibrary();
     } else {
       if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
       if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
       if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
       if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isComponentsOpen) interfaceDisp.toggleComponents();
-      interfaceDisp.toggleComponents();
+      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
+      interfaceDisp.toggleLibrary();
+    }
+  };
+
+  const handleUIKitsClick = () => {
+    if (interfaceState.isUIKitsOpen) {
+      interfaceDisp.toggleUIKits();
+    } else {
+      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
+      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
+      if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
+      if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
+      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
+      interfaceDisp.toggleUIKits();
     }
   };
 
@@ -77,16 +99,16 @@ const LeftMenu = () => {
           data-tooltip-place="right"
         />
         <Button
-          leftIcon={<Component size={20} />}
+          leftIcon={<LibraryBig size={20} />}
           size="md"
           variant="ghost"
           className={`${
-            interfaceState.isComponentsOpen &&
+            interfaceState.isLibraryOpen &&
             "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
-          onClick={handleComponentsClick}
+          onClick={handleLibraryClick}
           data-tooltip-id="interface-tooltip"
-          data-tooltip-content="Components"
+          data-tooltip-content="Library"
           data-tooltip-place="right"
         />
         <Button
@@ -94,10 +116,10 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={`${
-            interfaceState.isComponentsOpen &&
+            interfaceState.isUIKitsOpen &&
             "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
-          onClick={handleComponentsClick}
+          onClick={handleUIKitsClick}
           data-tooltip-id="interface-tooltip"
           data-tooltip-content="UI Kits"
           data-tooltip-place="right"
@@ -147,7 +169,7 @@ const LeftMenu = () => {
 
       <Tooltip
         id="interface-tooltip"
-        delayShow={500} // 500ms delay before showing$
+        delayShow={500}
         opacity={1}
         style={{
           backgroundColor: "var(--accent)",

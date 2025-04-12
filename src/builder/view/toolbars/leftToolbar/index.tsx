@@ -4,7 +4,8 @@ import InsertPanel from "./InsertPanel";
 import CmsPanel from "./CmsPanel";
 import Layers from "./Layers";
 import PagesPanel from "./PagesPanel";
-import ComponentsPanel from "./ComponentsPanel";
+import LibraryPanel from "./LibraryPanel";
+import UIKitsPanel from "./UIKitsPanel";
 
 const InterfaceToolbar = () => {
   const { interfaceState } = useBuilder();
@@ -17,8 +18,10 @@ const InterfaceToolbar = () => {
         <CmsPanel />
       ) : interfaceState.isPagesOpen ? (
         <PagesPanel />
-      ) : interfaceState.isComponentsOpen ? (
-        <ComponentsPanel />
+      ) : interfaceState.isLibraryOpen ? (
+        <LibraryPanel />
+      ) : interfaceState.isUIKitsOpen ? (
+        <UIKitsPanel />
       ) : (
         <Layers />
       )}

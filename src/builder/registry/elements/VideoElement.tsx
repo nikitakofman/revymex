@@ -2,7 +2,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { ResizableWrapper } from "@/builder/context/resizable";
 import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
-import React from "react";
+import React, { useEffect } from "react";
 
 export const VideoElement = ({ node }: ElementProps) => {
   const connect = useConnect();
@@ -18,11 +18,13 @@ export const VideoElement = ({ node }: ElementProps) => {
         <video
           style={{
             ...node.style,
+            position: "relative",
+            left: 0,
+            top: 0,
             width: "100%",
             height: "100%",
             objectFit: node.style.objectFit || "cover",
             objectPosition: node.style.objectPosition,
-
             pointerEvents: "none",
           }}
           src={
@@ -32,7 +34,7 @@ export const VideoElement = ({ node }: ElementProps) => {
                 "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
           }
           controls={false}
-          autoPlay={true}
+          autoPlay={false}
           muted
           loop
         />

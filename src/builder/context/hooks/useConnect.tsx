@@ -42,13 +42,89 @@ export const useConnect = () => {
     return nearLeft || nearRight || nearTop || nearBottom;
   };
 
-  // Helper function to find dynamic parent in hierarchy
-  const findDynamicParent = (node: Node): Node | null => {
-    if (node.isDynamic) return node;
-    if (!node.parentId) return null;
-    const parent = nodeState.nodes.find((n) => n.id === node.parentId);
-    if (!parent) return null;
-    return parent.isDynamic ? parent : findDynamicParent(parent);
+  // Get the viewport ID for a node
+  const getNodeViewportId = (node: Node): string | null => {
+    // First check explicit dynamicViewportId
+    if (node.dynamicViewportId) {
+      return node.dynamicViewportId as string;
+    }
+
+    // Then check parent chain
+    return findParentViewport(node.parentId, nodeState.nodes);
+  };
+
+  // Find the top-level dynamic parent in the same viewport as the node
+  const findDynamicParentInSameViewport = (node: Node): Node | null => {
+    // Get the viewport for this node
+    const nodeViewportId = getNodeViewportId(node);
+    if (!nodeViewportId) return null;
+
+    // If node itself is dynamic and in this viewport, return it
+    if (node.isDynamic && node.dynamicViewportId === nodeViewportId) {
+      return node;
+    }
+
+    // Get all dynamic nodes in this specific viewport
+    const dynamicNodesInViewport = nodeState.nodes.filter(
+      (n) => n.isDynamic && n.dynamicViewportId === nodeViewportId
+    );
+
+    if (dynamicNodesInViewport.length === 0) return null;
+
+    // Try to find a direct dynamic parent reference
+    if (node.dynamicParentId) {
+      const directDynamicParent = dynamicNodesInViewport.find(
+        (n) => n.id === node.dynamicParentId
+      );
+      if (directDynamicParent) return directDynamicParent;
+    }
+
+    // Try to find a parent in the node hierarchy
+    let current = node;
+    let visited = new Set<string | number>();
+
+    while (current && current.parentId && !visited.has(current.id)) {
+      visited.add(current.id);
+      const parent = nodeState.nodes.find((n) => n.id === current.parentId);
+      if (!parent) break;
+
+      // Check if this parent is dynamic and in the same viewport
+      if (parent.isDynamic && parent.dynamicViewportId === nodeViewportId) {
+        return parent;
+      }
+
+      current = parent;
+    }
+
+    // If no direct parent is found, try other relationships
+    // First by sharedId
+    if (node.sharedId) {
+      for (const dynamicNode of dynamicNodesInViewport) {
+        if (dynamicNode.sharedId === node.sharedId) {
+          return dynamicNode;
+        }
+      }
+    }
+
+    // Then by dynamicFamilyId
+    if (node.dynamicFamilyId) {
+      for (const dynamicNode of dynamicNodesInViewport) {
+        if (dynamicNode.dynamicFamilyId === node.dynamicFamilyId) {
+          return dynamicNode;
+        }
+      }
+    }
+
+    // Finally by variantResponsiveId
+    if (node.variantResponsiveId) {
+      for (const dynamicNode of dynamicNodesInViewport) {
+        if (dynamicNode.variantResponsiveId === node.variantResponsiveId) {
+          return dynamicNode;
+        }
+      }
+    }
+
+    return null;
   };
 
   return useCallback(
@@ -77,45 +153,30 @@ export const useConnect = () => {
 
         const isAlreadySelected = dragState.selectedIds.includes(node.id);
 
-        // Handle selection for all nodes (including locked ones)
-        const parentNode = node.parentId
-          ? nodeState.nodes.find((n) => n.id === node.parentId)
-          : null;
+        // Find the dynamic parent in the same viewport
+        const dynamicParentInSameViewport =
+          findDynamicParentInSameViewport(node);
 
-        // Find dynamic parent in hierarchy or by dynamicParentId
-        const dynamicParentByRef = node.dynamicParentId
-          ? nodeState.nodes.find(
-              (n) => n.id === node.dynamicParentId && n.isDynamic
-            )
-          : null;
-
-        const dynamicParentInHierarchy = findDynamicParent(node);
-        const dynamicParent = dynamicParentByRef || dynamicParentInHierarchy;
-
-        if (
-          !dragState.dynamicModeNodeId &&
-          (parentNode?.isDynamic || dynamicParent)
-        ) {
-          // If not in dynamic mode and clicking on a dynamic node or its child, select the dynamic parent
-          const targetNodeId = dynamicParent?.id || parentNode?.id;
-          if (!e.shiftKey && targetNodeId) {
-            dragDisp.selectNode(targetNodeId);
-          } else if (targetNodeId) {
-            dragDisp.addToSelection(targetNodeId);
+        // Handle selection based on if we're in dynamic mode
+        if (!dragState.dynamicModeNodeId && dynamicParentInSameViewport) {
+          // If not in dynamic mode and we have a viewport-specific dynamic parent, select it
+          if (!e.shiftKey) {
+            dragDisp.selectNode(dynamicParentInSameViewport.id);
+          } else {
+            dragDisp.addToSelection(dynamicParentInSameViewport.id);
           }
         } else {
+          // Normal selection handling
           if (isAlreadySelected && dragState.selectedIds.length > 1) {
-            // Don't change the selection - the node is already part of multi-selection
+            // Don't change multi-selection
           } else if (e.shiftKey) {
-            // Add to selection with shift key
             dragDisp.addToSelection(node.id);
           } else {
-            // Otherwise select just this node
             dragDisp.selectNode(node.id);
           }
         }
 
-        // Only set up the mousemove handler for dragging if the node is not locked
+        // Only set up drag handler if node is not locked
         if (!node.isLocked) {
           mouseMoveHandlerRef.current = (moveEvent: MouseEvent) => {
             if (mouseDownPosRef.current) {
@@ -139,7 +200,7 @@ export const useConnect = () => {
                   mouseMoveHandlerRef.current = null;
                 }
 
-                // Check both resize handle and edges before starting drag
+                // Check for resize handle and edges
                 const currentTarget = document.elementFromPoint(
                   moveEvent.clientX,
                   moveEvent.clientY
@@ -175,32 +236,19 @@ export const useConnect = () => {
           const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
 
           if (dx < 5 && dy < 5) {
-            const parentNode = node.parentId
-              ? nodeState.nodes.find((n) => n.id === node.parentId)
-              : null;
+            // Find the dynamic parent in the same viewport
+            const dynamicParentInSameViewport =
+              findDynamicParentInSameViewport(node);
 
-            // Find dynamic parent in hierarchy or by dynamicParentId
-            const dynamicParentByRef = node.dynamicParentId
-              ? nodeState.nodes.find(
-                  (n) => n.id === node.dynamicParentId && n.isDynamic
-                )
-              : null;
-
-            const dynamicParentInHierarchy = findDynamicParent(node);
-            const dynamicParent =
-              dynamicParentByRef || dynamicParentInHierarchy;
-
-            if (
-              !dragState.dynamicModeNodeId &&
-              (parentNode?.isDynamic || dynamicParent)
-            ) {
-              const targetNodeId = dynamicParent?.id || parentNode?.id;
-              if (!e.shiftKey && targetNodeId) {
-                dragDisp.selectNode(targetNodeId);
-              } else if (targetNodeId) {
-                dragDisp.addToSelection(targetNodeId);
+            if (!dragState.dynamicModeNodeId && dynamicParentInSameViewport) {
+              // If not in dynamic mode and we have a viewport-specific dynamic parent, select it
+              if (!e.shiftKey) {
+                dragDisp.selectNode(dynamicParentInSameViewport.id);
+              } else {
+                dragDisp.addToSelection(dynamicParentInSameViewport.id);
               }
             } else {
+              // Normal selection handling
               if (!e.shiftKey) {
                 dragDisp.selectNode(node.id);
               } else {
@@ -223,15 +271,9 @@ export const useConnect = () => {
             // Store dynamic state for this node
             nodeDisp.storeDynamicNodeState(node.id);
 
-            setNodeStyle(
-              {
-                position: "absolute",
-              },
-              [node.id],
-              true
-            );
+            setNodeStyle({ position: "absolute" }, [node.id], true);
+
             // Determine the correct viewport ID
-            // Try dynamicViewportId first, then originalParentId, then parentId
             const parentViewportId =
               node.dynamicViewportId ||
               findParentViewport(node.originalParentId, nodeState.nodes) ||
@@ -242,42 +284,40 @@ export const useConnect = () => {
               dragDisp.switchDynamicViewport(parentViewportId);
             } else {
               console.warn("Could not determine viewport for node:", node.id);
-              // Fallback to desktop viewport if no other viewport is found
               dragDisp.switchDynamicViewport("viewport-1440");
             }
-            dragDisp.setDynamicModeNodeId(
-              dragState.dynamicModeNodeId ? null : node.id
-            );
-          }
 
+            dragDisp.setDynamicModeNodeId(node.id);
+          }
           return;
         }
 
-        // Next, check for a referenced dynamic parent
-        const dynamicParentByRef = node.dynamicParentId
-          ? nodeState.nodes.find(
-              (n) => n.id === node.dynamicParentId && n.isDynamic
-            )
-          : null;
+        // Find dynamic parent in the same viewport
+        const dynamicParentInSameViewport =
+          findDynamicParentInSameViewport(node);
 
-        // Finally, check for a dynamic parent in the hierarchy
-        const dynamicParentInHierarchy = findDynamicParent(node);
-
-        // Use the first one we find
-        const dynamicNode = dynamicParentByRef || dynamicParentInHierarchy;
-
-        if (dynamicNode) {
+        if (dynamicParentInSameViewport) {
           if (!dragState.dynamicModeNodeId) {
-            nodeDisp.storeDynamicNodeState(dynamicNode.id);
+            // Store dynamic state for this node
+            nodeDisp.storeDynamicNodeState(dynamicParentInSameViewport.id);
 
-            // Determine the correct viewport ID using multiple fallbacks
+            setNodeStyle(
+              { position: "absolute" },
+              [dynamicParentInSameViewport.id],
+              true
+            );
+
+            // Determine the correct viewport ID
             const parentViewportId =
-              dynamicNode.dynamicViewportId ||
+              dynamicParentInSameViewport.dynamicViewportId ||
               findParentViewport(
-                dynamicNode.originalParentId,
+                dynamicParentInSameViewport.originalParentId,
                 nodeState.nodes
               ) ||
-              findParentViewport(dynamicNode.parentId, nodeState.nodes);
+              findParentViewport(
+                dynamicParentInSameViewport.parentId,
+                nodeState.nodes
+              );
 
             if (parentViewportId) {
               console.log(`Setting active viewport to: ${parentViewportId}`);
@@ -285,14 +325,12 @@ export const useConnect = () => {
             } else {
               console.warn(
                 "Could not determine viewport for node:",
-                dynamicNode.id
+                dynamicParentInSameViewport.id
               );
-              // Fallback to desktop viewport if no other viewport is found
               dragDisp.switchDynamicViewport("viewport-1440");
             }
-            dragDisp.setDynamicModeNodeId(
-              dragState.dynamicModeNodeId ? null : dynamicNode.id
-            );
+
+            dragDisp.setDynamicModeNodeId(dynamicParentInSameViewport.id);
           }
         }
       };
@@ -306,43 +344,106 @@ export const useConnect = () => {
           timeoutRef.current = null;
         }
 
-        const parentNode = node.parentId
-          ? nodeState.nodes.find((n) => n.id === node.parentId)
-          : null;
+        // Find the dynamic parent in the same viewport
+        const dynamicParentInSameViewport =
+          findDynamicParentInSameViewport(node);
 
-        // Find dynamic parent in hierarchy or by dynamicParentId
-        const dynamicParentByRef = node.dynamicParentId
-          ? nodeState.nodes.find(
-              (n) => n.id === node.dynamicParentId && n.isDynamic
-            )
-          : null;
-
-        const dynamicParentInHierarchy = findDynamicParent(node);
-        const dynamicParent = dynamicParentByRef || dynamicParentInHierarchy;
-
+        // Determine target node for context menu
         const targetNodeId =
-          !dragState.dynamicModeNodeId &&
-          (parentNode?.isDynamic || dynamicParent)
-            ? dynamicParent?.id || parentNode?.id
+          !dragState.dynamicModeNodeId && dynamicParentInSameViewport
+            ? dynamicParentInSameViewport.id
             : node.id;
 
-        // Check if the clicked node is already in the selection
+        // Check if the target is already selected
         const isNodeSelected = dragState.selectedIds.includes(targetNodeId);
 
-        // If node is not selected and not holding shift, select only this node
+        // If not selected and not holding shift, select only this node
         if (!isNodeSelected && !e.shiftKey) {
           dragDisp.clearSelection();
-
           dragDisp.selectNode(targetNodeId);
         }
-        // If node is not selected and holding shift, add to selection
+        // If not selected and holding shift, add to selection
         else if (!isNodeSelected && e.shiftKey) {
           dragDisp.addToSelection(targetNodeId);
         }
-        // If node is already selected, keep the current selection
-        // This maintains multi-selection when right-clicking on a selected node
+        // Otherwise keep current selection
 
         dragDisp.setContextMenu(e.clientX, e.clientY, targetNodeId as string);
+      };
+
+      // Optimized hover handling for dynamic nodes and their children
+      const handleMouseOver = (e: React.MouseEvent) => {
+        if (
+          e.target === e.currentTarget &&
+          !dragState.dragSource &&
+          !isMovingCanvas
+        ) {
+          // Get the viewport ID for this node
+          const nodeViewportId = getNodeViewportId(node);
+
+          // Find dynamic parent in this specific viewport
+          const dynamicParentInSameViewport =
+            findDynamicParentInSameViewport(node);
+
+          if (dragState.dynamicModeNodeId) {
+            // In dynamic mode, hover over the actual node
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(node.id);
+            });
+          } else if (node.isDynamic) {
+            // For dynamic nodes themselves, hover on the node
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(node.id);
+            });
+          } else if (dynamicParentInSameViewport) {
+            // If this is a child of a dynamic node, hover on the parent in the same viewport
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(dynamicParentInSameViewport.id);
+            });
+          } else {
+            // Regular node - hover on itself
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(node.id);
+            });
+          }
+        }
+      };
+
+      // Modified mouseOut handling to keep hover effect on dynamic parent
+      const handleMouseOut = (e: React.MouseEvent) => {
+        if (e.target === e.currentTarget) {
+          const currentHoverId = dragState.hoverNodeId;
+
+          // Find dynamic parent in this specific viewport
+          const dynamicParentInSameViewport =
+            findDynamicParentInSameViewport(node);
+
+          // Only clear hover in specific cases:
+
+          // Case 1: We're currently hovering this exact node
+          if (currentHoverId === node.id) {
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(null);
+            });
+          }
+          // Case 2: We're in dynamic mode (has different hover behavior)
+          else if (dragState.dynamicModeNodeId) {
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(null);
+            });
+          }
+          // Case 3: If current hover is NOT our dynamic parent, clear it
+          // This prevents clearing hover when moving between children of the same parent
+          else if (
+            dynamicParentInSameViewport &&
+            currentHoverId !== dynamicParentInSameViewport.id
+          ) {
+            requestAnimationFrame(() => {
+              dragDisp.setHoverNodeId(null);
+            });
+          }
+          // Otherwise keep the hover (especially when it's on the dynamic parent)
+        }
       };
 
       const { border, borderWidth, borderStyle, borderColor, ...otherStyles } =
@@ -384,42 +485,8 @@ export const useConnect = () => {
         onMouseUp: handleMouseUp,
         onDoubleClick: handleDoubleClick,
         onContextMenu: handleContextMenu,
-        onMouseOver: (e: React.MouseEvent) => {
-          if (
-            e.target === e.currentTarget &&
-            !dragState.dragSource &&
-            !isMovingCanvas
-          ) {
-            // Determine if this is a child of a dynamic node
-            const isDynamicChild =
-              !node.isDynamic &&
-              (!!node.dynamicParentId || !!findDynamicParent(node));
-
-            // Only set hover for nodes that are either:
-            // 1. In dynamic mode (all nodes can be hovered), OR
-            // 2. Dynamic nodes themselves (can always be hovered), OR
-            // 3. NOT children of dynamic nodes when not in dynamic mode
-            if (
-              dragState.dynamicModeNodeId ||
-              node.isDynamic ||
-              !isDynamicChild
-            ) {
-              requestAnimationFrame(() => {
-                dragDisp.setHoverNodeId(node.id);
-              });
-            }
-          }
-        },
-        onMouseOut: (e: React.MouseEvent) => {
-          if (
-            e.target === e.currentTarget &&
-            dragState.hoverNodeId === node.id
-          ) {
-            requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(null);
-            });
-          }
-        },
+        onMouseOver: handleMouseOver,
+        onMouseOut: handleMouseOut,
         draggable: false,
         style: {
           ...otherStyles,
@@ -452,7 +519,8 @@ export const useConnect = () => {
       isFrameModeActive,
       isMoveCanvasMode,
       isTextModeActive,
-      findDynamicParent,
+      findDynamicParentInSameViewport,
+      getNodeViewportId,
       setNodeStyle,
       isEditingText,
     ]

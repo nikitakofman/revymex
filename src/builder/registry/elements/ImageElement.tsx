@@ -5,7 +5,14 @@ import { ElementProps } from "@/builder/types";
 import Image from "next/image";
 import React from "react";
 
-export const ImageElement = ({ node }: ElementProps) => {
+interface ExtendedElementProps extends ElementProps {
+  className?: string;
+}
+
+export const ImageElement = ({
+  node,
+  className = "",
+}: ExtendedElementProps) => {
   const connect = useConnect();
   const { dragState } = useBuilder();
 
@@ -15,7 +22,7 @@ export const ImageElement = ({ node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)} className="relative">
+      <div {...connect(node)} className={`relative ${className}`}>
         <Image
           crossOrigin="anonymous"
           width={200}

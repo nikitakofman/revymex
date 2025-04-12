@@ -141,6 +141,9 @@ const NameDisplay = ({ node }: { node: Node }) => {
         whiteSpace: "nowrap",
       }}
       onMouseDown={handleMouseDown}
+      onContextMenu={(e) =>
+        dragDisp.setContextMenu(e.clientX, e.clientY, node.id, true)
+      }
     >
       {/* Show Crown icon for base dynamic nodes */}
       {isBaseDynamicNode && (

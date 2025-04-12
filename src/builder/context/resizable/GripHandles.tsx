@@ -1,4 +1,10 @@
-import { useCallback, useState, useLayoutEffect, RefObject } from "react";
+import {
+  useCallback,
+  useState,
+  useLayoutEffect,
+  RefObject,
+  useMemo,
+} from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
@@ -22,6 +28,34 @@ export const GripHandles = ({
     width: 0,
     height: 0,
   });
+
+  // Check if node has siblings (nodes with same parent)
+  const hasSiblings = useMemo(() => {
+    if (!node.parentId) return false;
+
+    // Count nodes with the same parent ID
+    const siblingCount = nodeState.nodes.filter(
+      (n) => n.parentId === node.parentId && n.id !== node.id
+    ).length;
+
+    return siblingCount > 0;
+  }, [node.parentId, node.id, nodeState.nodes]);
+
+  // Check if parent node has siblings
+  const parentNode = nodeState.nodes.find(
+    (n) => n.id === node.parentId && n.type === "frame"
+  );
+
+  const parentHasSiblings = useMemo(() => {
+    if (!parentNode || !parentNode.parentId) return false;
+
+    // Count nodes with the same parent ID as the parent
+    const parentSiblingCount = nodeState.nodes.filter(
+      (n) => n.parentId === parentNode.parentId && n.id !== parentNode.id
+    ).length;
+
+    return parentSiblingCount > 0;
+  }, [parentNode, nodeState.nodes]);
 
   const startGripDrag = useCallback(
     async (e: React.MouseEvent, nodeToMove: Node) => {
@@ -50,9 +84,6 @@ export const GripHandles = ({
     [elementRef, dragDisp, handleDragStart]
   );
 
-  const parentNode = nodeState.nodes.find(
-    (n) => n.id === node.parentId && n.type === "frame"
-  );
   const parentElement = parentNode
     ? (document.querySelector(
         `[data-node-id="${parentNode.id}"]`
@@ -186,13 +217,17 @@ export const GripHandles = ({
 
   return (
     <>
-      {(node.style.rotate === "0deg" ||
-        node.style.rotate === undefined ||
-        !node.style.transform) &&
+      {/* Only show the node's grip handle if it has siblings */}
+      {hasSiblings &&
+        (node.style.rotate === "0deg" ||
+          node.style.rotate === undefined ||
+          !node.style.transform) &&
         !hasSkewTransform(node.style.transform) &&
         renderGripHandle(node, false, isColumn)}
 
+      {/* Only show the parent's grip handle if the parent has siblings */}
       {parentNode &&
+        parentHasSiblings &&
         (parentNode.style.rotate === "0deg" ||
           parentNode?.style.rotate === undefined) &&
         contentRef.current &&

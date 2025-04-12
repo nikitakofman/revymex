@@ -337,16 +337,18 @@ export const useMouseMove = () => {
       return isNearHorizontalEdge || isNearVerticalEdge;
     };
 
-    if (isNearEdge(e.clientX, e.clientY, containerRect)) {
-      if (!isAutoScrollingRef.current) {
-        startAutoScroll(e.clientX, e.clientY, containerRef.current);
-        isAutoScrollingRef.current = true;
-      } else {
-        updateScrollPosition(e.clientX, e.clientY);
+    if (!dragState.draggedItem) {
+      if (isNearEdge(e.clientX, e.clientY, containerRect)) {
+        if (!isAutoScrollingRef.current) {
+          startAutoScroll(e.clientX, e.clientY, containerRef.current);
+          isAutoScrollingRef.current = true;
+        } else {
+          updateScrollPosition(e.clientX, e.clientY);
+        }
+      } else if (isAutoScrollingRef.current) {
+        stopAutoScroll();
+        isAutoScrollingRef.current = false;
       }
-    } else if (isAutoScrollingRef.current) {
-      stopAutoScroll();
-      isAutoScrollingRef.current = false;
     }
 
     const canvasX =
@@ -808,16 +810,55 @@ export const useMouseMove = () => {
         return !closestNode;
       });
 
+      console.log("here?");
+
+      console.log("elementsUdner");
+
       const frameElement = filteredElements.find(
-        (el) => el.getAttribute("data-node-type") === "frame"
+        (el) =>
+          el.getAttribute("data-node-type") === "frame" ||
+          el.getAttribute("data-node-type") === "image" ||
+          el.getAttribute("data-node-type") === "video"
       );
+
       if (frameElement) {
         if (draggedNode.isViewport) {
           dragDisp.setDropInfo(null, null, canvasX, canvasY);
           dragDisp.hideLineIndicator();
           return;
         }
+
         const frameId = frameElement.getAttribute("data-node-id")!;
+        const nodeType = frameElement.getAttribute("data-node-type");
+
+        // Handle image/video elements as special drop targets
+        if (nodeType === "image" || nodeType === "video") {
+          const rect = frameElement.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const distanceFromCenter = Math.sqrt(
+            Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2)
+          );
+          const threshold = Math.min(rect.width, rect.height) * 0.4;
+
+          if (distanceFromCenter < threshold) {
+            dragDisp.setDropInfo(frameId, "inside", canvasX, canvasY);
+            dragDisp.hideLineIndicator();
+          } else {
+            const { position, lineIndicator } = getDropPosition(
+              e.clientY,
+              rect,
+              nodeType
+            );
+            if (position !== "inside") {
+              dragDisp.setLineIndicator(lineIndicator);
+            }
+            dragDisp.setDropInfo(frameId, position, canvasX, canvasY);
+          }
+          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+
         // Get only non-absolute frame children
         const frameChildren = nodeState.nodes.filter(
           (child) => child.parentId === frameId && !isAbsoluteInFrame(child)
@@ -924,6 +965,7 @@ export const useMouseMove = () => {
         const allPlaceholders = nodeState.nodes.filter(
           (n) => n.type === "placeholder"
         );
+
         allPlaceholders.forEach((placeholder) => {
           nodeDisp.removeNode(placeholder.id);
         });

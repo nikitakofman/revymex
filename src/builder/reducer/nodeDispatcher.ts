@@ -2,6 +2,7 @@ import { original, produce } from "immer";
 import { nanoid } from "nanoid";
 import { CSSProperties } from "react";
 import { findIndexWithinParent, findParentViewport } from "../context/utils";
+import { DragState } from "./dragDispatcher";
 
 export interface Position {
   x: number;
@@ -63,6 +64,7 @@ export interface Node {
   isVariant?: boolean;
   variantParentId?: string | number;
   variantInfo?: VariantInfo;
+  variantResponsiveId?: string;
   dynamicFamilyId?: string;
   originalParentId?: string;
   unsyncFromParentViewport?: boolean;
@@ -82,6 +84,9 @@ export class NodeDispatcher {
     private setState: React.Dispatch<React.SetStateAction<NodeState>>
   ) {}
 
+  /**
+   * Add a node to the builder, with proper variant synchronization
+   */
   addNode(
     node: Node,
     targetId: string | number | null,
@@ -127,18 +132,80 @@ export class NodeDispatcher {
         }
 
         const targetNode = draft.nodes[targetIndex];
+
+        // Check if target is a dynamic element or variant
         targetIsDynamic =
           targetNode.isDynamic ||
           targetNode.isVariant ||
           targetNode.dynamicFamilyId ||
           (targetNode.isVariant && targetNode.dynamicParentId);
 
-        if (
-          position === "inside" &&
-          (targetNode.isDynamic ||
-            (targetNode.isVariant && targetNode.dynamicParentId))
-        ) {
-          needsSync = true;
+        // CRITICAL FIX: Only apply dynamic properties for "inside" position,
+        // not for "before" or "after"
+        if (targetIsDynamic && position === "inside") {
+          // Adding to a variant
+          if (targetNode.isVariant) {
+            // Set all required variant properties
+            newNode.isVariant = true;
+            newNode.variantInfo = { ...targetNode.variantInfo };
+            newNode.variantParentId = targetNode.id;
+
+            // Set dynamic-related properties
+            newNode.dynamicFamilyId = targetNode.dynamicFamilyId;
+            newNode.dynamicParentId = targetNode.id;
+
+            // Set viewport ID if available
+            if (targetNode.dynamicViewportId) {
+              newNode.dynamicViewportId = targetNode.dynamicViewportId;
+            }
+
+            // Flag for sync
+            needsSync = true;
+          }
+          // Adding to a dynamic base node
+          else if (targetNode.isDynamic || targetNode.dynamicFamilyId) {
+            // Set dynamic properties
+            newNode.dynamicParentId = targetNode.id;
+            newNode.dynamicFamilyId = targetNode.dynamicFamilyId;
+
+            // Set viewport ID if available
+            if (targetNode.dynamicViewportId) {
+              newNode.dynamicViewportId = targetNode.dynamicViewportId;
+            }
+
+            // Flag for sync
+            needsSync = true;
+          }
+        } else if (position !== "inside") {
+          // CRITICAL FIX: For "before" or "after" positions, ONLY inherit dynamic properties
+          // from parent if parent itself is dynamic AND not a viewport
+          const parentNode = targetNode.parentId
+            ? draft.nodes.find((n) => n.id === targetNode.parentId)
+            : null;
+
+          // Explicitly clear all dynamic properties for sibling elements
+          delete newNode.dynamicParentId;
+          delete newNode.dynamicFamilyId;
+          delete newNode.dynamicViewportId;
+          delete newNode.variantParentId;
+          delete newNode.isVariant;
+          delete newNode.variantInfo;
+
+          // Only re-apply if parent is dynamic and not a viewport
+          if (
+            parentNode &&
+            !parentNode.isViewport &&
+            (parentNode.isDynamic || parentNode.dynamicFamilyId)
+          ) {
+            newNode.dynamicParentId = parentNode.id;
+            newNode.dynamicFamilyId = parentNode.dynamicFamilyId;
+
+            if (parentNode.dynamicViewportId) {
+              newNode.dynamicViewportId = parentNode.dynamicViewportId;
+            }
+
+            needsSync = true;
+          }
         }
 
         if (position === "inside") {
@@ -190,6 +257,14 @@ export class NodeDispatcher {
         };
       })
     );
+
+    // Call syncVariants if we're adding to a dynamic element or variant
+    // Similar to how it's done in moveNode
+    if (needsSync || targetIsDynamic) {
+      setTimeout(() => {
+        this.syncVariants(node.id);
+      }, 50);
+    }
   }
 
   /**
@@ -1403,6 +1478,22 @@ export class NodeDispatcher {
     );
   }
 
+  /**
+   * Directly push multiple nodes to the state
+   * Used for operations like duplicating dynamic elements
+   * that need to preserve exact structure
+   */
+  pushNodes(nodes: Node[]) {
+    this.setState((prev) =>
+      produce(prev, (draft) => {
+        // Add all nodes to the end of the array
+        draft.nodes.push(...nodes);
+      })
+    );
+
+    return nodes;
+  }
+
   // Helper functions
   findParentViewport(
     nodeId: string | number | null | undefined,
@@ -1558,6 +1649,8 @@ export class NodeDispatcher {
     if (!node) {
       return;
     }
+
+    console.log("syncving....");
 
     // Ensure node has a sharedId
     if (!node.sharedId) {
@@ -3270,77 +3363,122 @@ export class NodeDispatcher {
       })
     );
   }
-
-  reorderNode(
-    nodeId: string | number,
-    targetParentId: string | number,
-    targetIndex: number
-  ) {
+  reorderNode(nodeId, targetParentId, targetIndex) {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        // Find the node
+        // Find the index of the node to move.
         const idx = draft.nodes.findIndex((n) => n.id === nodeId);
         if (idx === -1) return;
-        const node = draft.nodes[idx];
 
-        // Store original text content and unsync flags for text nodes
-        const originalText = node.style?.text;
-        const hasTextUnsyncFlag = node.unsyncFromParentViewport?.text === true;
-        const originalUnsyncFlags = { ...node.unsyncFromParentViewport };
-        const originalIndependentStyles = { ...node.independentStyles };
+        // Remove the node from its old position (preserving its reference and properties)
+        const node = draft.nodes.splice(idx, 1)[0];
 
-        // Remove from old position
-        draft.nodes.splice(idx, 1);
+        // Update the node's parent reference.
+        node.parentId = targetParentId;
 
-        // NEW: Clean up text property if this is not a text element
-        if (node.type !== "text" && node.style && "text" in node.style) {
-          delete node.style.text;
+        // If the node is dynamic, update its viewport info.
+        if (node.isDynamic) {
+          // Recompute dynamicViewportId based on the new parent's chain.
+          const newViewportId = findParentViewport(targetParentId, draft.nodes);
+          node.dynamicViewportId = newViewportId;
+          // Force the node to be visible.
+          node.inViewport = true;
         }
 
-        // Find siblings in target parent
-        const siblings = draft.nodes
-          .map((n, idx) => ({ node: n, index: idx }))
+        // Find all siblings under the target parent, including their positions in the draft array.
+        const siblingsWithIndex = draft.nodes
+          .map((n, i) => ({ node: n, index: i }))
           .filter((obj) => obj.node.parentId === targetParentId);
 
-        // Calculate insert position
         let insertIndex;
-        if (siblings.length === 0) {
+        if (siblingsWithIndex.length === 0) {
+          // No siblings found, insert at the end.
           insertIndex = draft.nodes.length;
-        } else if (targetIndex >= siblings.length) {
-          insertIndex = siblings[siblings.length - 1].index + 1;
+        } else if (targetIndex >= siblingsWithIndex.length) {
+          // Insert after the last sibling. (Get the maximum index among siblings and add one.)
+          insertIndex = Math.max(...siblingsWithIndex.map((s) => s.index)) + 1;
         } else {
-          insertIndex = siblings[targetIndex].index;
+          // Otherwise, insert at the position of the sibling at the target index.
+          siblingsWithIndex.sort((a, b) => a.index - b.index);
+          insertIndex = siblingsWithIndex[targetIndex].index;
         }
 
-        // Update node properties
-        node.parentId = targetParentId;
-        node.inViewport = true;
-        node.style.position = "relative";
-
-        if (!node.sharedId) {
-          node.sharedId = nanoid();
-        }
-
-        // Insert at new position
+        // Insert the node at its new position.
         draft.nodes.splice(insertIndex, 0, node);
-
-        // Restore original text content if this is a text node with text unsync flag
-        if (node.type === "text" && hasTextUnsyncFlag && originalText) {
-          node.style.text = originalText;
-        }
-
-        // Restore the original unsync flags
-        if (originalUnsyncFlags) {
-          node.unsyncFromParentViewport = originalUnsyncFlags;
-        }
-
-        // Restore original independent styles flags
-        if (originalIndependentStyles) {
-          node.independentStyles = originalIndependentStyles;
-        }
       })
     );
   }
+
+  // reorderNode(
+  //   nodeId: string | number,
+  //   targetParentId: string | number,
+  //   targetIndex: number
+  // ) {
+  //   this.setState((prev) =>
+  //     produce(prev, (draft) => {
+  //       // Find the node
+  //       const idx = draft.nodes.findIndex((n) => n.id === nodeId);
+  //       if (idx === -1) return;
+  //       const node = draft.nodes[idx];
+
+  //       // Store original text content and unsync flags for text nodes
+  //       const originalText = node.style?.text;
+  //       const hasTextUnsyncFlag = node.unsyncFromParentViewport?.text === true;
+  //       const originalUnsyncFlags = { ...node.unsyncFromParentViewport };
+  //       const originalIndependentStyles = { ...node.independentStyles };
+
+  //       // Remove from old position
+  //       draft.nodes.splice(idx, 1);
+
+  //       // NEW: Clean up text property if this is not a text element
+  //       if (node.type !== "text" && node.style && "text" in node.style) {
+  //         delete node.style.text;
+  //       }
+
+  //       // Find siblings in target parent
+  //       const siblings = draft.nodes
+  //         .map((n, idx) => ({ node: n, index: idx }))
+  //         .filter((obj) => obj.node.parentId === targetParentId);
+
+  //       // Calculate insert position
+  //       let insertIndex;
+  //       if (siblings.length === 0) {
+  //         insertIndex = draft.nodes.length;
+  //       } else if (targetIndex >= siblings.length) {
+  //         insertIndex = siblings[siblings.length - 1].index + 1;
+  //       } else {
+  //         insertIndex = siblings[targetIndex].index;
+  //       }
+
+  //       // Update node properties
+  //       node.parentId = targetParentId;
+  //       node.inViewport = true;
+  //       node.style.position = "relative";
+
+  //       if (!node.sharedId) {
+  //         node.sharedId = nanoid();
+  //       }
+
+  //       // Insert at new position
+  //       draft.nodes.splice(insertIndex, 0, node);
+
+  //       // Restore original text content if this is a text node with text unsync flag
+  //       if (node.type === "text" && hasTextUnsyncFlag && originalText) {
+  //         node.style.text = originalText;
+  //       }
+
+  //       // Restore the original unsync flags
+  //       if (originalUnsyncFlags) {
+  //         node.unsyncFromParentViewport = originalUnsyncFlags;
+  //       }
+
+  //       // Restore original independent styles flags
+  //       if (originalIndependentStyles) {
+  //         node.independentStyles = originalIndependentStyles;
+  //       }
+  //     })
+  //   );
+  // }
 
   /**
    * Move a node in or out of the viewport, or "before"/"after"/"inside" a target.
@@ -3480,13 +3618,53 @@ export class NodeDispatcher {
   }
 
   /**
-   * Insert a node at a specific index in the array (root-level).
+   * Checks if a node is part of the current dynamic family
+   */
+  isInDynamicFamily(nodeId, dynamicModeNodeId) {
+    const nodes = this.getNodeState().nodes;
+
+    // Get the dynamic family ID from the dynamic mode node
+    const dynamicModeNode = nodes.find((n) => n.id === dynamicModeNodeId);
+    if (!dynamicModeNode || !dynamicModeNode.dynamicFamilyId) return false;
+
+    const familyId = dynamicModeNode.dynamicFamilyId;
+
+    // Check if the node or any of its ancestors is in this family
+    let currentNodeId = nodeId;
+
+    while (currentNodeId) {
+      const currentNode = nodes.find((n) => n.id === currentNodeId);
+      if (!currentNode) break;
+
+      // If the current node has the same family ID, it's part of the family
+      if (currentNode.dynamicFamilyId === familyId) return true;
+
+      // If the node is a dynamic node or variant, check its specific family ID
+      if (
+        (currentNode.isDynamic || currentNode.isVariant) &&
+        currentNode.dynamicFamilyId === familyId
+      ) {
+        return true;
+      }
+
+      // Check parent
+      if (!currentNode.parentId) break;
+      currentNodeId = currentNode.parentId;
+    }
+
+    return false;
+  }
+  /**
+   * Insert a node at a specific index in the array.
+   * Automatically syncs variants if in dynamic mode.
    */
   insertAtIndex(
     node: Node,
     index: number,
-    parentId: string | number | null | undefined
+    parentId: string | number | null | undefined,
+    dragState?: DragState
   ) {
+    // First insert the node
     this.setState((prev) =>
       produce(prev, (draft) => {
         const newNode = { ...node, parentId };
@@ -3504,11 +3682,116 @@ export class NodeDispatcher {
           const lastSiblingGlobalIndex = siblings[siblings.length - 1].index;
           draft.nodes.splice(lastSiblingGlobalIndex + 1, 0, newNode);
         } else {
-          const targetGlobalIndex = siblings[index].index;
-          draft.nodes.splice(targetGlobalIndex, 0, newNode);
+          if (siblings) {
+            const targetGlobalIndex = siblings[index].index;
+            draft.nodes.splice(targetGlobalIndex, 0, newNode);
+          }
         }
       })
     );
+
+    // Store the newly created node's ID in a static collection
+    // This helps us track multiple nodes being inserted in a batch operation
+    if (!this._pendingVariantSyncs) {
+      this._pendingVariantSyncs = new Set();
+    }
+
+    if (dragState?.dynamicModeNodeId) {
+      this._pendingVariantSyncs.add({
+        nodeId: node.id,
+        dynamicModeNodeId: dragState.dynamicModeNodeId,
+      });
+    }
+
+    // Use a debounced function to process all inserted nodes at once
+    // This ensures we handle multiple selections efficiently
+    clearTimeout(this._syncVariantsTimeout);
+    this._syncVariantsTimeout = setTimeout(() => {
+      if (!this._pendingVariantSyncs || this._pendingVariantSyncs.size === 0)
+        return;
+
+      const currentState = this.getNodeState();
+      const processed = new Set();
+
+      // Process all pending nodes
+      for (const item of this._pendingVariantSyncs) {
+        const { nodeId, dynamicModeNodeId } = item;
+
+        // Skip already processed nodes
+        if (processed.has(nodeId)) continue;
+
+        // Check if this node is within a dynamic family
+        const shouldSync = this.shouldSyncNodeVariants(
+          nodeId,
+          dynamicModeNodeId,
+          currentState.nodes
+        );
+
+        if (shouldSync) {
+          this.syncVariants(nodeId);
+          processed.add(nodeId);
+        }
+      }
+
+      // Clear the pending syncs
+      this._pendingVariantSyncs.clear();
+    }, 10);
+  }
+
+  /**
+   * Determines if a node should have its variants synced based on its ancestry
+   */
+  shouldSyncNodeVariants(nodeId, dynamicModeNodeId, nodes) {
+    // If there's no dynamic mode active, no need to sync
+    if (!dynamicModeNodeId) return false;
+
+    // Get the dynamic family ID from the dynamic mode node
+    const dynamicModeNode = nodes.find((n) => n.id === dynamicModeNodeId);
+    if (!dynamicModeNode || !dynamicModeNode.dynamicFamilyId) return false;
+
+    const familyId = dynamicModeNode.dynamicFamilyId;
+
+    // Check the entire ancestry chain to handle deep nesting
+    let currentNodeId = nodeId;
+    const visited = new Set(); // Prevent infinite loops from circular references
+
+    // Check if the node is a root dynamic node itself
+    const node = nodes.find((n) => n.id === nodeId);
+
+    // Edge case: if the node itself is a variant or dynamic node with the same family ID
+    if (
+      node &&
+      (node.isDynamic || node.isVariant) &&
+      node.dynamicFamilyId === familyId
+    ) {
+      return true;
+    }
+
+    // Traverse up the parent chain
+    while (currentNodeId && !visited.has(currentNodeId)) {
+      visited.add(currentNodeId);
+
+      // Get the current node
+      const currentNode = nodes.find((n) => n.id === currentNodeId);
+      if (!currentNode) break;
+
+      // Check if this node or any ancestor is in the dynamic family
+      if (currentNode.dynamicFamilyId === familyId) return true;
+
+      // Check specific properties for dynamic/variant nodes
+      if (
+        (currentNode.isDynamic || currentNode.isVariant) &&
+        currentNode.dynamicFamilyId === familyId
+      ) {
+        return true;
+      }
+
+      // Move up to parent
+      if (!currentNode.parentId) break;
+      currentNodeId = currentNode.parentId;
+    }
+
+    return false;
   }
 
   updateDynamicPosition(id: string | number, position: Position) {
@@ -3521,7 +3804,6 @@ export class NodeDispatcher {
       })
     );
   }
-
   updateNodeDynamicStatus(nodeId: string | number) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -3540,15 +3822,43 @@ export class NodeDispatcher {
         const familyId = nanoid();
         mainNode.dynamicFamilyId = familyId;
 
+        // Find the viewport this node belongs to by traversing up the parent chain
+        function findParentViewport(nodes, nodeId) {
+          const node = nodes.find((n) => n.id === nodeId);
+          if (!node) return null;
+
+          if (node.parentId) {
+            const parent = nodes.find((n) => n.id === node.parentId);
+            if (parent && parent.isViewport) {
+              return parent.id;
+            } else if (parent) {
+              return findParentViewport(nodes, parent.id);
+            }
+          }
+          return null;
+        }
+
+        // Set dynamicViewportId for the main node
+        const viewportId = findParentViewport(draft.nodes, mainNode.id);
+        if (viewportId) {
+          mainNode.dynamicViewportId = viewportId;
+        }
+
         // Find all nodes with the same sharedId across all viewports
         const relatedNodes = draft.nodes.filter(
           (n) => n.sharedId === mainNode.sharedId && n.id !== mainNode.id
         );
 
-        // Update all related nodes with the same dynamicFamilyId
+        // Update all related nodes with the same dynamicFamilyId and correct viewport
         relatedNodes.forEach((node) => {
           node.dynamicFamilyId = familyId;
           node.isDynamic = true; // Make all instances dynamic
+
+          // Set correct viewport for this instance
+          const nodeViewportId = findParentViewport(draft.nodes, node.id);
+          if (nodeViewportId) {
+            node.dynamicViewportId = nodeViewportId;
+          }
         });
 
         // Update children recursively with the dynamicParentId and dynamicFamilyId
@@ -3566,6 +3876,19 @@ export class NodeDispatcher {
     );
   }
 
+  // Helper function to reliably get the viewport ID regardless of nesting level
+  getEffectiveViewport(nodeId, nodes) {
+    let currentNode = nodes.find((n) => n.id === nodeId);
+    while (currentNode && !currentNode.isViewport) {
+      if (!currentNode.parentId) return null;
+      currentNode = nodes.find((n) => n.id === currentNode.parentId);
+    }
+    return currentNode ? currentNode.id : null;
+  }
+
+  // 1. Store dynamic node state with enhanced context
+  // Updated: storeDynamicNodeState()
+  // When entering dynamic mode, we record extra info such as the parent’s sharedId.
   storeDynamicNodeState(nodeId: string | number | null) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -3573,15 +3896,24 @@ export class NodeDispatcher {
         const node = draft.nodes.find((n) => n.id === nodeId);
         if (!node) return;
 
-        // Store original state before making it absolute
+        // Store original state with explicit sibling position
         if (!node.originalState) {
+          // Find all siblings in the same parent
+          const siblings = draft.nodes
+            .filter((n) => n.parentId === node.parentId)
+            .map((n) => n.id);
+
+          // Find position among siblings
+          const siblingPosition = siblings.indexOf(node.id);
+
           node.originalState = {
             parentId: node.parentId,
             inViewport: node.inViewport,
+            siblingPosition: siblingPosition,
           };
         }
 
-        // Set originalParentId to maintain relationship info
+        // Set originalParentId for reference
         node.originalParentId = node.parentId;
 
         // Set dynamicViewportId for the current node if not already set
@@ -3611,28 +3943,35 @@ export class NodeDispatcher {
               n.sharedId === node.sharedId && n.id !== node.id && n.isDynamic
           );
 
-          // IMPROVEMENT: Ensure base node and all responsive counterparts have matching variantResponsiveId
+          // Ensure base node and all responsive counterparts have matching variantResponsiveId
           if (!node.variantResponsiveId) {
-            // Generate a shared variantResponsiveId for all base dynamic nodes
             const baseNodeResponsiveId = nanoid();
             node.variantResponsiveId = baseNodeResponsiveId;
 
-            // Apply same variantResponsiveId to all responsive counterparts
             responsiveCounterparts.forEach((counterpart) => {
               counterpart.variantResponsiveId = baseNodeResponsiveId;
             });
           }
 
           responsiveCounterparts.forEach((counterpart) => {
-            // Store original state if not already stored
+            // Store minimal original state with explicit sibling position
             if (!counterpart.originalState) {
+              // Find all siblings in the same parent
+              const siblings = draft.nodes
+                .filter((n) => n.parentId === counterpart.parentId)
+                .map((n) => n.id);
+
+              // Find position among siblings
+              const siblingPosition = siblings.indexOf(counterpart.id);
+
               counterpart.originalState = {
                 parentId: counterpart.parentId,
                 inViewport: counterpart.inViewport,
+                siblingPosition: siblingPosition,
               };
             }
 
-            // Set originalParentId to maintain relationship info
+            // Set originalParentId for reference
             counterpart.originalParentId = counterpart.parentId;
 
             // Set dynamicViewportId for this counterpart
@@ -3646,11 +3985,11 @@ export class NodeDispatcher {
               }
             }
 
-            // Set up for dynamic mode - make ALL responsive counterparts ready
+            // Set up for dynamic mode
             counterpart.parentId = null;
             counterpart.inViewport = false;
 
-            // Ensure it has dynamicPosition set
+            // Initialize dynamicPosition
             if (!counterpart.dynamicPosition && counterpart.position) {
               counterpart.dynamicPosition = { ...counterpart.position };
             } else if (!counterpart.dynamicPosition) {
@@ -3782,46 +4121,127 @@ export class NodeDispatcher {
     );
   }
 
+  // Updated: resetDynamicNodePositions()
+  // When exiting dynamic mode, we restore each node’s parentId and force an "inViewport" flag for dynamic nodes.
+  // For nested dynamic nodes, if the restored parent is missing, we use the original stored state.
   resetDynamicNodePositions() {
     this.setState((prev) =>
       produce(prev, (draft) => {
-        // Find all nodes that have originalState or dynamicPosition
+        // Identify all dynamic nodes with stored original state.
         const dynamicNodes = draft.nodes.filter(
-          (n) =>
-            n.originalState ||
-            n.dynamicPosition ||
-            n.originalParentId !== undefined
+          (n) => n.originalState || n.originalParentId
         );
 
-        dynamicNodes.forEach((node) => {
-          // Restore the original state
-          if (node.originalState) {
-            node.parentId = node.originalState.parentId;
-            node.inViewport = node.originalState.inViewport;
+        // Create a map to track the original order info for dynamic nodes.
+        // The map key is parentId; for each parent, we store an array of objects:
+        // {id: <node id>, position: <original sibling position>}.
+        const originalNodeOrder = {};
 
-            // Set position back to relative
+        // Loop through dynamic nodes and restore basic properties.
+        dynamicNodes.forEach((node) => {
+          const parentId =
+            node.originalState?.parentId || node.originalParentId;
+          const position = node.originalState?.siblingPosition;
+
+          if (parentId) {
+            if (position !== undefined) {
+              if (!originalNodeOrder[parentId]) {
+                originalNodeOrder[parentId] = [];
+              }
+              originalNodeOrder[parentId].push({ id: node.id, position });
+            }
+
+            // Restore parent's id and inViewport properly.
+            node.parentId = parentId;
+            node.inViewport = node.originalState?.inViewport ?? true;
+
+            // Reset inline position styling.
             node.style.position = "relative";
             node.style.left = "";
             node.style.top = "";
             node.style.zIndex = "";
             node.style.transform = "";
-
-            // Clear the original state
-            delete node.originalState;
-          }
-          // If no originalState but has originalParentId, restore that
-          else if (node.originalParentId !== undefined) {
-            node.parentId = node.originalParentId;
-
-            // Set position back to relative
-            node.style.position = "relative";
-            node.style.left = "";
-            node.style.top = "";
           }
 
-          // Clear dynamic properties
-          delete node.dynamicPosition;
+          // Clear temporary dynamic state.
+          delete node.originalState;
           delete node.originalParentId;
+          delete node.dynamicPosition;
+        });
+
+        // Reorder nodes based on the original sibling positions for each parent.
+        Object.keys(originalNodeOrder).forEach((parentId) => {
+          // Sort the nodes to be re-ordered in ascending order of their stored positions.
+          const nodesToReorder = originalNodeOrder[parentId].sort(
+            (a, b) => a.position - b.position
+          );
+
+          nodesToReorder.forEach((nodeInfo) => {
+            const nodeId = nodeInfo.id;
+            const targetPosition = nodeInfo.position;
+            // Recompute the current children for this parent from the updated draft.
+            const currentChildren = draft.nodes
+              .filter((n) => n.parentId === parentId)
+              .map((n) => n.id);
+
+            const currentPosition = currentChildren.indexOf(nodeId);
+            if (currentPosition === -1 || currentPosition === targetPosition) {
+              return;
+            }
+
+            // Find the node’s index in the flattened draft.nodes list.
+            const nodeIndex = draft.nodes.findIndex((n) => n.id === nodeId);
+            if (nodeIndex === -1) return;
+
+            // Remove the node temporarily.
+            const nodeToMove = draft.nodes[nodeIndex];
+            draft.nodes.splice(nodeIndex, 1);
+
+            let insertIndex;
+            // Recompute children of the parent after removal.
+            const updatedChildren = draft.nodes
+              .filter((n) => n.parentId === parentId)
+              .map((n) => n.id);
+
+            if (targetPosition === 0) {
+              // Insert at the very beginning.
+              const firstChildId = updatedChildren[0];
+              if (firstChildId) {
+                insertIndex = draft.nodes.findIndex(
+                  (n) => n.id === firstChildId
+                );
+              } else {
+                // No children: fall back to inserting just after the parent's node.
+                const parentIndex = draft.nodes.findIndex(
+                  (n) => n.id === parentId
+                );
+                insertIndex = parentIndex + 1;
+              }
+            } else if (targetPosition >= updatedChildren.length) {
+              // Insert at the end of the parent's children.
+              const lastChildId = updatedChildren[updatedChildren.length - 1];
+              if (lastChildId) {
+                const lastChildIndex = draft.nodes.findIndex(
+                  (n) => n.id === lastChildId
+                );
+                insertIndex = lastChildIndex + 1;
+              } else {
+                const parentIndex = draft.nodes.findIndex(
+                  (n) => n.id === parentId
+                );
+                insertIndex = parentIndex + 1;
+              }
+            } else {
+              // Insert before the node currently at the target position.
+              const nodeAtTargetId = updatedChildren[targetPosition];
+              insertIndex = draft.nodes.findIndex(
+                (n) => n.id === nodeAtTargetId
+              );
+            }
+
+            // Insert the node at its new correct position.
+            draft.nodes.splice(insertIndex, 0, nodeToMove);
+          });
         });
       })
     );
@@ -5568,6 +5988,8 @@ export class NodeDispatcher {
   }
 
   // This function should be added to your NodeDispatcher class
+  // Updated: syncNodePosition()
+  // When synchronizing a node’s position, if it’s nested we look up its target parent using the parent's shared data.
   syncNodePosition(nodeId: string | number) {
     this.setState((prev) =>
       produce(prev, (draft) => {
@@ -5646,6 +6068,32 @@ export class NodeDispatcher {
               }
             }
           }
+        });
+
+        // Process all related dynamic nodes to ensure correct viewportId
+        const allDynamicNodes = draft.nodes.filter(
+          (n) => n.isDynamic && n.sharedId === node.sharedId
+        );
+
+        allDynamicNodes.forEach((dynamicNode) => {
+          // Find the actual viewport for this node - this is the key fix
+          const actualViewportId = findParentViewport(
+            dynamicNode.parentId,
+            draft.nodes
+          );
+
+          if (actualViewportId) {
+            // Make sure dynamicViewportId is set to the actual viewport, not the parent
+            dynamicNode.dynamicViewportId = actualViewportId;
+          }
+
+          // Also ensure dynamicFamilyId is consistent
+          if (node.dynamicFamilyId && !dynamicNode.dynamicFamilyId) {
+            dynamicNode.dynamicFamilyId = node.dynamicFamilyId;
+          }
+
+          // Ensure isDynamic is preserved
+          if (node.isDynamic) dynamicNode.isDynamic = node.isDynamic;
         });
       })
     );

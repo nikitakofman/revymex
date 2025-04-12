@@ -95,16 +95,21 @@ export const useNodeActions = () => {
       children.forEach((child) => nodesToRemove.add(child.id));
     });
 
-    // Step 2: Check if any nodes are in viewports
-    const nodesInViewport = Array.from(nodesToRemove).some((id) => {
-      const node = nodeState.nodes.find((n) => n.id === id);
-      return node?.inViewport;
-    });
+    // NEW: Check if we're in dynamic mode - if so, skip the shared ID lookup
+    const isInDynamicMode = !!dragState.dynamicModeNodeId;
 
-    // Step 3: Collect all shared IDs for nodes in viewports
+    // Step 2: Check if any nodes are in viewports and not in dynamic mode
+    const nodesInViewport =
+      !isInDynamicMode &&
+      Array.from(nodesToRemove).some((id) => {
+        const node = nodeState.nodes.find((n) => n.id === id);
+        return node?.inViewport;
+      });
+
+    // Step 3: Collect all shared IDs for nodes in viewports (skip if in dynamic mode)
     const sharedIdsToRemove = new Set<string>();
 
-    if (nodesInViewport) {
+    if (nodesInViewport && !isInDynamicMode) {
       Array.from(nodesToRemove).forEach((id) => {
         const node = nodeState.nodes.find((n) => n.id === id);
         if (node?.sharedId) {
@@ -113,8 +118,8 @@ export const useNodeActions = () => {
       });
     }
 
-    // Step 4: Find all nodes with the same shared IDs across viewports
-    if (sharedIdsToRemove.size > 0) {
+    // Step 4: Find all nodes with the same shared IDs across viewports (skip if in dynamic mode)
+    if (sharedIdsToRemove.size > 0 && !isInDynamicMode) {
       nodeState.nodes.forEach((node) => {
         if (node.sharedId && sharedIdsToRemove.has(node.sharedId)) {
           nodesToRemove.add(node.id);
@@ -157,6 +162,58 @@ export const useNodeActions = () => {
   };
 
   // Duplicate nodes action
+  const findTopmostParentInDynamicFamily = (node: Node) => {
+    // If not in dynamic mode, return null
+    if (!dragState.dynamicModeNodeId) return null;
+
+    // Get the dynamic family ID
+    const familyNode = nodeState.nodes.find(
+      (n) => n.id === dragState.dynamicModeNodeId
+    );
+    const familyId = familyNode?.dynamicFamilyId;
+    if (!familyId) return null;
+
+    // First check if current node is already a top-level node in this family
+    if (
+      (node.isDynamic || node.isVariant) &&
+      node.dynamicFamilyId === familyId &&
+      !node.parentId
+    ) {
+      return node;
+    }
+
+    // Find which top-level node contains this element
+    const topLevelNodes = nodeState.nodes.filter(
+      (n) =>
+        (n.isDynamic || n.isVariant) &&
+        n.dynamicFamilyId === familyId &&
+        !n.parentId
+    );
+
+    // Check if node is a descendant of any top-level node
+    for (const topNode of topLevelNodes) {
+      if (isDescendantOf(node.id, topNode.id, nodeState.nodes)) {
+        return topNode;
+      }
+    }
+
+    return null;
+  };
+
+  // Helper to check if a node is a descendant of another
+  const isDescendantOf = (
+    childId: string | number,
+    parentId: string | number,
+    nodes: Node[]
+  ) => {
+    const child = nodes.find((n) => n.id === childId);
+    if (!child) return false;
+    if (child.parentId === parentId) return true;
+    if (child.parentId) return isDescendantOf(child.parentId, parentId, nodes);
+    return false;
+  };
+
+  // Updated handleDuplicate function that handles dynamic mode
   const handleDuplicate = (fromContextMenu = false) => {
     try {
       // When duplicating from context menu, use selected nodes
@@ -180,13 +237,77 @@ export const useNodeActions = () => {
       if (nodesToDuplicate.length === 0) return;
       const mainNode = nodesToDuplicate[0];
 
-      if (mainNode.inViewport || mainNode.parentId) {
-        handleViewportDuplication(nodesToDuplicate, fromContextMenu);
-      } else {
-        if (fromContextMenu) {
-          handleContextMenuCanvasDuplication(nodesToDuplicate);
+      // Check if we're in dynamic mode
+      const isInDynamicMode = !!dragState.dynamicModeNodeId;
+
+      // CASE 1: Duplicating a dynamic element in normal canvas mode (not in dynamic mode)
+      // We'll do this regardless of fromContextMenu
+      if (!isInDynamicMode && mainNode.isDynamic) {
+        console.log("Duplicating dynamic element in normal canvas mode");
+
+        // Use a specialized function for duplicating dynamic elements
+        // This is completely separate from the normal duplication process
+        const newTopNodeId = duplicateDynamicElement(mainNode.id);
+
+        if (newTopNodeId) {
+          // Select the new element after creation
+          setTimeout(() => {
+            dragDisp.clearSelection();
+            dragDisp.addToSelection(newTopNodeId);
+          }, 100);
+        }
+        return; // Exit early to avoid double processing
+      }
+      // CASE 2: Duplicating in dynamic mode
+      else if (isInDynamicMode) {
+        // Check if we should use dynamic duplication by finding topmost parent
+        const topmostParent = findTopmostParentInDynamicFamily(mainNode);
+        const isTopLevelDynamicNode =
+          topmostParent && topmostParent.id === mainNode.id;
+
+        if (isTopLevelDynamicNode) {
+          // We're duplicating a top-level dynamic node, use duplicateDynamicElement
+          const nodeDimensions = dragState.nodeDimensions[topmostParent.id];
+          const nodeWidth =
+            nodeDimensions?.width ||
+            parseFloat(topmostParent.style.width as string) ||
+            300;
+
+          const direction = "right";
+          const newVariantId = nodeDisp.duplicateDynamicElement(
+            topmostParent.id,
+            nodeWidth,
+            direction
+          );
+
+          if (newVariantId) {
+            setTimeout(() => {
+              dragDisp.selectNode(newVariantId);
+            }, 1);
+          }
         } else {
-          handleCanvasDuplication(mainNode);
+          // Not a top-level dynamic node, use regular duplication
+          if (mainNode.inViewport || mainNode.parentId) {
+            handleViewportDuplication(nodesToDuplicate, fromContextMenu);
+          } else {
+            if (fromContextMenu) {
+              handleContextMenuCanvasDuplication(nodesToDuplicate);
+            } else {
+              handleCanvasDuplication(mainNode);
+            }
+          }
+        }
+      }
+      // CASE 3: Normal duplication (non-dynamic elements outside dynamic mode)
+      else {
+        if (mainNode.inViewport || mainNode.parentId) {
+          handleViewportDuplication(nodesToDuplicate, fromContextMenu);
+        } else {
+          if (fromContextMenu) {
+            handleContextMenuCanvasDuplication(nodesToDuplicate);
+          } else {
+            handleCanvasDuplication(mainNode);
+          }
         }
       }
 
@@ -199,16 +320,330 @@ export const useNodeActions = () => {
     }
   };
 
-  // New helper for context menu canvas duplication
+  function duplicateDynamicElement(sourceNodeId) {
+    // Find the source node
+    const sourceNode = nodeState.nodes.find((n) => n.id === sourceNodeId);
+    if (!sourceNode || !sourceNode.isDynamic) return null;
+
+    console.log("Starting duplication of dynamic element:", sourceNodeId);
+
+    // 1. IDENTIFY THE FAMILY AND ENSURE UNIQUENESS
+    const originalFamilyId = sourceNode.dynamicFamilyId;
+    const newFamilyId = nanoid();
+
+    // 2. GATHER ALL RELATED NODES
+    // First get all nodes with the family ID
+    const familyNodes = nodeState.nodes.filter(
+      (n) => n.dynamicFamilyId === originalFamilyId
+    );
+
+    // Find all nodes that are children of family nodes
+    const familyNodeIds = familyNodes.map((n) => n.id);
+    const childNodes = [];
+
+    const findAllChildren = (parentIds) => {
+      const children = nodeState.nodes.filter(
+        (n) =>
+          !familyNodes.some((fn) => fn.id === n.id) &&
+          parentIds.includes(n.parentId)
+      );
+
+      if (children.length === 0) return;
+
+      children.forEach((child) => {
+        childNodes.push(child);
+      });
+
+      // Recursively find children of these children
+      findAllChildren(children.map((c) => c.id));
+    };
+
+    findAllChildren(familyNodeIds);
+
+    // Combine all nodes to duplicate
+    const allFamilyNodes = [...familyNodes, ...childNodes];
+
+    // Quick check if there are any nodes to duplicate
+    if (allFamilyNodes.length === 0) {
+      console.warn("No nodes found to duplicate");
+      return null;
+    }
+
+    // Check if this is a dynamic element with no variants
+    const hasVariants = allFamilyNodes.some((n) => n.isVariant);
+    console.log(
+      `Found ${familyNodes.length} family nodes and ${childNodes.length} child nodes. Has variants: ${hasVariants}`
+    );
+
+    // 3. CREATE ID MAPPINGS
+    const idMap = new Map(); // old ID -> new ID
+    const sharedIdMap = new Map(); // old sharedId -> new sharedId
+    const variantRespIdMap = new Map(); // old variantResponseId -> new variantResponseId
+    const variantInfoIdMap = new Map(); // old variantInfo.id -> new variantInfo.id
+
+    // First pass: Generate new unique IDs for all relevant properties
+    allFamilyNodes.forEach((node) => {
+      // Create new unique ID for each node
+      idMap.set(node.id, nanoid());
+
+      // Map sharedIds (same old ID gets same new ID)
+      if (node.sharedId && !sharedIdMap.has(node.sharedId)) {
+        sharedIdMap.set(node.sharedId, nanoid());
+      }
+
+      // Map variantResponsiveIds (same old ID gets same new ID)
+      if (
+        node.variantResponsiveId &&
+        !variantRespIdMap.has(node.variantResponsiveId)
+      ) {
+        variantRespIdMap.set(node.variantResponsiveId, nanoid());
+      }
+
+      // Map variantInfo.id values (same old ID gets same new ID)
+      if (node.variantInfo?.id && !variantInfoIdMap.has(node.variantInfo.id)) {
+        variantInfoIdMap.set(
+          node.variantInfo.id,
+          `variant-${Math.floor(Math.random() * 10000)}`
+        );
+      }
+    });
+
+    // 4. CREATE DUPLICATED NODES WITH UPDATED IDs
+    const newNodes = [];
+
+    allFamilyNodes.forEach((originalNode) => {
+      // Deep clone the node
+      const newNode = JSON.parse(JSON.stringify(originalNode));
+
+      // Set new node ID
+      newNode.id = idMap.get(originalNode.id);
+
+      // Update family ID if applicable
+      if (originalNode.dynamicFamilyId === originalFamilyId) {
+        newNode.dynamicFamilyId = newFamilyId;
+      }
+
+      // Update sharedId if present
+      if (originalNode.sharedId && sharedIdMap.has(originalNode.sharedId)) {
+        newNode.sharedId = sharedIdMap.get(originalNode.sharedId);
+      }
+
+      // Update variantResponsiveId if present
+      if (
+        originalNode.variantResponsiveId &&
+        variantRespIdMap.has(originalNode.variantResponsiveId)
+      ) {
+        newNode.variantResponsiveId = variantRespIdMap.get(
+          originalNode.variantResponsiveId
+        );
+      }
+
+      // Update variantInfo.id if present
+      if (
+        originalNode.variantInfo?.id &&
+        variantInfoIdMap.has(originalNode.variantInfo.id)
+      ) {
+        newNode.variantInfo = {
+          ...originalNode.variantInfo,
+          id: variantInfoIdMap.get(originalNode.variantInfo.id),
+        };
+      }
+
+      // FIX: Only adjust position for canvas mode, not for normal mode
+      // Check if we're in canvas mode (node has position property)
+      if (originalNode.id === sourceNodeId && originalNode.position) {
+        // Only update position for canvas mode, not for normal mode
+        newNode.position = {
+          x: originalNode.position.x + 500,
+          y: originalNode.position.y,
+        };
+
+        // Don't modify the style.left property in normal mode
+        // This ensures we don't add a 'left: 500px' when duplicating in normal mode
+      }
+
+      // Store the original node's ID and type for reference in the second pass
+      newNode._originalId = originalNode.id;
+      newNode._originalParentId = originalNode.parentId;
+      newNode._isVariant = originalNode.isVariant === true;
+      newNode._isDynamic = originalNode.isDynamic === true;
+
+      // CRITICAL: Ensure dynamic nodes are visible in all viewports
+      if (originalNode.isDynamic) {
+        newNode.inViewport = true;
+        if (newNode.originalState) {
+          newNode.originalState.inViewport = true;
+        }
+      }
+
+      // Update dynamicParentId reference
+      if (
+        originalNode.dynamicParentId &&
+        idMap.has(originalNode.dynamicParentId)
+      ) {
+        newNode.dynamicParentId = idMap.get(originalNode.dynamicParentId);
+      }
+
+      // Update variantParentId reference
+      if (
+        originalNode.variantParentId &&
+        idMap.has(originalNode.variantParentId)
+      ) {
+        newNode.variantParentId = idMap.get(originalNode.variantParentId);
+      }
+
+      // ADDED: Update dynamicConnections references if present
+      // We'll store the original connections but not update them yet
+      // since we need all nodes to be created first
+      if (
+        originalNode.dynamicConnections &&
+        originalNode.dynamicConnections.length > 0
+      ) {
+        newNode._originalDynamicConnections = originalNode.dynamicConnections;
+      }
+
+      newNodes.push(newNode);
+    });
+
+    // Special case for dynamic elements with no variants - just update references directly
+    if (!hasVariants) {
+      // Update dynamicConnections with properly mapped IDs
+      newNodes.forEach((newNode) => {
+        if (newNode._originalDynamicConnections) {
+          newNode.dynamicConnections = newNode._originalDynamicConnections.map(
+            (conn) => {
+              const newConn = { ...conn };
+              // Map source ID if it's in our idMap
+              if (idMap.has(conn.sourceId)) {
+                newConn.sourceId = idMap.get(conn.sourceId);
+              }
+              // Map target ID if it's in our idMap
+              if (idMap.has(conn.targetId)) {
+                newConn.targetId = idMap.get(conn.targetId);
+              }
+              return newConn;
+            }
+          );
+
+          // Remove the temporary property
+          delete newNode._originalDynamicConnections;
+        }
+
+        // Clean up temporary properties
+        delete newNode._originalId;
+        delete newNode._originalParentId;
+        delete newNode._isVariant;
+        delete newNode._isDynamic;
+      });
+
+      // Insert all nodes directly with their original parentId structure
+      nodeDisp.pushNodes(newNodes);
+
+      console.log(
+        `Successfully duplicated ${newNodes.length} nodes with family ID ${newFamilyId} (no variants)`
+      );
+
+      // Return the ID of the duplicated source node
+      return idMap.get(sourceNodeId);
+    }
+
+    // 5. CREATE LOOKUP MAP FOR VARIANT CHILDREN
+    const variantChildMap = new Map();
+
+    // Identify which nodes are children of variants in the original tree
+    allFamilyNodes.forEach((originalNode) => {
+      if (originalNode.parentId) {
+        const parent = allFamilyNodes.find(
+          (n) => n.id === originalNode.parentId
+        );
+        if (parent && parent.isVariant) {
+          variantChildMap.set(originalNode.id, parent.id);
+        }
+      }
+    });
+
+    // 6. SECOND PASS: SET PARENT-CHILD RELATIONSHIPS
+    newNodes.forEach((newNode) => {
+      // CRITICAL FIX: For variants, always set parentId to null
+      if (newNode._isVariant) {
+        newNode.parentId = null;
+      }
+      // For dynamic nodes: parentId should be the viewport
+      else if (newNode._isDynamic) {
+        newNode.parentId = newNode.dynamicViewportId;
+      }
+      // For children nodes with parents in our mapping
+      else if (
+        newNode._originalParentId &&
+        idMap.has(newNode._originalParentId)
+      ) {
+        newNode.parentId = idMap.get(newNode._originalParentId);
+      }
+
+      // Special handling for variant children
+      if (variantChildMap.has(newNode._originalId)) {
+        const originalVariantParentId = variantChildMap.get(
+          newNode._originalId
+        );
+        if (idMap.has(originalVariantParentId)) {
+          newNode.parentId = idMap.get(originalVariantParentId);
+        }
+      }
+
+      // ADDED: Update dynamicConnections with properly mapped IDs
+      if (newNode._originalDynamicConnections) {
+        newNode.dynamicConnections = newNode._originalDynamicConnections.map(
+          (conn) => {
+            const newConn = { ...conn };
+            // Map source ID if it's in our idMap
+            if (idMap.has(conn.sourceId)) {
+              newConn.sourceId = idMap.get(conn.sourceId);
+            }
+            // Map target ID if it's in our idMap
+            if (idMap.has(conn.targetId)) {
+              newConn.targetId = idMap.get(conn.targetId);
+            }
+            return newConn;
+          }
+        );
+
+        // Remove the temporary property
+        delete newNode._originalDynamicConnections;
+      }
+
+      // Clean up temporary properties
+      delete newNode._originalId;
+      delete newNode._originalParentId;
+      delete newNode._isVariant;
+      delete newNode._isDynamic;
+    });
+
+    // 7. DIRECT INSERTION USING THE pushNodes METHOD
+    nodeDisp.pushNodes(newNodes);
+
+    console.log(
+      `Successfully duplicated ${newNodes.length} nodes with family ID ${newFamilyId}`
+    );
+
+    // Return the ID of the duplicated source node
+    return idMap.get(sourceNodeId);
+  }
+
   const handleContextMenuCanvasDuplication = (nodesToDuplicate: Node[]) => {
     const allClonedNodesByNode = new Map<string, Node[]>();
     const rootClonedNodes = new Map<string, Node>();
+    let firstDuplicateId = null;
 
     // Clone all selected nodes
     nodesToDuplicate.forEach((node) => {
       const { rootClone, allClones } = cloneNode(node, nodeState.nodes);
       allClonedNodesByNode.set(node.id, allClones);
       rootClonedNodes.set(node.id, rootClone);
+
+      // Store the first duplicate ID
+      if (!firstDuplicateId) {
+        firstDuplicateId = rootClone.id;
+      }
 
       // Get the original node's dimensions
       const dimensions = dragState.nodeDimensions[node.id];
@@ -232,7 +667,7 @@ export const useNodeActions = () => {
     for (const [originalNodeId, rootClone] of rootClonedNodes.entries()) {
       const allClones = allClonedNodesByNode.get(originalNodeId) || [];
 
-      nodeDisp.insertAtIndex(rootClone, 0, null);
+      nodeDisp.insertAtIndex(rootClone, 0, null, dragState);
 
       const originalNode = nodeState.nodes.find((n) => n.id === originalNodeId);
       if (originalNode) {
@@ -244,7 +679,7 @@ export const useNodeActions = () => {
         (clone) => clone.id !== rootClone.id
       );
       for (const childClone of childClones) {
-        nodeDisp.insertAtIndex(childClone, 0, childClone.parentId);
+        nodeDisp.insertAtIndex(childClone, 0, childClone.parentId, dragState);
 
         const originalChildren = getAllChildNodes(
           originalNodeId,
@@ -259,6 +694,8 @@ export const useNodeActions = () => {
         }
       }
     }
+
+    return firstDuplicateId;
   };
 
   // Canvas duplication helper
@@ -334,7 +771,7 @@ export const useNodeActions = () => {
       const allClones = allClonedNodesByNode.get(originalNodeId) || [];
 
       if (!rootClone.inViewport) {
-        nodeDisp.insertAtIndex(rootClone, 0, null);
+        nodeDisp.insertAtIndex(rootClone, 0, null, dragState);
       }
 
       const originalNode = nodeState.nodes.find((n) => n.id === originalNodeId);
@@ -346,7 +783,7 @@ export const useNodeActions = () => {
         (clone) => clone.id !== rootClone.id
       );
       for (const childClone of childClones) {
-        nodeDisp.insertAtIndex(childClone, 0, childClone.parentId);
+        nodeDisp.insertAtIndex(childClone, 0, childClone.parentId, dragState);
 
         const originalChildren = getAllChildNodes(
           originalNodeId,
@@ -370,11 +807,18 @@ export const useNodeActions = () => {
   ) => {
     const allClonedNodes: Node[] = [];
     const rootClonedNodes: Node[] = [];
+    let firstDuplicateId = null;
 
     nodesToDuplicate.forEach((node) => {
       const { rootClone, allClones } = cloneNode(node, nodeState.nodes);
       rootClonedNodes.push(rootClone);
       allClonedNodes.push(...allClones);
+
+      // Store the first duplicate's ID
+      if (!firstDuplicateId) {
+        firstDuplicateId = rootClone.id;
+      }
+
       copyDimensions(node, rootClone);
     });
 
@@ -392,7 +836,12 @@ export const useNodeActions = () => {
         );
         // If from context menu, insert after the original node
         const targetIndex = fromContextMenu ? originalIndex + 1 : originalIndex;
-        nodeDisp.insertAtIndex(rootClone, targetIndex, rootClone.parentId);
+        nodeDisp.insertAtIndex(
+          rootClone,
+          targetIndex,
+          rootClone.parentId,
+          dragState
+        );
       }
     });
 
@@ -401,7 +850,7 @@ export const useNodeActions = () => {
       (node) => !rootClonedNodes.includes(node)
     );
     childNodes.forEach((childNode) => {
-      nodeDisp.insertAtIndex(childNode, 0, childNode.parentId);
+      nodeDisp.insertAtIndex(childNode, 0, childNode.parentId, dragState);
 
       const originalParentId = nodesToDuplicate.find(
         (n) =>
@@ -425,6 +874,8 @@ export const useNodeActions = () => {
     });
 
     nodeDisp.syncViewports();
+
+    return firstDuplicateId;
   };
 
   const handleCopy = () => {

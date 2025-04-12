@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 
@@ -43,10 +43,23 @@ export const GapHandles = ({
     stopRecording,
   } = useBuilder();
   const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
+  const [isInteractive, setIsInteractive] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInteractive(true);
+    }, 200); // 100ms delay before making it interactive
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   const startAdjustingGap = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    if (!isInteractive) return;
 
     // Initialize gap if it doesn't exist or has an invalid value
     const hasInvalidGap =
@@ -190,6 +203,7 @@ export const GapHandles = ({
             height: `${gapHeightScaled}px`,
             backgroundColor: "rgba(244, 114, 182, 0.1)",
             opacity: hoveredGapIndex === i ? 1 : 0,
+            pointerEvents: isInteractive ? "auto" : "none",
           }}
         />
       );
@@ -204,6 +218,7 @@ export const GapHandles = ({
             left: "50%",
             marginLeft: "-20px",
             zIndex: 1,
+            pointerEvents: isInteractive ? "auto" : "none",
           }}
           onMouseDown={startAdjustingGap}
           onMouseEnter={() => setHoveredGapIndex(i)}
@@ -230,6 +245,7 @@ export const GapHandles = ({
             height: "100%",
             backgroundColor: "rgba(244, 114, 182, 0.1)",
             opacity: hoveredGapIndex === i ? 1 : 0,
+            pointerEvents: isInteractive ? "auto" : "none",
           }}
         />
       );
@@ -244,6 +260,7 @@ export const GapHandles = ({
             top: "50%",
             marginTop: "-20px",
             zIndex: 1,
+            pointerEvents: isInteractive ? "auto" : "none",
           }}
           onMouseDown={startAdjustingGap}
           onMouseEnter={() => setHoveredGapIndex(i)}

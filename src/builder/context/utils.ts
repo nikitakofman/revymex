@@ -797,8 +797,33 @@ export const isWithinViewport = (
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return false;
 
+  // Direct checks
   if (node.isViewport) return true;
+  if (node.inViewport) return true;
 
+  // Dynamic node checks
+  if (node.dynamicViewportId) {
+    // If it has a dynamicViewportId, it's logically within that viewport
+    return true;
+  }
+
+  if (node.originalState?.inViewport) {
+    // If it was originally in a viewport (for dynamic nodes)
+    return true;
+  }
+
+  // Check if parent is a dynamic node with viewport connection
+  if (node.parentId) {
+    const parentNode = nodes.find((n) => n.id === node.parentId);
+    if (
+      parentNode &&
+      (parentNode.dynamicViewportId || parentNode.originalState?.inViewport)
+    ) {
+      return true;
+    }
+  }
+
+  // Recurse up the parent chain for traditional viewport relationships
   return node.parentId ? isWithinViewport(node.parentId, nodes) : false;
 };
 
@@ -997,13 +1022,99 @@ export function getFilteredNodes(
           (node) => node.id === dynamicModeNodeId
         );
 
-        if (mainDynamicNode?.sharedId) {
-          // Find a counterpart with the right viewport ID
-          mainNode = deduplicatedNodes.find(
-            (node) =>
-              node.sharedId === mainDynamicNode.sharedId &&
-              node.dynamicViewportId === activeViewportId
-          );
+        if (mainDynamicNode) {
+          // Critical change: Use multiple strategies to find the correct counterpart
+
+          // Strategy 1: Direct match on sharedId + dynamicViewportId
+          if (mainDynamicNode.sharedId) {
+            mainNode = deduplicatedNodes.find(
+              (node) =>
+                node.sharedId === mainDynamicNode.sharedId &&
+                node.dynamicViewportId === activeViewportId
+            );
+          }
+
+          // Strategy 2: Match on variantResponsiveId + dynamicViewportId
+          if (!mainNode && mainDynamicNode.variantResponsiveId) {
+            mainNode = deduplicatedNodes.find(
+              (node) =>
+                node.variantResponsiveId ===
+                  mainDynamicNode.variantResponsiveId &&
+                node.dynamicViewportId === activeViewportId
+            );
+          }
+
+          // Strategy 3: Match on dynamicFamilyId + dynamicViewportId
+          if (!mainNode && mainDynamicNode.dynamicFamilyId) {
+            mainNode = deduplicatedNodes.find(
+              (node) =>
+                node.dynamicFamilyId === mainDynamicNode.dynamicFamilyId &&
+                node.dynamicViewportId === activeViewportId
+            );
+          }
+
+          // Strategy 4: Match on originalParentId that's the active viewport
+          if (!mainNode && mainDynamicNode.sharedId) {
+            mainNode = deduplicatedNodes.find(
+              (node) =>
+                node.sharedId === mainDynamicNode.sharedId &&
+                node.originalParentId === activeViewportId
+            );
+          }
+
+          // Strategy 5: Look for any node with the same sharedId that has this viewport
+          // in its original parent chain
+          if (!mainNode && mainDynamicNode.sharedId) {
+            // This is a more aggressive approach to find matching nodes
+            const possibleNodes = deduplicatedNodes.filter(
+              (node) =>
+                node.sharedId === mainDynamicNode.sharedId &&
+                node.id !== mainDynamicNode.id
+            );
+
+            for (const candidate of possibleNodes) {
+              // Find the parent viewport for this candidate
+              let current = candidate;
+              let foundViewport = false;
+
+              // Try to match with originalParentId first
+              if (current.originalParentId) {
+                const parentNode = deduplicatedNodes.find(
+                  (n) => n.id === current.originalParentId
+                );
+                if (
+                  parentNode &&
+                  parentNode.isViewport &&
+                  parentNode.id === activeViewportId
+                ) {
+                  mainNode = candidate;
+                  foundViewport = true;
+                  break;
+                }
+              }
+
+              // If not found, check the parentId chain
+              if (!foundViewport && current.parentId) {
+                let parentId = current.parentId;
+                while (parentId) {
+                  const parent = deduplicatedNodes.find(
+                    (n) => n.id === parentId
+                  );
+                  if (!parent) break;
+
+                  if (parent.isViewport && parent.id === activeViewportId) {
+                    mainNode = candidate;
+                    foundViewport = true;
+                    break;
+                  }
+
+                  parentId = parent.parentId;
+                }
+              }
+
+              if (foundViewport) break;
+            }
+          }
         }
 
         // Fallback to main node if no counterpart found
@@ -1014,12 +1125,26 @@ export function getFilteredNodes(
 
       if (!mainNode) return [];
 
-      // Get all direct variants of this node
-      const directVariants = deduplicatedNodes.filter(
-        (node) =>
+      // Get all direct variants of this node using all possible relationships
+      const directVariants = deduplicatedNodes.filter((node) => {
+        return (
+          // Traditional direct connections
           node.variantParentId === mainNode!.id ||
-          node.dynamicParentId === mainNode!.id
-      );
+          node.dynamicParentId === mainNode!.id ||
+          // Dynamic family connection
+          (mainNode!.dynamicFamilyId &&
+            node.dynamicFamilyId === mainNode!.dynamicFamilyId &&
+            node.id !== mainNode!.id) ||
+          // Variant responsive connection
+          (mainNode!.variantResponsiveId &&
+            node.variantResponsiveId === mainNode!.variantResponsiveId &&
+            node.id !== mainNode!.id) ||
+          // Shared ID connection (critical for repositioned elements)
+          (mainNode!.sharedId &&
+            node.sharedId === mainNode!.sharedId &&
+            node.id !== mainNode!.id)
+        );
+      });
 
       // All top-level nodes we want to include
       const topLevelNodes = [mainNode, ...directVariants];
@@ -1027,10 +1152,38 @@ export function getFilteredNodes(
       // Build a set of all top-level node IDs for quick lookup
       const topLevelNodeIds = new Set(topLevelNodes.map((node) => node.id));
 
-      // Final set of nodes to include
-      const result: Node[] = [...topLevelNodes];
+      // Here's the critical change: we need to process base nodes first, followed by variants
+      // This ensures the primary base node for each viewport gets priority in rendering
 
-      // For each top-level node, include its children
+      // Separate nodes into base nodes and variants
+      const baseNodes = topLevelNodes.filter((node) => !node.isVariant);
+      const variantNodes = topLevelNodes.filter((node) => node.isVariant);
+
+      // Create result with base nodes first, then variants
+      // This ensures base nodes have rendering priority
+      const result: Node[] = [...baseNodes, ...variantNodes];
+
+      // CRITICAL FIX: Ensure the dynamic base node for this viewport is included and comes first
+      // First look for dynamic nodes with matching sharedId and dynamicViewportId
+      if (mainNode.sharedId && activeViewportId) {
+        const viewportBaseNode = deduplicatedNodes.find(
+          (node) =>
+            node.sharedId === mainNode.sharedId &&
+            node.dynamicViewportId === activeViewportId &&
+            node.isDynamic &&
+            !node.isVariant
+        );
+
+        if (
+          viewportBaseNode &&
+          !result.some((n) => n.id === viewportBaseNode.id)
+        ) {
+          // Insert at the beginning to give it priority
+          result.unshift(viewportBaseNode);
+        }
+      }
+
+      // Process all top-level nodes for their children
       topLevelNodes.forEach((parent) => {
         // Get all children - using originalParentId to reconstruct relationships
         const childrenOfParent = deduplicatedNodes.filter(
@@ -1053,6 +1206,58 @@ export function getFilteredNodes(
         }
       });
 
+      // Important: Ensure all nodes with the same dynamicFamilyId are included
+      if (mainNode.dynamicFamilyId) {
+        const familyNodes = deduplicatedNodes.filter(
+          (node) =>
+            node.dynamicFamilyId === mainNode.dynamicFamilyId &&
+            !result.some((r) => r.id === node.id)
+        );
+
+        // Add family nodes that are not variants first, then variants
+        const familyBaseNodes = familyNodes.filter((node) => !node.isVariant);
+        const familyVariantNodes = familyNodes.filter((node) => node.isVariant);
+        result.push(...familyBaseNodes, ...familyVariantNodes);
+      }
+
+      // Also ensure all nodes with the same variantResponsiveId are included
+      if (mainNode.variantResponsiveId) {
+        const variantNodes = deduplicatedNodes.filter(
+          (node) =>
+            node.variantResponsiveId === mainNode.variantResponsiveId &&
+            !result.some((r) => r.id === node.id)
+        );
+
+        // Add base nodes first, then variants
+        const vBaseNodes = variantNodes.filter((node) => !node.isVariant);
+        const vVariantNodes = variantNodes.filter((node) => node.isVariant);
+        result.push(...vBaseNodes, ...vVariantNodes);
+      }
+
+      // Also include all nodes with same sharedId as any node already in result
+      const sharedIdsToInclude = new Set<string>();
+      result.forEach((node) => {
+        if (node.sharedId) sharedIdsToInclude.add(node.sharedId);
+      });
+
+      if (sharedIdsToInclude.size > 0) {
+        const allSharedNodes = deduplicatedNodes.filter(
+          (node) =>
+            node.sharedId &&
+            sharedIdsToInclude.has(node.sharedId) &&
+            !result.some((r) => r.id === node.id)
+        );
+
+        // Add base nodes first, then variants
+        const sharedBaseNodes = allSharedNodes.filter(
+          (node) => !node.isVariant
+        );
+        const sharedVariantNodes = allSharedNodes.filter(
+          (node) => node.isVariant
+        );
+        result.push(...sharedBaseNodes, ...sharedVariantNodes);
+      }
+
       return result;
     }
 
@@ -1065,11 +1270,19 @@ export function getFilteredNodes(
     if (!mainDynamicNode) return [];
 
     // Get all direct variants of the main dynamic node
-    const directVariants = deduplicatedNodes.filter(
-      (node) =>
+    // Enhanced to use dynamicFamilyId and variantResponsiveId
+    const directVariants = deduplicatedNodes.filter((node) => {
+      return (
         node.variantParentId === dynamicModeNodeId ||
-        node.dynamicParentId === dynamicModeNodeId
-    );
+        node.dynamicParentId === dynamicModeNodeId ||
+        (mainDynamicNode.dynamicFamilyId &&
+          node.dynamicFamilyId === mainDynamicNode.dynamicFamilyId &&
+          node.id !== mainDynamicNode.id) ||
+        (mainDynamicNode.variantResponsiveId &&
+          node.variantResponsiveId === mainDynamicNode.variantResponsiveId &&
+          node.id !== mainDynamicNode.id)
+      );
+    });
 
     // All top-level nodes we want to include
     const topLevelNodes = [mainDynamicNode, ...directVariants];
@@ -1533,6 +1746,62 @@ export const handleMediaToFrameTransformation = (
 
     // If we have a dropped node, add it as a child
     if (droppedNode) {
+      // Check if the dropped node is from the canvas (existing node)
+      const isExistingNode =
+        !droppedNode.parentId || droppedNode.style.position === "absolute";
+
+      // Check for duplicates of this node
+      if (isExistingNode) {
+        // Find all instances of this node in the tree
+        const allNodes = nodeDisp.getNodeState().nodes;
+        const duplicateNodes = allNodes.filter((n) => n.id === droppedNode.id);
+
+        // If there's more than one or this is a canvas node, we need to handle it differently
+        if (
+          duplicateNodes.length > 1 ||
+          droppedNode.style.position === "absolute"
+        ) {
+          // For existing nodes, we'll just update properties rather than creating a new node
+          const updatedNode = {
+            ...droppedNode,
+            style: {
+              ...droppedNode.style,
+              position: "relative",
+              zIndex: "",
+              transform: "",
+              left: "",
+              top: "",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            },
+            parentId: frameNode.id,
+            inViewport: frameNode.inViewport || false,
+          };
+
+          // Update the existing node
+          nodeDisp.updateNode(droppedNode.id, updatedNode);
+
+          // Find any canvas duplicates to remove
+          const canvasDuplicate = allNodes.find(
+            (n) =>
+              n.id === droppedNode.id &&
+              (n.style.position === "absolute" || n.parentId === null) &&
+              n.id !== updatedNode.id
+          );
+
+          if (canvasDuplicate) {
+            nodeDisp.removeNode(canvasDuplicate.id);
+          }
+
+          nodeDisp.syncViewports();
+          nodeDisp.syncVariants(mediaNode.id);
+
+          return true;
+        }
+      }
+
+      // For new nodes or non-duplicate existing nodes, add as child
       const childNode = {
         ...droppedNode,
         sharedId: nanoid(),

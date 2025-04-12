@@ -397,6 +397,7 @@ export const Frame = ({ children, node }: ElementProps) => {
                 borderRadius: "inherit",
                 overflow: "hidden",
                 zIndex: 0,
+                pointerEvents: "none",
               }}
             >
               {node.style.backgroundVideo ? (
@@ -410,13 +411,14 @@ export const Frame = ({ children, node }: ElementProps) => {
                     pointerEvents: "none",
                   }}
                   src={node.style.backgroundVideo}
-                  autoPlay
+                  autoPlay={false}
                   muted
                   loop
                   playsInline
                 />
               ) : node.style.backgroundImage ? (
-                <img
+                <Image
+                  fill={false}
                   style={{
                     width: "100%",
                     height: "100%",
@@ -451,6 +453,8 @@ export const Frame = ({ children, node }: ElementProps) => {
               inset: 0,
               borderRadius: "inherit",
               overflow: "hidden",
+              zIndex: 0,
+              pointerEvents: "none",
             }}
           >
             {node.style.backgroundVideo ? (
@@ -469,12 +473,13 @@ export const Frame = ({ children, node }: ElementProps) => {
                 // muted={node.style.muted || true}
                 // controls={node.style.controls || false}
                 // playsInline
-                autoPlay
+                autoPlay={false}
                 muted
                 loop
               />
             ) : node.style.backgroundImage ? (
-              <img
+              <Image
+                fill={true}
                 style={{
                   width: "100%",
                   height: "100%",

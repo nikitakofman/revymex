@@ -236,10 +236,7 @@ export const useMouseUp = () => {
       const targetNode = nodeState.nodes.find((n) => n.id === targetId);
 
       // First, handle media transformation for image or video nodes
-      if (
-        (targetNode?.type === "image" || targetNode?.type === "video") &&
-        dragState.draggedItem
-      ) {
+      if (targetNode?.type === "image" || targetNode?.type === "video") {
         const newNode = {
           ...draggedNode,
           sharedId,
@@ -276,14 +273,13 @@ export const useMouseUp = () => {
 
       // Regular drop handling onto a target container
       const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
+
+      console.log("isWithinViewport:", shouldBeInViewport);
       const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
       const activeViewportId = dragState.activeViewportInDynamicMode;
 
       if (dragState.draggedItem) {
         // Adding a new element from the toolbar or canvas
-
-        console.log("HERE5");
-
         const newNode = {
           ...draggedNode,
           sharedId: nanoid(), // always generate a new sharedId
@@ -304,20 +300,18 @@ export const useMouseUp = () => {
           } as Node["style"],
         };
 
-        if (targetFrame?.dynamicParentId) {
-          newNode.dynamicParentId = targetFrame.dynamicParentId;
-        }
-
-        // Store the new node's ID for later sync (its ordering info will be captured inside addNode)
+        // Store the new node's ID for later sync
         lastAddedNodeIdRef.current = newNode.id;
 
-        // IMPORTANT: addNode now captures the exact index where the node is inserted.
+        // Add the node - the enhanced addNode method will handle dynamic properties
+        // and call syncVariants when appropriate
         nodeDisp.addNode(newNode, targetId, position, shouldBeInViewport);
         dragDisp.setSelectedIds([newNode.id]);
 
+        // Still sync with standard viewports if not in dynamic mode
         if (!dragState.dynamicModeNodeId) {
           setTimeout(() => {
-            // Enhanced sync will use the stored ordering info (_lastAddedNodeInfo)
+            // Enhanced sync for non-dynamic mode
             nodeDisp.syncDroppedNodeWithChildren(realNodeId);
           }, 0);
         }
@@ -750,14 +744,13 @@ export const useMouseUp = () => {
             placeholderNode.parentId,
             targetIndex
           );
+
+          console.log("reodering?");
           // Apply full style with unsync flags since position changed
 
           setNodeStyle(
             {
               position: "relative",
-              zIndex: "",
-              left: "",
-              top: "",
               ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
               width: dimensions?.width,
               height: dimensions?.height,
@@ -1001,15 +994,37 @@ export const useMouseUp = () => {
           (mainDraggedRect.top - containerRect.top - transform.y) /
           transform.scale;
 
-        setNodeStyle(
-          {
-            position: "absolute",
-            left: `${mainNodeX}px`,
-            top: `${mainNodeY}px`,
-          },
-          [draggedNode.id],
-          false
-        );
+        // Get stored dimensions from drag start
+        const dimensions = dragState.nodeDimensions[draggedNode.id];
+
+        // Create style update with position and restored dimensions
+        const styleUpdate = {
+          position: "absolute",
+          left: `${mainNodeX}px`,
+          top: `${mainNodeY}px`,
+        };
+
+        // Restore flex if it was a flex-fill element
+        if (dimensions?.isFillMode) {
+          styleUpdate.flex = "1 0 0px";
+        }
+
+        // Restore percentage width/height if applicable
+        if (
+          typeof dimensions?.width === "string" &&
+          dimensions.width.includes("%")
+        ) {
+          styleUpdate.width = dimensions.width;
+        }
+
+        if (
+          typeof dimensions?.height === "string" &&
+          dimensions.height.includes("%")
+        ) {
+          styleUpdate.height = dimensions.height;
+        }
+
+        setNodeStyle(styleUpdate, [draggedNode.id], false);
 
         nodeDisp.moveNode(draggedNode.id, false, {
           newPosition: {
@@ -1035,15 +1050,37 @@ export const useMouseUp = () => {
                   (additionalRect.top - containerRect.top - transform.y) /
                   transform.scale;
 
-                setNodeStyle(
-                  {
-                    position: "absolute",
-                    left: `${additionalX}px`,
-                    top: `${additionalY}px`,
-                  },
-                  [info.node.id],
-                  false
-                );
+                // Get dimensions for additional node
+                const addDimensions = dragState.nodeDimensions[info.node.id];
+
+                // Create style update for additional node
+                const addStyleUpdate = {
+                  position: "absolute",
+                  left: `${additionalX}px`,
+                  top: `${additionalY}px`,
+                };
+
+                // Restore flex if it was flex-fill
+                if (addDimensions?.isFillMode) {
+                  addStyleUpdate.flex = "1 0 0px";
+                }
+
+                // Restore percentage dimensions
+                if (
+                  typeof addDimensions?.width === "string" &&
+                  addDimensions.width.includes("%")
+                ) {
+                  addStyleUpdate.width = addDimensions.width;
+                }
+
+                if (
+                  typeof addDimensions?.height === "string" &&
+                  addDimensions.height.includes("%")
+                ) {
+                  addStyleUpdate.height = addDimensions.height;
+                }
+
+                setNodeStyle(addStyleUpdate, [info.node.id], false);
 
                 nodeDisp.moveNode(info.node.id, false, {
                   newPosition: {
@@ -1067,15 +1104,37 @@ export const useMouseUp = () => {
                 const finalX = mainNodeX + distanceX;
                 const finalY = mainNodeY + distanceY;
 
-                setNodeStyle(
-                  {
-                    position: "absolute",
-                    left: `${finalX}px`,
-                    top: `${finalY}px`,
-                  },
-                  [info.node.id],
-                  false
-                );
+                // Get dimensions for additional node
+                const addDimensions = dragState.nodeDimensions[info.node.id];
+
+                // Create style update for additional node
+                const addStyleUpdate = {
+                  position: "absolute",
+                  left: `${finalX}px`,
+                  top: `${finalY}px`,
+                };
+
+                // Restore flex if it was flex-fill
+                if (addDimensions?.isFillMode) {
+                  addStyleUpdate.flex = "1 0 0px";
+                }
+
+                // Restore percentage dimensions
+                if (
+                  typeof addDimensions?.width === "string" &&
+                  addDimensions.width.includes("%")
+                ) {
+                  addStyleUpdate.width = addDimensions.width;
+                }
+
+                if (
+                  typeof addDimensions?.height === "string" &&
+                  addDimensions.height.includes("%")
+                ) {
+                  addStyleUpdate.height = addDimensions.height;
+                }
+
+                setNodeStyle(addStyleUpdate, [info.node.id], false);
 
                 nodeDisp.moveNode(info.node.id, false, {
                   newPosition: {

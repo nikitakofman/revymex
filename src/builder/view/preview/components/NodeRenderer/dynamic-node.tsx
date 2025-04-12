@@ -161,6 +161,16 @@ export const DynamicNode = ({ nodeId }) => {
   const activeVariant = dynamicVariants[responsiveBaseNode.id];
   const currentVariant = activeVariant || responsiveBaseNode;
 
+  useEffect(() => {
+    if (!dynamicVariants[responsiveBaseNode.id] && baseNode.isDynamic) {
+      // Initialize with default state (no variant active)
+      setDynamicVariants((prev) => ({
+        ...prev,
+        [responsiveBaseNode.id]: null,
+      }));
+    }
+  }, [responsiveBaseNode.id, baseNode.isDynamic]);
+
   // Force a re-render whenever the component mounts to ensure proper rendering
   useEffect(() => {
     if (!componentMountedRef.current) {
@@ -521,38 +531,50 @@ export const DynamicNode = ({ nodeId }) => {
   ]);
 
   const parseTextContent = (html) => {
-    if (!html) return { text: "", styles: {} };
+    if (!html) return { content: "", style: {} };
 
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
+
+      // Get the span element that contains the actual text and styles
       const span = doc.querySelector("span");
 
       if (span) {
-        // Extract the text content without HTML tags
+        // Get the raw text content without HTML tags
         const textContent = span.textContent || "";
 
-        // Extract the styles
+        // Extract the styles from the span element
+        const styleAttr = span.getAttribute("style") || "";
         const styles = {};
-        if (span.getAttribute("style")) {
-          const styleText = span.getAttribute("style");
 
-          const colorMatch = styleText.match(/color:\s*([^;]+)/i);
-          if (colorMatch) styles.color = colorMatch[1].trim();
+        // Extract color
+        const colorMatch = styleAttr.match(/color:\s*([^;]+)/i);
+        if (colorMatch) styles.color = colorMatch[1].trim();
 
-          const fontSizeMatch = styleText.match(/font-size:\s*([^;]+)/i);
-          if (fontSizeMatch) styles.fontSize = fontSizeMatch[1].trim();
+        // Extract font size
+        const fontSizeMatch = styleAttr.match(/font-size:\s*([^;]+)/i);
+        if (fontSizeMatch) styles.fontSize = fontSizeMatch[1].trim();
 
-          // Add other style extractions as needed
-        }
+        // Extract font weight
+        const fontWeightMatch = styleAttr.match(/font-weight:\s*([^;]+)/i);
+        if (fontWeightMatch) styles.fontWeight = fontWeightMatch[1].trim();
 
-        return { text: textContent, styles };
+        // Extract font family - specific improvements for handling quotes
+        const fontFamilyMatch = styleAttr.match(/font-family:\s*([^;]+)/i);
+        if (fontFamilyMatch) styles.fontFamily = fontFamilyMatch[1].trim();
+
+        // Extract line height
+        const lineHeightMatch = styleAttr.match(/line-height:\s*([^;]+)/i);
+        if (lineHeightMatch) styles.lineHeight = lineHeightMatch[1].trim();
+
+        return { content: textContent, style: styles };
       }
     } catch (e) {
       console.error("Error parsing HTML:", e);
     }
 
-    return { text: "", styles: {} };
+    return { content: "", style: {} };
   };
 
   // Recursive render function for a node and its children.
@@ -661,47 +683,6 @@ export const DynamicNode = ({ nodeId }) => {
           />
         );
       case "text":
-        // Parse HTML content to extract the text content and its styles separately
-        const parseTextContent = (html) => {
-          if (!html) return { content: "", style: {} };
-
-          try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, "text/html");
-            const span = doc.querySelector("span");
-
-            if (span) {
-              // Get the raw text content without HTML tags
-              const textContent = span.textContent || "";
-
-              // Extract the styles
-              const styleAttr = span.getAttribute("style") || "";
-              const styles = {};
-
-              const colorMatch = styleAttr.match(/color:\s*([^;]+)/i);
-              if (colorMatch) styles.color = colorMatch[1].trim();
-
-              const fontSizeMatch = styleAttr.match(/font-size:\s*([^;]+)/i);
-              if (fontSizeMatch) styles.fontSize = fontSizeMatch[1].trim();
-
-              const fontWeightMatch = styleAttr.match(
-                /font-weight:\s*([^;]+)/i
-              );
-              if (fontWeightMatch)
-                styles.fontWeight = fontWeightMatch[1].trim();
-
-              // Extract other style properties...
-
-              return { content: textContent, style: styles };
-            }
-          } catch (e) {
-            console.error("Error parsing HTML:", e);
-          }
-
-          return { content: "", style: {} };
-        };
-
-        // Extract text content and styles
         const parsedText = parseTextContent(childStyle.text);
 
         return (
@@ -717,7 +698,6 @@ export const DynamicNode = ({ nodeId }) => {
               fontFamily: undefined,
               lineHeight: undefined,
               textAlign: undefined,
-              // Other properties...
             }}
           >
             <p
@@ -734,11 +714,10 @@ export const DynamicNode = ({ nodeId }) => {
                     parsedText.style.fontFamily || childStyle.fontFamily,
                   lineHeight:
                     parsedText.style.lineHeight || childStyle.lineHeight,
-                  transition: "all 0.3s ease", // Always apply transition
+                  transition: "all 0.3s ease",
                   display: "inline-block",
                 }}
               >
-                {/* Use the extracted text content directly instead of dangerouslySetInnerHTML */}
                 {parsedText.content}
               </span>
             </p>
@@ -1095,7 +1074,7 @@ export const DynamicNode = ({ nodeId }) => {
                 />
               );
             case "text":
-              // Parse the HTML to extract content and styles
+              // Parse the HTML to extract content and styling
               const mainParsedText = parseTextContent(mergedStyle.text);
 
               return (
@@ -1126,13 +1105,12 @@ export const DynamicNode = ({ nodeId }) => {
                         lineHeight:
                           mainParsedText.style.lineHeight ||
                           mergedStyle.lineHeight,
-                        transition: "all 0.3s ease", // Always apply transition
+                        transition: "all 0.3s ease",
                         display: "block",
                         width: "100%",
                         height: "100%",
                       }}
                     >
-                      {/* Use the extracted text content directly */}
                       {mainParsedText.content}
                     </span>
                   </p>

@@ -17,7 +17,12 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({ nodeId }) => {
   const node = useMemo(() => {
     // First, check active variants' children.
     for (const [sourceId, variant] of Object.entries(dynamicVariants)) {
-      if (variant.children && findNodeById(variant.children, nodeId)) {
+      // Add a null/undefined check before accessing .children
+      if (
+        variant &&
+        variant.children &&
+        findNodeById(variant.children, nodeId)
+      ) {
         return findNodeById(variant.children, nodeId);
       }
     }
