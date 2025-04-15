@@ -258,7 +258,11 @@ export const useMouseMove = () => {
       );
       finalX = Math.round(adjustedPosition.x);
       finalY = Math.round(adjustedPosition.y);
+
+      // console.log("is over canvas?");
       dragDisp.setDragPositions(finalX, finalY);
+
+      console.log("dragPositiosn", dragState.dragPositions);
     }
 
     // Handle absolute positioning in frames

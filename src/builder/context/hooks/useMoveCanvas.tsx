@@ -1,19 +1,38 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useBuilder } from "../builderState";
+import TransformManager from "@/builder/view/canvas/transform-manager";
 
 export const useMoveCanvas = () => {
   const {
     containerRef,
+    contentRef,
+    transform,
     setTransform,
     isMoveCanvasMode,
-    setIsMovingCanvas, // Use this for active dragging state
+    setIsMovingCanvas,
   } = useBuilder();
 
   const isDraggingRef = useRef(false);
   const lastPositionRef = useRef({ x: 0, y: 0 });
 
+  // Initialize TransformManager with contentRef on mount
+  useEffect(() => {
+    if (contentRef.current) {
+      TransformManager.init(contentRef.current);
+      // Initialize with existing transform values
+      console.log("always moving?", "let's move2");
+
+      TransformManager.updateTransform(transform);
+    }
+  }, [contentRef.current]);
+
+  // Direct DOM update function using TransformManager
+  const updateCanvasTransform = useCallback((x, y, scale) => {
+    TransformManager.updateTransform({ x, y, scale });
+  }, []);
+
   const handleMouseDown = useCallback(
-    (e: MouseEvent) => {
+    (e) => {
       if (!isMoveCanvasMode) return;
 
       // Only handle primary mouse button (left click)
@@ -22,27 +41,32 @@ export const useMoveCanvas = () => {
       isDraggingRef.current = true;
       lastPositionRef.current = { x: e.clientX, y: e.clientY };
       document.body.style.cursor = "grabbing";
-      setIsMovingCanvas(true); // Set active dragging state
+      setIsMovingCanvas(true);
     },
     [isMoveCanvasMode, setIsMovingCanvas]
   );
 
   const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
+    (e) => {
       if (!isDraggingRef.current) return;
 
       const deltaX = e.clientX - lastPositionRef.current.x;
       const deltaY = e.clientY - lastPositionRef.current.y;
 
-      setTransform((prev) => ({
-        ...prev,
-        x: prev.x + deltaX,
-        y: prev.y + deltaY,
-      }));
-
+      // Update the last position
       lastPositionRef.current = { x: e.clientX, y: e.clientY };
+
+      // Get current transform values from TransformManager
+      const currentTransform = TransformManager.getTransform();
+
+      // Update using TransformManager
+      updateCanvasTransform(
+        currentTransform.x + deltaX,
+        currentTransform.y + deltaY,
+        currentTransform.scale
+      );
     },
-    [setTransform]
+    [updateCanvasTransform]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -50,7 +74,17 @@ export const useMoveCanvas = () => {
 
     isDraggingRef.current = false;
     document.body.style.cursor = isMoveCanvasMode ? "grab" : "default";
-    setIsMovingCanvas(false); // Only stop the active dragging, not the mode
+    setIsMovingCanvas(false);
+
+    // IMPORTANT: We don't update React state after panning
+    // This prevents the re-rendering cascade
+
+    // OPTIONAL: If you need other components to be aware of the final position
+    // at the end of a pan operation, you can update React state here
+    // But only do this at the END of panning, not during
+
+    // const finalTransform = TransformManager.getTransform();
+    // setTransform(finalTransform);
   }, [isMoveCanvasMode, setIsMovingCanvas]);
 
   // Set up event listeners
@@ -87,4 +121,27 @@ export const useMoveCanvas = () => {
       setIsMovingCanvas(false);
     }
   }, [isMoveCanvasMode, setIsMovingCanvas]);
+
+  // Handle zoom operations that occur outside of this hook
+  useEffect(() => {
+    // If we're not dragging, sync TransformManager with React state
+    if (!isDraggingRef.current) {
+      // Only update if the values are different to avoid loops
+      const currentTransform = TransformManager.getTransform();
+      if (
+        currentTransform.x !== transform.x ||
+        currentTransform.y !== transform.y ||
+        currentTransform.scale !== transform.scale
+      ) {
+        TransformManager.updateTransform(transform);
+      }
+    }
+  }, [transform]);
+
+  // Expose TransformManager methods for use in other components
+  return {
+    getTransform: TransformManager.getTransform,
+    updateTransform: TransformManager.updateTransform,
+    // You can add more methods as needed
+  };
 };

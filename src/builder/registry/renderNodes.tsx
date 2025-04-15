@@ -22,24 +22,27 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      setVirtualReference({
-        getBoundingClientRect() {
-          return {
-            top: e.clientY,
-            left: e.clientX,
-            bottom: e.clientY,
-            right: e.clientX,
-            width: 0,
-            height: 0,
-          };
-        },
-      });
+      // Only update virtualReference when dragging
+      if (dragState.isDragging) {
+        setVirtualReference({
+          getBoundingClientRect() {
+            return {
+              top: e.clientY,
+              left: e.clientX,
+              bottom: e.clientY,
+              right: e.clientX,
+              width: 0,
+              height: 0,
+            };
+          },
+        });
+      }
     };
     window.addEventListener("mousemove", handleMouseMove);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
     };
-  }, []);
+  }, [dragState.isDragging]);
 
   // Get the active viewport ID from dragState
   const activeViewportId = dragState.activeViewportInDynamicMode;

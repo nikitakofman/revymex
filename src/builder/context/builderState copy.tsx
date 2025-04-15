@@ -116,68 +116,6 @@ interface DragDimensions {
   [nodeId: string]: { width: number; height: number };
 }
 
-// Create a separate transform manager to handle DOM updates
-const TransformManager = {
-  // Current state
-  transform: { x: 480, y: 200, scale: 0.3 },
-  contentElement: null,
-  lastSyncedTransform: { x: 480, y: 200, scale: 0.3 },
-  hasMovedSinceMouseDown: false,
-
-  // Methods
-  init(element) {
-    this.contentElement = element;
-    return this;
-  },
-
-  updateTransform(newTransform) {
-    // Mark as moved if the values actually changed
-    if (
-      (typeof newTransform.x === "number" &&
-        newTransform.x !== this.transform.x) ||
-      (typeof newTransform.y === "number" &&
-        newTransform.y !== this.transform.y) ||
-      (typeof newTransform.scale === "number" &&
-        newTransform.scale !== this.transform.scale)
-    ) {
-      this.hasMovedSinceMouseDown = true;
-    }
-
-    // Only update properties that are provided
-    if (typeof newTransform.x === "number") this.transform.x = newTransform.x;
-    if (typeof newTransform.y === "number") this.transform.y = newTransform.y;
-    if (typeof newTransform.scale === "number")
-      this.transform.scale = newTransform.scale;
-
-    // Apply transform directly to DOM
-    this.applyTransform();
-
-    return { ...this.transform };
-  },
-
-  resetMovementTracking() {
-    this.hasMovedSinceMouseDown = false;
-  },
-
-  applyTransform() {
-    if (!this.contentElement) return;
-
-    this.contentElement.style.willChange = "transform";
-    this.contentElement.style.transform = `translate3d(${this.transform.x}px, ${this.transform.y}px, 0) scale(${this.transform.scale})`;
-    this.contentElement.style.transformOrigin = "0 0";
-  },
-
-  getTransform() {
-    return { ...this.transform };
-  },
-
-  syncFromReactState(reactTransform) {
-    this.lastSyncedTransform = { ...reactTransform };
-    this.transform = { ...reactTransform };
-    this.applyTransform();
-  },
-};
-
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
 export function BuilderProvider({ children }: { children: ReactNode }) {
@@ -241,20 +179,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     );
   }, [setNodeState, onOperation]);
 
+  // const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
+
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
 
   const interfaceDisp = useMemo(
     () => new InterfaceDispatcher(setInterfaceState),
     []
   );
-
-  // Initialize the TransformManager when contentRef is available
-  useEffect(() => {
-    if (contentRef.current) {
-      TransformManager.init(contentRef.current);
-      TransformManager.syncFromReactState(transform);
-    }
-  }, [contentRef.current]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -279,6 +211,20 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
 
+  const stopMoving = useCallback(() => {
+    setIsMovingCanvas(false);
+  }, []);
+
+  const startMoving = useCallback(() => {
+    setIsMovingCanvas(true);
+
+    if (moveTimerRef.current) {
+      clearTimeout(moveTimerRef.current);
+    }
+
+    moveTimerRef.current = setTimeout(stopMoving, 100);
+  }, [stopMoving]);
+
   const debouncedSetTransform = useMemo(
     () =>
       debounce((newTransform: { x: number; y: number; scale: number }) => {
@@ -291,21 +237,24 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const lastMousePosRef = useRef({ x: 0, y: 0 });
 
   // Add these event handlers near your existing wheel handler
-  const handleMouseDown = useCallback((e) => {
-    // Check if it's the middle mouse button (button === 1)
-    if (e.button === 1) {
-      e.preventDefault();
-      setIsMiddleMouseDown(true);
-      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+  const handleMouseDown = useCallback(
+    (e) => {
+      // Check if it's the middle mouse button (button === 1)
+      if (e.button === 1) {
+        e.preventDefault();
+        setIsMiddleMouseDown(true);
+        lastMousePosRef.current = { x: e.clientX, y: e.clientY };
 
-      // Reset movement tracking on mouse down
-      TransformManager.resetMovementTracking();
+        if (containerRef.current) {
+          containerRef.current.style.cursor = "grabbing";
+        }
 
-      if (containerRef.current) {
-        containerRef.current.style.cursor = "grabbing";
+        // Use your existing startMoving function to set the state
+        startMoving();
       }
-    }
-  }, []);
+    },
+    [startMoving]
+  );
 
   const handleMouseMove = useCallback(
     (e) => {
@@ -323,23 +272,18 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         // Update the last position
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
 
-        // Use TransformManager to update DOM directly
-        const currentTransform = TransformManager.getTransform();
-        TransformManager.updateTransform({
-          x: currentTransform.x + deltaX,
-          y: currentTransform.y + deltaY,
-        });
+        // Use the same transform logic as your wheel handler
+        setTransform((prev) => ({
+          ...prev,
+          x: prev.x + deltaX,
+          y: prev.y + deltaY,
+        }));
 
-        // Set isMovingCanvas directly instead of through a function
-        setIsMovingCanvas(true);
-
-        // Clear any existing timer
-        if (moveTimerRef.current) {
-          clearTimeout(moveTimerRef.current);
-        }
+        // Keep the canvas in moving state
+        startMoving();
       }
     },
-    [isMiddleMouseDown, interfaceState.isPreviewOpen]
+    [isMiddleMouseDown, startMoving, setTransform, interfaceState.isPreviewOpen]
   );
 
   const handleMouseUp = useCallback(
@@ -351,20 +295,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         if (containerRef.current) {
           containerRef.current.style.cursor = "";
         }
-
-        // Only update React state if we actually moved
-        if (TransformManager.hasMovedSinceMouseDown) {
-          setTransform(TransformManager.getTransform());
-        }
-
-        // Always reset isMovingCanvas and clear any timers
-        setIsMovingCanvas(false);
-        if (moveTimerRef.current) {
-          clearTimeout(moveTimerRef.current);
-          moveTimerRef.current = null;
-        }
-
-        TransformManager.resetMovementTracking();
       }
     },
     [isMiddleMouseDown]
@@ -376,74 +306,42 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
       if (!containerRef.current || interfaceState.isPreviewOpen) return;
 
-      // Get current transform from TransformManager
-      const currentTransform = TransformManager.getTransform();
+      startMoving();
 
       if (e.ctrlKey || e.metaKey) {
         const rect = containerRef.current.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
 
-        const pointX = (mouseX - currentTransform.x) / currentTransform.scale;
-        const pointY = (mouseY - currentTransform.y) / currentTransform.scale;
+        const pointX = (mouseX - transform.x) / transform.scale;
+        const pointY = (mouseY - transform.y) / transform.scale;
 
         const delta = -e.deltaY * 0.01;
-        const newScale = Math.min(
-          Math.max(0.1, currentTransform.scale + delta),
-          4
-        );
+        const newScale = Math.min(Math.max(0.1, transform.scale + delta), 4);
 
         const newX = mouseX - pointX * newScale;
         const newY = mouseY - pointY * newScale;
 
-        // Update via TransformManager
-        TransformManager.updateTransform({
+        debouncedSetTransform({
           x: newX,
           y: newY,
           scale: newScale,
         });
       } else {
-        // Update via TransformManager
-        TransformManager.updateTransform({
-          x: currentTransform.x - e.deltaX,
-          y: currentTransform.y - e.deltaY,
-        });
+        setTransform((prev) => ({
+          ...prev,
+          x: prev.x - e.deltaX,
+          y: prev.y - e.deltaY,
+        }));
       }
-
-      // Temporarily set isMovingCanvas true for visual feedback
-      setIsMovingCanvas(true);
-
-      // Start a timer to sync React state after wheel events stop
-      if (moveTimerRef.current) {
-        clearTimeout(moveTimerRef.current);
-      }
-
-      moveTimerRef.current = setTimeout(() => {
-        // Reset isMovingCanvas
-        setIsMovingCanvas(false);
-
-        // Then update React state with final position
-        setTransform(TransformManager.getTransform());
-      }, 200);
     },
-    [interfaceState.isPreviewOpen]
+    [
+      transform,
+      startMoving,
+      debouncedSetTransform,
+      interfaceState.isPreviewOpen,
+    ]
   );
-
-  // Add a safety effect to reset isMovingCanvas
-  useEffect(() => {
-    // Reset isMovingCanvas when mouse is released
-    const handleGlobalMouseUp = () => {
-      if (isMovingCanvas && !isMiddleMouseDown) {
-        setIsMovingCanvas(false);
-      }
-    };
-
-    window.addEventListener("mouseup", handleGlobalMouseUp);
-
-    return () => {
-      window.removeEventListener("mouseup", handleGlobalMouseUp);
-    };
-  }, [isMovingCanvas, isMiddleMouseDown]);
 
   const attachWheelListener = useCallback(() => {
     const container = containerRef.current;
@@ -488,19 +386,13 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     };
   }, [interfaceState.isPreviewOpen, attachWheelListener, detachWheelListener]);
 
-  // Keep TransformManager in sync with React state for non-panning operations
   useEffect(() => {
-    if (!isMovingCanvas && !isMiddleMouseDown && contentRef.current) {
-      // Only sync when React state changes, not during panning
-      if (
-        transform.x !== TransformManager.lastSyncedTransform.x ||
-        transform.y !== TransformManager.lastSyncedTransform.y ||
-        transform.scale !== TransformManager.lastSyncedTransform.scale
-      ) {
-        TransformManager.syncFromReactState(transform);
-      }
+    if (contentRef.current) {
+      contentRef.current.style.willChange = "transform";
+      contentRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
+      contentRef.current.style.transformOrigin = "0 0";
     }
-  }, [transform, isMovingCanvas, isMiddleMouseDown]);
+  }, [transform]);
 
   useEffect(() => {
     if (dragState.isDragging) {

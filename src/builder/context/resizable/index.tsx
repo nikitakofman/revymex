@@ -90,6 +90,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     transform,
     setNodeStyle,
     dragDisp,
+    isResizing,
     setIsResizing,
     startRecording,
     stopRecording,
@@ -149,6 +150,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       // Determine which handles are active based on the resize direction.
       const { xHandle, yHandle } = getHandlesFromDirection(direction);
+
+      // Store final style updates for all nodes to apply at the end
+      const finalStyleUpdates = new Map();
 
       // 1) Capture each node's initial geometry.
       selectedNodes.forEach((nodeId) => {
@@ -436,26 +440,42 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
               isHeightPercent ? "%" : "px"
             }`;
           }
-          setNodeStyle(styleUpdate, [nodeId], true);
+
+          // DIRECT DOM UPDATE: Apply style directly to DOM
+          const nodeElement = document.querySelector(
+            `[data-node-id="${nodeId}"]`
+          ) as HTMLElement;
+          if (nodeElement) {
+            Object.entries(styleUpdate).forEach(([prop, value]) => {
+              nodeElement.style[prop] = value;
+            });
+          }
+
+          // Store the final style update for this node to apply at the end
+          finalStyleUpdates.set(nodeId, styleUpdate);
         });
 
-        // 10. Update the dimension overlay for the main node.
-        if (mainFinalWidth !== undefined && mainFinalHeight !== undefined) {
-          dragDisp.updateStyleHelper({
-            type: "dimensions",
-            position: { x: moveEvent.clientX, y: moveEvent.clientY },
-            dimensions: {
-              width: mainFinalWidth,
-              height: mainFinalHeight,
-              unit: isWidthPercent ? "%" : "px",
-              widthUnit: isWidthPercent ? "%" : "px",
-              heightUnit: isHeightPercent ? "%" : "px",
-            },
-          });
-        }
+        // if (mainFinalWidth !== undefined && mainFinalHeight !== undefined) {
+        //   dragDisp.updateStyleHelper({
+        //     type: "dimensions",
+        //     position: { x: moveEvent.clientX, y: moveEvent.clientY },
+        //     dimensions: {
+        //       width: mainFinalWidth,
+        //       height: mainFinalHeight,
+        //       unit: isWidthPercent ? "%" : "px",
+        //       widthUnit: isWidthPercent ? "%" : "px",
+        //       heightUnit: isHeightPercent ? "%" : "px",
+        //     },
+        //   });
+        // }
       };
 
       const handlePointerUp = () => {
+        // Apply all final style updates at once to React state
+        finalStyleUpdates.forEach((styleUpdate, nodeId) => {
+          setNodeStyle(styleUpdate, [nodeId], true);
+        });
+
         dragDisp.hideStyleHelper();
         stopRecording(sessionId);
         window.removeEventListener("pointermove", handlePointerMove);
@@ -481,13 +501,15 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     ]
   );
 
+  const noPointer = isResizing;
+
   return (
     <>
       {React.cloneElement(children, {
         ref: elementRef,
         style: {
           ...children.props.style,
-          pointerEvents: "auto",
+          pointerEvents: noPointer ? "none" : "auto",
           // pointerEvents: dragState.isSelectionBoxActive ? "none" : "auto",
         },
         "data-node-locked": isLocked ? "true" : "false", // Add data attribute for locked state
