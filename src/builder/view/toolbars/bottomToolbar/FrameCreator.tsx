@@ -127,6 +127,11 @@ export const FrameCreator: React.FC = () => {
       const inDynamicMode = !!dragState.dynamicModeNodeId;
       const dynamicParentId = dragState.dynamicModeNodeId;
 
+      // Variables to track encapsulated dynamic elements and frame info
+      let encapsulatedDynamicElements = [];
+      let newFrameId = null;
+      let newFrameSharedId = nanoid(); // Generate a shared ID for frames
+
       if (width > 5 && height > 5) {
         const canvasX = (left - transform.x) / transform.scale;
         const canvasY = (top - transform.y) / transform.scale;
@@ -267,6 +272,12 @@ export const FrameCreator: React.FC = () => {
             };
 
             if (!processedIds.has(topMostContainedParent.id)) {
+              // Check if this is a dynamic element
+              const isDynamic = !!(
+                topMostContainedParent.isDynamic ||
+                topMostContainedParent.dynamicFamilyId
+              );
+
               containedElements.push({
                 node: topMostContainedParent,
                 absolutePosition: {
@@ -280,11 +291,17 @@ export const FrameCreator: React.FC = () => {
                 dynamicConnections:
                   dynamicConnectionTargetMap.get(topMostContainedParent.id) ||
                   [],
+                isDynamic,
               });
               markDescendantsAsProcessed(topMostContainedParent.id);
             }
           }
         }
+
+        // Track any dynamic elements that will be encapsulated
+        encapsulatedDynamicElements = containedElements.filter(
+          (item) => item.node.isDynamic && item.node.sharedId
+        );
 
         // Check if we're drawing over a media element
         const targetFrame = targetFrameRef.current;
@@ -323,6 +340,7 @@ export const FrameCreator: React.FC = () => {
               justifyContent: "center",
             },
             inViewport: mediaElement.node.inViewport,
+            sharedId: newFrameSharedId, // Add shared ID for cross-viewport sync
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
             ...(inDynamicMode && {
@@ -339,6 +357,8 @@ export const FrameCreator: React.FC = () => {
           );
 
           if (transformed) {
+            newFrameId = newFrame.id;
+
             // Process other contained elements if any (except the media element)
             if (containedElements.length > 0) {
               const newFrameNode = nodeState.nodes.find(
@@ -374,11 +394,6 @@ export const FrameCreator: React.FC = () => {
                 }
               }
             }
-
-            if (!dragState.dynamicModeNodeId) {
-              // Only sync viewports if we're NOT in dynamic mode
-              nodeDisp.syncViewports();
-            }
           }
         } else if (targetFrame) {
           // Drawing over a frame - insert as child
@@ -409,6 +424,7 @@ export const FrameCreator: React.FC = () => {
               justifyContent: "center",
             },
             inViewport: true,
+            sharedId: newFrameSharedId, // Add shared ID for cross-viewport sync
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
             ...(inDynamicMode && {
@@ -423,7 +439,7 @@ export const FrameCreator: React.FC = () => {
             e.clientY
           );
 
-          let newFrameId = newFrame.id;
+          newFrameId = newFrame.id;
 
           if (dropIndicator?.dropInfo) {
             nodeDisp.addNode(
@@ -466,7 +482,7 @@ export const FrameCreator: React.FC = () => {
           }
         } else {
           // Drawing on canvas - create absolute positioned frame
-          const newFrameId = nanoid();
+          newFrameId = nanoid();
           const newFrame: Node = {
             id: newFrameId,
             type: "frame",
@@ -483,6 +499,7 @@ export const FrameCreator: React.FC = () => {
               justifyContent: "center",
             },
             inViewport: false,
+            sharedId: newFrameSharedId, // Add shared ID for cross-viewport sync
             // If in dynamic mode, add both the dynamic parent ID and dynamicPosition
             ...(inDynamicMode && {
               dynamicParentId,
@@ -524,8 +541,101 @@ export const FrameCreator: React.FC = () => {
       }
 
       if (!dragState.dynamicModeNodeId) {
-        // Only sync viewports if we're NOT in dynamic mode
+        // Sync viewports to create duplicates
         nodeDisp.syncViewports();
+
+        // After syncing viewports, fix the parent-child relationships for dynamic elements
+        if (encapsulatedDynamicElements.length > 0 && newFrameSharedId) {
+          // Extract the dynamic shared IDs
+          const dynamicSharedIds = encapsulatedDynamicElements
+            .map((item) => item.node.sharedId)
+            .filter(Boolean);
+
+          // If we have dynamic elements and a frame, fix their parenting directly
+          if (dynamicSharedIds.length > 0) {
+            // Step 1: Get all viewports
+            const viewports = nodeState.nodes.filter((n) => n.isViewport);
+
+            // Step 2: Get all frames with the target shared ID
+            const frames = nodeState.nodes.filter(
+              (n) => n.sharedId === newFrameSharedId
+            );
+
+            // Step 3: Group frames by viewport
+            const framesByViewport = new Map();
+            for (const frame of frames) {
+              // Find which viewport contains this frame
+              let viewportId = null;
+              let currentId = frame.parentId;
+
+              while (currentId) {
+                const parent = nodeState.nodes.find((n) => n.id === currentId);
+                if (!parent) break;
+
+                if (parent.isViewport) {
+                  viewportId = parent.id;
+                  break;
+                }
+
+                currentId = parent.parentId;
+              }
+
+              if (viewportId) {
+                framesByViewport.set(viewportId, frame.id);
+              }
+            }
+
+            // Step 4: For each dynamic sharedId, find all instances and move them to the correct frame
+            for (const dynamicSharedId of dynamicSharedIds) {
+              const dynamicNodes = nodeState.nodes.filter(
+                (n) => n.sharedId === dynamicSharedId
+              );
+
+              for (const dynamicNode of dynamicNodes) {
+                // Find which viewport contains this dynamic node
+                let viewportId = null;
+                let currentId = dynamicNode.parentId;
+
+                while (currentId) {
+                  const parent = nodeState.nodes.find(
+                    (n) => n.id === currentId
+                  );
+                  if (!parent) break;
+
+                  if (parent.isViewport) {
+                    viewportId = parent.id;
+                    break;
+                  }
+
+                  currentId = parent.parentId;
+                }
+
+                // If we found the viewport and there's a matching frame
+                if (viewportId && framesByViewport.has(viewportId)) {
+                  const frameId = framesByViewport.get(viewportId);
+
+                  // Only move if it's not already in the correct frame
+                  if (dynamicNode.parentId !== frameId) {
+                    console.log(
+                      `Moving dynamic node ${dynamicNode.id} to frame ${frameId} in viewport ${viewportId}`
+                    );
+
+                    // Move the node to the frame
+                    nodeDisp.updateNode(dynamicNode.id, {
+                      parentId: frameId,
+                      style: {
+                        ...dynamicNode.style,
+                        position: "relative",
+                        left: "",
+                        top: "",
+                      },
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
       // Hide the style helper

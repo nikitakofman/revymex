@@ -124,7 +124,7 @@ export const GapHandles = ({
         value: newGap,
       });
 
-      setNodeStyle({ gap: `${Math.round(newGap)}px` }, [node.id], true);
+      setNodeStyle({ gap: `${Math.round(newGap)}px` }, [node.id], false);
     };
 
     const handleMouseUp = () => {
@@ -203,7 +203,7 @@ export const GapHandles = ({
             height: `${gapHeightScaled}px`,
             backgroundColor: "rgba(244, 114, 182, 0.1)",
             opacity: hoveredGapIndex === i ? 1 : 0,
-            pointerEvents: isInteractive ? "auto" : "none",
+            pointerEvents: "none",
           }}
         />
       );
@@ -244,8 +244,9 @@ export const GapHandles = ({
             width: `${gapWidthScaled}px`,
             height: "100%",
             backgroundColor: "rgba(244, 114, 182, 0.1)",
+            zIndex: 2,
             opacity: hoveredGapIndex === i ? 1 : 0,
-            pointerEvents: isInteractive ? "auto" : "none",
+            pointerEvents: "none",
           }}
         />
       );

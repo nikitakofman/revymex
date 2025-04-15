@@ -158,9 +158,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
         border: `${borderWidth}px solid white`,
         cursor: "ns-resize",
         zIndex: 1001,
-        // Critically, no pointer events until it becomes interactive
         pointerEvents: isInteractive ? "auto" : "none",
-        // Optional: add a subtle fade-in for visual polish
         transition: "opacity 0s ease-out",
       }}
     />

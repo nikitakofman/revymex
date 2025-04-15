@@ -762,6 +762,7 @@ export const useMouseUp = () => {
         }
 
         if (sourceViewportId) {
+          console.log("syncing nodes?");
           nodeDisp.syncNodePosition(realNodeId);
         }
       }
@@ -787,7 +788,7 @@ export const useMouseUp = () => {
         (n) => n.sharedId === draggedNode.sharedId && n.id !== draggedNode.id
       );
 
-      console.log("HEREOOO");
+      console.log("BROOO???");
 
       // Remove all counterparts
       sharedIdCounterparts.forEach((counterpart) => {

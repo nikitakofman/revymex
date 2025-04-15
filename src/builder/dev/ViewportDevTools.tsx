@@ -203,11 +203,32 @@ export const ViewportDevTools: React.FC = () => {
       });
   };
 
+  const handleCopySelectedId = () => {
+    // Get the first selected ID, or return if none
+    const selectedId = dragState.selectedIds[0];
+    if (!selectedId) {
+      setCopyStatus("No ID selected");
+      setTimeout(() => setCopyStatus(""), 2000);
+      return;
+    }
+
+    navigator.clipboard
+      .writeText(selectedId.toString())
+      .then(() => {
+        setCopyStatus("ID copied!");
+        setTimeout(() => setCopyStatus(""), 2000);
+      })
+      .catch((err) => {
+        setCopyStatus("Failed to copy ID");
+        setTimeout(() => setCopyStatus(""), 2000);
+      });
+  };
+
   const viewports = nodeState.nodes.filter((n) => n.isViewport);
 
   return createPortal(
     <>
-      <div className="fixed resize bottom-14 scale-75 right-[190px] flex gap-2  p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+      <div className="fixed resize bottom-14 scale-75 right-[190px] flex gap-2 p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
         {dragState.dynamicModeNodeId && (
           <button
             className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
@@ -269,6 +290,27 @@ export const ViewportDevTools: React.FC = () => {
           Show Tree
         </button>
 
+        {/* New Copy JSON button */}
+        <button
+          className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+          onClick={handleCopyNodesJson}
+          title="Copy entire node tree as JSON"
+        >
+          <Copy className="w-4 h-4" />
+          Copy JSON
+        </button>
+
+        {/* New Copy ID button */}
+        <button
+          className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+          onClick={handleCopySelectedId}
+          title="Copy selected node ID"
+          disabled={dragState.selectedIds.length === 0}
+        >
+          <Copy className="w-4 h-4" />
+          Copy ID
+        </button>
+
         <button
           className={`px-3 py-1 rounded-[var(--radius-sm)] ${
             dragState.selectedIds.length > 0
@@ -278,6 +320,13 @@ export const ViewportDevTools: React.FC = () => {
         >
           {dragState.selectedIds.length}
         </button>
+
+        {/* Copy status toast */}
+        {copyStatus && (
+          <div className="absolute top-[-40px] right-0 bg-[var(--bg-surface)] px-3 py-1 rounded-[var(--radius-sm)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
+            {copyStatus}
+          </div>
+        )}
       </div>
 
       {showTree && (
@@ -353,20 +402,6 @@ export const ViewportDevTools: React.FC = () => {
                     <span className="text-sm text-[var(--text-secondary)]">
                       {nodeState.nodes.length} nodes
                     </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
-                        onClick={handleCopyNodesJson}
-                      >
-                        <Copy className="w-4 h-4" />
-                        Copy JSON
-                      </button>
-                      {copyStatus && (
-                        <span className="text-sm text-[var(--text-success)]">
-                          {copyStatus}
-                        </span>
-                      )}
-                    </div>
                   </div>
                   <textarea className="text-xs w-full whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
                     {JSON.stringify(nodeState.nodes, null, 2)}

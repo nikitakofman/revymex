@@ -19,6 +19,8 @@ import Button from "@/components/ui/button";
 import { createPortal } from "react-dom";
 
 export const Frame = ({ children, node }: ElementProps) => {
+  console.log(`Frame re-rendering: ${node.id}`, new Date().getTime());
+
   const connect = useConnect();
   const {
     dragState,

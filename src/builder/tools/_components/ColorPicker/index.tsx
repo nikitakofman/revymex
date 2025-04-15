@@ -26,6 +26,23 @@ interface ColorPickerProps {
   contentPadding?: string;
 }
 
+// Helper function to convert hex color with alpha to rgba
+const hexToRgba = (hex: string, alpha: number) => {
+  const rgb = hexToRgb(hex);
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha.toFixed(2)})`;
+};
+
+// Helper function to extract alpha value from rgba/hsla string
+const extractAlpha = (colorString: string): number => {
+  const match =
+    colorString.match(/rgba?\(.*,\s*([0-9.]+)\)/) ||
+    colorString.match(/hsla?\(.*,\s*([0-9.]+)%?\)/);
+  if (match && match[1]) {
+    return parseFloat(match[1]);
+  }
+  return 1;
+};
+
 const ColorPreview = ({
   color,
   size = 16,
@@ -53,18 +70,23 @@ export const ColorPickerContent = ({
   setColorMode,
   hsv,
   setHsv,
+  alpha,
+  setAlpha,
   currentValue,
   handleColorChange,
   handleSaturationMouseDown,
   handleHueMouseDown,
+  handleAlphaMouseDown,
   saturationRef,
   hueRef,
+  alphaRef,
   onClose,
   showHeader = true,
   contentPadding = "",
 }) => {
   const currentRgb = hsvToRgb(hsv);
   const currentHsl = rgbToHsl(currentRgb);
+  const currentHex = rgbToHex(currentRgb);
 
   return (
     <div
@@ -142,19 +164,82 @@ export const ColorPickerContent = ({
         />
       </div>
 
+      {/* New Alpha Slider */}
+      <div
+        ref={alphaRef}
+        className="relative h-4 rounded-md cursor-pointer"
+        style={{
+          background: `linear-gradient(to right, transparent, ${currentHex})`,
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          handleAlphaMouseDown(e);
+        }}
+      >
+        {/* Checkboard pattern for transparency */}
+        <div className="absolute inset-0 rounded-md overflow-hidden">
+          <div className="w-full h-full grid grid-cols-8 grid-rows-2">
+            {Array(16)
+              .fill(0)
+              .map((_, i) => (
+                <div
+                  key={i}
+                  className={i % 2 === 0 ? "bg-gray-200" : "bg-white"}
+                />
+              ))}
+          </div>
+        </div>
+        <div
+          className="absolute inset-0 rounded-md"
+          style={{
+            background: `linear-gradient(to right, rgba(255,255,255,0), ${currentHex})`,
+          }}
+        />
+        <div
+          className="absolute w-2 h-full -translate-x-1/2 border-2 border-white rounded-sm shadow-sm"
+          style={{
+            left: `${alpha * 100}%`,
+          }}
+        />
+      </div>
+
       <div className="space-y-2">
         {colorMode === "hex" && (
           <div className="flex gap-2">
             <input
               type="text"
-              value={currentValue.toUpperCase()}
+              value={currentHex.toUpperCase()}
               onChange={(e) => {
                 if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
-                  handleColorChange(e.target.value);
+                  handleColorChange(
+                    alpha < 1
+                      ? hexToRgba(e.target.value, alpha)
+                      : e.target.value
+                  );
                 }
               }}
               className="flex-1 h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
             />
+            <div className="flex items-center h-8 gap-1 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]">
+              <span>A</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(alpha * 100)}
+                onChange={(e) => {
+                  const newAlpha = Math.max(
+                    0,
+                    Math.min(1, parseInt(e.target.value) / 100)
+                  );
+                  setAlpha(newAlpha);
+                  handleColorChange(hexToRgba(currentHex, newAlpha));
+                }}
+                className="w-10 bg-transparent border-none text-right focus:outline-none"
+              />
+              <span>%</span>
+            </div>
             <button className="h-8 w-8 flex items-center justify-center bg-[var(--control-bg)] border border-[var(--control-border)] rounded">
               <Pipette className="w-4 h-4 text-[var(--text-secondary)]" />
             </button>
@@ -162,7 +247,7 @@ export const ColorPickerContent = ({
         )}
 
         {colorMode === "rgb" && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div className="flex flex-col">
               <label className="text-xs text-[var(--text-secondary)]">R</label>
               <input
@@ -174,7 +259,11 @@ export const ColorPickerContent = ({
                   const rgb = { ...currentRgb, r: Number(e.target.value) };
                   const newHsv = rgbToHsv(rgb);
                   setHsv(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -190,7 +279,11 @@ export const ColorPickerContent = ({
                   const rgb = { ...currentRgb, g: Number(e.target.value) };
                   const newHsv = rgbToHsv(rgb);
                   setHsv(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -206,7 +299,31 @@ export const ColorPickerContent = ({
                   const rgb = { ...currentRgb, b: Number(e.target.value) };
                   const newHsv = rgbToHsv(rgb);
                   setHsv(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">A</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(alpha * 100)}
+                onChange={(e) => {
+                  const newAlpha = Math.max(
+                    0,
+                    Math.min(1, parseInt(e.target.value) / 100)
+                  );
+                  setAlpha(newAlpha);
+                  handleColorChange(
+                    `rgba(${currentRgb.r}, ${currentRgb.g}, ${currentRgb.b}, ${newAlpha})`
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -215,7 +332,7 @@ export const ColorPickerContent = ({
         )}
 
         {colorMode === "hsl" && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div className="flex flex-col">
               <label className="text-xs text-[var(--text-secondary)]">H</label>
               <input
@@ -228,7 +345,13 @@ export const ColorPickerContent = ({
                   const rgb = hslToRgb(hsl);
                   const newHsv = rgbToHsv(rgb);
                   setHsv(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `hsla(${Math.round(hsl.h)}, ${Math.round(
+                          hsl.s
+                        )}%, ${Math.round(hsl.l)}%, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -245,7 +368,13 @@ export const ColorPickerContent = ({
                   const rgb = hslToRgb(hsl);
                   const newHsv = rgbToHsv(rgb);
                   setHsv(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `hsla(${Math.round(hsl.h)}, ${Math.round(
+                          hsl.s
+                        )}%, ${Math.round(hsl.l)}%, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -262,7 +391,35 @@ export const ColorPickerContent = ({
                   const rgb = hslToRgb(hsl);
                   const newHsv = rgbToHsv(rgb);
                   setHsv(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `hsla(${Math.round(hsl.h)}, ${Math.round(
+                          hsl.s
+                        )}%, ${Math.round(hsl.l)}%, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">A</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(alpha * 100)}
+                onChange={(e) => {
+                  const newAlpha = Math.max(
+                    0,
+                    Math.min(1, parseInt(e.target.value) / 100)
+                  );
+                  setAlpha(newAlpha);
+                  handleColorChange(
+                    `hsla(${Math.round(currentHsl.h)}, ${Math.round(
+                      currentHsl.s
+                    )}%, ${Math.round(currentHsl.l)}%, ${newAlpha})`
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -271,7 +428,7 @@ export const ColorPickerContent = ({
         )}
 
         {colorMode === "hsv" && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div className="flex flex-col">
               <label className="text-xs text-[var(--text-secondary)]">H</label>
               <input
@@ -283,7 +440,11 @@ export const ColorPickerContent = ({
                   const newHsv = { ...hsv, h: Number(e.target.value) };
                   setHsv(newHsv);
                   const rgb = hsvToRgb(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -299,7 +460,11 @@ export const ColorPickerContent = ({
                   const newHsv = { ...hsv, s: Number(e.target.value) };
                   setHsv(newHsv);
                   const rgb = hsvToRgb(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -315,7 +480,32 @@ export const ColorPickerContent = ({
                   const newHsv = { ...hsv, v: Number(e.target.value) };
                   setHsv(newHsv);
                   const rgb = hsvToRgb(newHsv);
-                  handleColorChange(rgbToHex(rgb));
+                  handleColorChange(
+                    alpha < 1
+                      ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+                      : rgbToHex(rgb)
+                  );
+                }}
+                className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-[var(--text-secondary)]">A</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={Math.round(alpha * 100)}
+                onChange={(e) => {
+                  const newAlpha = Math.max(
+                    0,
+                    Math.min(1, parseInt(e.target.value) / 100)
+                  );
+                  setAlpha(newAlpha);
+                  const rgb = hsvToRgb(hsv);
+                  handleColorChange(
+                    `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${newAlpha})`
+                  );
                 }}
                 className="h-8 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] rounded text-[var(--text-primary)]"
               />
@@ -345,8 +535,10 @@ export const ColorPicker = ({
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
   const [hsv, setHsv] = useState({ h: 0, s: 100, v: 100 });
+  const [alpha, setAlpha] = useState(1); // New state for alpha channel
   const [isDraggingHue, setIsDraggingHue] = useState(false);
   const [isDraggingColor, setIsDraggingColor] = useState(false);
+  const [isDraggingAlpha, setIsDraggingAlpha] = useState(false); // New state for alpha dragging
 
   // Store the position of the popup
   const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 });
@@ -356,6 +548,7 @@ export const ColorPicker = ({
   const pickerRef = useRef<HTMLDivElement>(null);
   const saturationRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
+  const alphaRef = useRef<HTMLDivElement>(null); // New ref for alpha slider
 
   // Define our own colorPickerPopupRef
   const colorPickerPopupRef = useRef<HTMLDivElement>(null);
@@ -373,7 +566,42 @@ export const ColorPicker = ({
     (computedStyle.mixed ? "#000000" : (computedStyle.value as string));
 
   useEffect(() => {
-    const rgb = hexToRgb(currentValue);
+    // Check if the current value has an alpha component
+    if (currentValue.startsWith("rgba") || currentValue.startsWith("hsla")) {
+      setAlpha(extractAlpha(currentValue));
+    } else {
+      setAlpha(1); // Reset to fully opaque for non-alpha colors
+    }
+
+    // Extract the RGB regardless of the format
+    let rgb;
+    if (currentValue.startsWith("rgba")) {
+      const parts = currentValue.match(/rgba\((\d+),\s*(\d+),\s*(\d+)/);
+      if (parts) {
+        rgb = {
+          r: parseInt(parts[1]),
+          g: parseInt(parts[2]),
+          b: parseInt(parts[3]),
+        };
+      } else {
+        rgb = hexToRgb("#000000");
+      }
+    } else if (currentValue.startsWith("hsla")) {
+      // Extract HSL values and convert to RGB
+      const parts = currentValue.match(/hsla\((\d+),\s*(\d+)%,\s*(\d+)%/);
+      if (parts) {
+        const h = parseInt(parts[1]);
+        const s = parseInt(parts[2]);
+        const l = parseInt(parts[3]);
+        rgb = hslToRgb({ h, s, l });
+      } else {
+        rgb = hexToRgb("#000000");
+      }
+    } else {
+      // Hex or named color
+      rgb = hexToRgb(currentValue);
+    }
+
     setHsv(rgbToHsv(rgb));
   }, [currentValue]);
 
@@ -450,6 +678,12 @@ export const ColorPicker = ({
     handleHueMove(e);
   };
 
+  const handleAlphaMouseDown = (e: React.MouseEvent) => {
+    setIsDraggingAlpha(true);
+    sessionIdRef.current = startRecording();
+    handleAlphaMove(e);
+  };
+
   const handleSaturationMove = (e: MouseEvent | React.MouseEvent) => {
     if (!saturationRef.current) return;
 
@@ -465,7 +699,13 @@ export const ColorPicker = ({
 
     setHsv(newHsv);
     const rgb = hsvToRgb(newHsv);
-    handleColorChange(rgbToHex(rgb));
+
+    // Include alpha if it's less than 1
+    if (alpha < 1) {
+      handleColorChange(`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`);
+    } else {
+      handleColorChange(rgbToHex(rgb));
+    }
   };
 
   const handleHueMove = (e: MouseEvent | React.MouseEvent) => {
@@ -481,7 +721,26 @@ export const ColorPicker = ({
 
     setHsv(newHsv);
     const rgb = hsvToRgb(newHsv);
-    handleColorChange(rgbToHex(rgb));
+
+    // Include alpha if it's less than 1
+    if (alpha < 1) {
+      handleColorChange(`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`);
+    } else {
+      handleColorChange(rgbToHex(rgb));
+    }
+  };
+
+  const handleAlphaMove = (e: MouseEvent | React.MouseEvent) => {
+    if (!alphaRef.current) return;
+
+    const rect = alphaRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+    setAlpha(x);
+    const rgb = hsvToRgb(hsv);
+
+    // Always use rgba when alpha slider has been used
+    handleColorChange(`rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${x})`);
   };
 
   useEffect(() => {
@@ -490,15 +749,17 @@ export const ColorPicker = ({
       e.stopPropagation();
       if (isDraggingColor) handleSaturationMove(e);
       if (isDraggingHue) handleHueMove(e);
+      if (isDraggingAlpha) handleAlphaMove(e);
     };
 
     const handleMouseUp = () => {
       stopRecording(sessionIdRef.current!);
       setIsDraggingColor(false);
       setIsDraggingHue(false);
+      setIsDraggingAlpha(false);
     };
 
-    if (isDraggingColor || isDraggingHue) {
+    if (isDraggingColor || isDraggingHue || isDraggingAlpha) {
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
     }
@@ -507,7 +768,7 @@ export const ColorPicker = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDraggingColor, isDraggingHue]);
+  }, [isDraggingColor, isDraggingHue, isDraggingAlpha]);
 
   // Click outside handler to close the popup
   useEffect(() => {
@@ -543,7 +804,11 @@ export const ColorPicker = ({
             </span>
             <ColorPreview color={currentValue} />
             <span className="text-xs text-[var(--text-secondary)]">
-              {currentValue.toUpperCase()}
+              {alpha < 1
+                ? `rgba(${hsvToRgb(hsv).r}, ${hsvToRgb(hsv).g}, ${
+                    hsvToRgb(hsv).b
+                  }, ${alpha.toFixed(2)})`
+                : currentValue.toUpperCase()}
             </span>
           </div>
         )}
@@ -553,12 +818,16 @@ export const ColorPicker = ({
           setColorMode={setColorMode}
           hsv={hsv}
           setHsv={setHsv}
+          alpha={alpha}
+          setAlpha={setAlpha}
           currentValue={currentValue}
           handleColorChange={handleColorChange}
           handleSaturationMouseDown={handleSaturationMouseDown}
           handleHueMouseDown={handleHueMouseDown}
+          handleAlphaMouseDown={handleAlphaMouseDown}
           saturationRef={saturationRef}
           hueRef={hueRef}
+          alphaRef={alphaRef}
           onClose={null}
           showHeader={false}
           contentPadding={contentPadding}
@@ -590,7 +859,11 @@ export const ColorPicker = ({
           className="flex items-center gap-2 h-7 px-2 text-xs bg-[var(--control-bg)] border border-[var(--control-border)] hover:border-[var(--control-border-hover)] focus:border-[var(--border-focus)] text-[var(--text-primary)] rounded-[var(--radius-lg)] focus:outline-none transition-colors"
         >
           <ColorPreview color={currentValue} />
-          <span>{currentValue.toUpperCase()}</span>
+          <span>
+            {alpha < 1
+              ? `${Math.round(alpha * 100)}%`
+              : currentValue.toUpperCase()}
+          </span>
           <ChevronDown className="w-3 h-3 text-[var(--text-secondary)]" />
         </button>
       </div>
@@ -610,12 +883,16 @@ export const ColorPicker = ({
             setColorMode={setColorMode}
             hsv={hsv}
             setHsv={setHsv}
+            alpha={alpha}
+            setAlpha={setAlpha}
             currentValue={currentValue}
             handleColorChange={handleColorChange}
             handleSaturationMouseDown={handleSaturationMouseDown}
             handleHueMouseDown={handleHueMouseDown}
+            handleAlphaMouseDown={handleAlphaMouseDown}
             saturationRef={saturationRef}
             hueRef={hueRef}
+            alphaRef={alphaRef}
             onClose={() => setIsOpen(false)}
             showHeader={true}
             contentPadding={contentPadding}

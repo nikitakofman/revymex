@@ -41,7 +41,7 @@ export interface Node {
   };
   src?: string;
   text?: string;
-  parentId?: string | number | null;
+  parentId?: string | null;
   position?: Position;
   inViewport?: boolean;
   isViewport?: boolean;
@@ -263,7 +263,7 @@ export class NodeDispatcher {
     if (needsSync || targetIsDynamic) {
       setTimeout(() => {
         this.syncVariants(node.id);
-      }, 50);
+      }, 0);
     }
   }
 
@@ -3844,6 +3844,11 @@ export class NodeDispatcher {
           mainNode.dynamicViewportId = viewportId;
         }
 
+        // Add variantResponsiveId if not present
+        if (!mainNode.variantResponsiveId) {
+          mainNode.variantResponsiveId = nanoid();
+        }
+
         // Find all nodes with the same sharedId across all viewports
         const relatedNodes = draft.nodes.filter(
           (n) => n.sharedId === mainNode.sharedId && n.id !== mainNode.id
@@ -3859,19 +3864,91 @@ export class NodeDispatcher {
           if (nodeViewportId) {
             node.dynamicViewportId = nodeViewportId;
           }
+
+          // Add variantResponsiveId if not present
+          if (!node.variantResponsiveId) {
+            // Use the same variantResponsiveId as the main node for consistency
+            node.variantResponsiveId = mainNode.variantResponsiveId;
+          }
         });
 
-        // Update children recursively with the dynamicParentId and dynamicFamilyId
-        function updateChildren(parentId: string | number) {
+        // Define updateChildren function inside updateNodeDynamicStatus
+        function updateChildren(parentId, parentNode, viewportId, familyId) {
           const children = draft.nodes.filter((n) => n.parentId === parentId);
+
           children.forEach((child) => {
-            child.dynamicParentId = nodeId;
+            // Set basic dynamic properties
+            child.dynamicParentId = parentId;
             child.dynamicFamilyId = familyId;
-            updateChildren(child.id);
+            child.dynamicViewportId = viewportId;
+
+            // Generate a responsive ID if not present
+            if (!child.variantResponsiveId) {
+              child.variantResponsiveId = nanoid();
+            }
+
+            // Add empty variantIndependentSync object
+            child.variantIndependentSync = {};
+
+            // Calculate dynamic position - based on the child's position in the parent
+            // This calculates relative position from absolute positions or style values
+            let childX = 0;
+            let childY = 0;
+
+            // Try to get position from style (for flex layouts)
+            if (child.style) {
+              // Parse position values from style if they exist
+              childX =
+                child.style.left && !isNaN(parseFloat(child.style.left))
+                  ? parseFloat(child.style.left)
+                  : 0;
+
+              childY =
+                child.style.top && !isNaN(parseFloat(child.style.top))
+                  ? parseFloat(child.style.top)
+                  : 0;
+            }
+
+            // Set dynamic position
+            child.dynamicPosition = {
+              x: childX,
+              y: childY,
+            };
+
+            // Add other necessary properties
+            if (!child.sharedId) {
+              child.sharedId = nanoid();
+            }
+
+            if (!child.unsyncFromParentViewport) {
+              child.unsyncFromParentViewport = {};
+            }
+
+            if (!child.independentStyles) {
+              child.independentStyles = {};
+            }
+
+            if (!child.lowerSyncProps) {
+              child.lowerSyncProps = {};
+            }
+
+            // Process child's children recursively
+            updateChildren(child.id, child, viewportId, familyId);
           });
         }
 
-        updateChildren(nodeId);
+        // Update children recursively with all necessary properties
+        if (viewportId) {
+          updateChildren(nodeId, mainNode, viewportId, familyId);
+        }
+
+        // Also update children of related nodes if they exist
+        relatedNodes.forEach((node) => {
+          const nodeViewportId = node.dynamicViewportId;
+          if (nodeViewportId) {
+            updateChildren(node.id, node, nodeViewportId, familyId);
+          }
+        });
       })
     );
   }
@@ -4853,11 +4930,72 @@ export class NodeDispatcher {
             // Store in mappings
             idMappings.set(otherBaseInstance.id, newVariantId);
 
+            // Get the source viewport
+            const sourceViewportId = originalNode.dynamicViewportId;
+            const targetViewportId = viewportId;
+            const findResponsiveCounterpart = (
+              originalNode,
+              targetViewportId
+            ) => {
+              // Find a variant with the same variantInfo.id in the target viewport
+              if (originalNode.isVariant && originalNode.variantInfo?.id) {
+                // Look for existing variants with same ID but in target viewport
+                const sameVariantInTargetViewport = draft.nodes.find(
+                  (n) =>
+                    n.isVariant &&
+                    n.variantInfo?.id === originalNode.variantInfo?.id &&
+                    n.dynamicViewportId === targetViewportId
+                );
+
+                if (sameVariantInTargetViewport) {
+                  return sameVariantInTargetViewport;
+                }
+              }
+
+              // Look for a node with matching variantResponsiveId and in target viewport
+              const matchingNode = draft.nodes.find(
+                (n) =>
+                  n.variantResponsiveId === originalNode.variantResponsiveId &&
+                  n.dynamicViewportId === targetViewportId &&
+                  n.id !== originalNode.id
+              );
+
+              return matchingNode;
+            };
+
+            // First look for a direct counterpart of this specific variant in the target viewport
+            const existingCounterpart = findResponsiveCounterpart(
+              originalNode,
+              targetViewportId
+            );
+
+            if (existingCounterpart) {
+              console.log(
+                `Found direct counterpart for ${originalNode.id} in viewport ${targetViewportId}: ${existingCounterpart.id}`
+              );
+            }
+
+            // If no direct counterpart, look for any variant with the same variant ID
+            // This is important - we need to find the equivalent variant in the target viewport
+            const variantSourceInTargetViewport =
+              existingCounterpart ||
+              draft.nodes.find(
+                (n) =>
+                  n.isVariant &&
+                  n.dynamicViewportId === targetViewportId &&
+                  n.sharedId === originalNode.sharedId
+              );
+
+            // Create the new variant using styles from the target viewport's existing variant
             const newVariant = {
               id: newVariantId,
               type: otherBaseInstance.type,
               style: {
-                ...otherBaseInstance.style,
+                // Use styles from the target viewport's counterpart variant if available
+                ...(variantSourceInTargetViewport
+                  ? variantSourceInTargetViewport.style
+                  : otherBaseInstance.style),
+                // Override position for placement
                 position: "absolute",
                 left: `${posX}px`,
                 top: `${posY}px`,
@@ -4876,9 +5014,15 @@ export class NodeDispatcher {
               variantResponsiveId: variantResponsiveId,
               dynamicFamilyId: familyId,
               independentStyles: {
+                // Always preserve position properties
                 left: true,
                 top: true,
                 position: true,
+                // Copy target viewport-specific independent styles
+                ...(variantSourceInTargetViewport &&
+                variantSourceInTargetViewport.independentStyles
+                  ? variantSourceInTargetViewport.independentStyles
+                  : {}),
               },
               dynamicViewportId: viewportId,
               position: {
@@ -4887,22 +5031,97 @@ export class NodeDispatcher {
               },
             };
 
-            // Copy independent styles
-            if (duplicatingFromVariant && originalNode.independentStyles) {
-              Object.keys(originalNode.independentStyles).forEach(
-                (styleProp) => {
-                  if (
-                    styleProp !== "left" &&
-                    styleProp !== "top" &&
-                    styleProp !== "position"
-                  ) {
-                    newVariant.independentStyles[styleProp] =
-                      originalNode.independentStyles[styleProp];
-                  }
+            // Copy viewport-specific properties from the target viewport variant
+            if (variantSourceInTargetViewport) {
+              // Copy variantIndependentSync
+              if (variantSourceInTargetViewport.variantIndependentSync) {
+                newVariant.variantIndependentSync = {
+                  ...variantSourceInTargetViewport.variantIndependentSync,
+                };
+              }
+
+              // Copy unsyncFromParentViewport settings
+              if (variantSourceInTargetViewport.unsyncFromParentViewport) {
+                newVariant.unsyncFromParentViewport = {
+                  ...variantSourceInTargetViewport.unsyncFromParentViewport,
+                };
+              }
+
+              // Copy lowerSyncProps
+              if (variantSourceInTargetViewport.lowerSyncProps) {
+                newVariant.lowerSyncProps = {
+                  ...variantSourceInTargetViewport.lowerSyncProps,
+                };
+              }
+
+              // IMPORTANT: Copy sizing properties specifically
+              if (
+                variantSourceInTargetViewport &&
+                variantSourceInTargetViewport.style
+              ) {
+                // First copy any existing independent styles
+                if (variantSourceInTargetViewport.independentStyles) {
+                  // For each independent style property in the source variant
+                  Object.keys(
+                    variantSourceInTargetViewport.independentStyles
+                  ).forEach((styleProp) => {
+                    // If it's marked as independent and not a position property (which we already handle)
+                    if (
+                      variantSourceInTargetViewport.independentStyles[
+                        styleProp
+                      ] &&
+                      !["position", "left", "top"].includes(styleProp)
+                    ) {
+                      // Copy the style value
+                      newVariant.style[styleProp] =
+                        variantSourceInTargetViewport.style[styleProp];
+                      // Mark it as independent in the new variant
+                      newVariant.independentStyles[styleProp] = true;
+                    }
+                  });
                 }
+
+                // Additionally, ensure we capture common important style properties
+                // even if they're not explicitly marked as independent
+                const commonImportantProps = [
+                  "width",
+                  "height",
+                  "backgroundColor",
+                  "borderRadius",
+                  "border",
+                  "color",
+                  "padding",
+                  "margin",
+                  "fontSize",
+                  "fontWeight",
+                  "lineHeight",
+                  "display",
+                  "flexDirection",
+                  "alignItems",
+                  "justifyContent",
+                  "gap",
+                  "flexWrap",
+                  "flex",
+                  "opacity",
+                  "overflow",
+                ];
+
+                commonImportantProps.forEach((prop) => {
+                  if (
+                    variantSourceInTargetViewport.style[prop] !== undefined &&
+                    !newVariant.independentStyles[prop] && // Don't override already set properties
+                    !["position", "left", "top"].includes(prop) // Don't override position properties
+                  ) {
+                    newVariant.style[prop] =
+                      variantSourceInTargetViewport.style[prop];
+                  }
+                });
+              }
+
+              console.log(
+                `Applied styling from viewport-specific variant: ${variantSourceInTargetViewport.id}`
               );
             }
-
             // Copy other properties
             if (otherBaseInstance.customName)
               newVariant.customName = otherBaseInstance.customName;
@@ -5438,11 +5657,47 @@ export class NodeDispatcher {
         viewports.sort((a, b) => b.viewportWidth - a.viewportWidth);
         const viewportOrder = viewports.map((v) => v.id);
 
+        // CRITICAL FIX: Helper function to check if a node is dynamic or related to dynamic nodes
+        const isDynamicRelated = (node) => {
+          if (!node) return false;
+          return (
+            node.isDynamic ||
+            node.isVariant ||
+            node.dynamicParentId ||
+            node.dynamicFamilyId
+          );
+        };
+
+        // Helper to check if a node is a descendant of a dynamic node
+        const isDynamicDescendant = (nodeId) => {
+          let currentNode = draft.nodes.find((n) => n.id === nodeId);
+          if (!currentNode) return false;
+
+          // Check if the current node itself is dynamic
+          if (isDynamicRelated(currentNode)) return true;
+
+          // Check parents recursively
+          while (currentNode && currentNode.parentId) {
+            const parentNode = draft.nodes.find(
+              (n) => n.id === currentNode.parentId
+            );
+            if (!parentNode) break;
+
+            if (isDynamicRelated(parentNode)) return true;
+            currentNode = parentNode;
+          }
+
+          return false;
+        };
+
         // Add utility for direct positioning
         const directlyMoveNodeToIndex = (nodeId, siblings, targetIndex) => {
           // Find the node we want to move
           const node = draft.nodes.find((n) => n.id === nodeId);
           if (!node) return;
+
+          // CRITICAL FIX: Skip if this is a dynamic node or child of dynamic node
+          if (isDynamicRelated(node) || isDynamicDescendant(node.id)) return;
 
           // Ensure target index is valid
           const safeIndex = Math.max(0, Math.min(targetIndex, siblings.length));
@@ -5508,13 +5763,19 @@ export class NodeDispatcher {
           );
 
           if (newNode && newNode.sharedId) {
-            // This is the source node that was moved - save its info
-            recentlyMovedSharedId = newNode.sharedId;
-            targetIndex = lastAddedInfo.exactIndex || 0;
-            sourceViewportId = findParentViewport(
-              newNode.parentId,
-              draft.nodes
-            );
+            // CRITICAL FIX: Skip if this is a dynamic node or related to dynamic nodes
+            if (
+              !isDynamicRelated(newNode) &&
+              !isDynamicDescendant(newNode.id)
+            ) {
+              // This is the source node that was moved - save its info
+              recentlyMovedSharedId = newNode.sharedId;
+              targetIndex = lastAddedInfo.exactIndex || 0;
+              sourceViewportId = findParentViewport(
+                newNode.parentId,
+                draft.nodes
+              );
+            }
           }
         }
 
@@ -5530,7 +5791,10 @@ export class NodeDispatcher {
             const nodeWithSameSharedId = draft.nodes.find(
               (n) =>
                 n.sharedId === recentlyMovedSharedId &&
-                findParentViewport(n.parentId, draft.nodes) === viewport.id
+                findParentViewport(n.parentId, draft.nodes) === viewport.id &&
+                // CRITICAL FIX: Skip dynamic nodes
+                !isDynamicRelated(n) &&
+                !isDynamicDescendant(n.id)
             );
 
             if (nodeWithSameSharedId) {
@@ -5560,6 +5824,9 @@ export class NodeDispatcher {
         // Collect all nodes by sharedId and viewport
         for (const node of draft.nodes) {
           if (!node.sharedId) continue;
+
+          // CRITICAL FIX: Skip dynamic nodes and their descendants completely
+          if (isDynamicRelated(node) || isDynamicDescendant(node.id)) continue;
 
           const nodeViewportId = node.isViewport
             ? node.id
@@ -5620,6 +5887,13 @@ export class NodeDispatcher {
 
           if (!sourceNode) return;
 
+          // CRITICAL FIX: Skip if source node is dynamic or related to dynamic nodes
+          if (
+            isDynamicRelated(sourceNode) ||
+            isDynamicDescendant(sourceNode.id)
+          )
+            return;
+
           // Get source parent info
           const sourceParentId = sourceNode.parentId;
           const sourceParent = draft.nodes.find((n) => n.id === sourceParentId);
@@ -5678,34 +5952,31 @@ export class NodeDispatcher {
 
             const processedChildrenKeys = new Set();
 
-            const processedChildIds = new Set();
-
             // Replace with this modified version that uses our tracking set:
             const sourceChildren = draft.nodes.filter(
               (n) => n.parentId === sourceNode.id
             );
 
             if (sourceChildren.length > 0) {
-              console.log(
-                `Node ${sourceNode.id} has ${sourceChildren.length} children to copy to ${targetViewport.id}`
-              );
-
               sourceChildren.forEach((sourceChild) => {
+                // CRITICAL FIX: Skip children that are dynamic nodes or related to dynamic nodes
+                if (
+                  isDynamicRelated(sourceChild) ||
+                  isDynamicDescendant(sourceChild.id)
+                )
+                  return;
+
                 // Add this check to prevent duplication
                 const childTrackingKey = `${sourceChild.id || ""}-${
                   targetViewport.id
                 }`;
                 if (processedChildrenKeys.has(childTrackingKey)) {
-                  console.log(
-                    `Skipping already processed child ${sourceChild.id} for viewport ${targetViewport.id}`
-                  );
                   return;
                 }
 
                 // Mark as processed
                 processedChildrenKeys.add(childTrackingKey);
 
-                // Rest of your existing child creation code
                 const newChild = {
                   ...sourceChild,
                   id: nanoid(),
@@ -5718,12 +5989,9 @@ export class NodeDispatcher {
                   lowerSyncProps: { ...sourceChild.lowerSyncProps },
                 };
 
-                console.log(
-                  `Created child node ${newChild.id} with parent ${newNode.id} in viewport ${targetViewport.id}`
-                );
                 draft.nodes.push(newChild);
 
-                // Then modify your recursive function to also use the tracking
+                // Modified recursive function to exclude dynamic nodes and their descendants
                 const processChildrenRecursively = (sourceId, newParentId) => {
                   const children = draft.nodes.filter(
                     (n) => n.parentId === sourceId
@@ -5731,6 +5999,13 @@ export class NodeDispatcher {
                   if (children.length === 0) return;
 
                   children.forEach((child) => {
+                    // CRITICAL FIX: Skip children that are dynamic nodes or related to dynamic nodes
+                    if (
+                      isDynamicRelated(child) ||
+                      isDynamicDescendant(child.id)
+                    )
+                      return;
+
                     // Check if this nested child has been processed
                     const nestedChildKey = `${child.id || ""}-${
                       targetViewport.id
@@ -5742,7 +6017,6 @@ export class NodeDispatcher {
                     // Mark as processed
                     processedChildrenKeys.add(nestedChildKey);
 
-                    // Your existing recursive child creation code
                     const newChildNode = {
                       ...child,
                       id: nanoid(),
@@ -5796,6 +6070,10 @@ export class NodeDispatcher {
           for (const oldNode of oldSubtree) {
             if (oldNode.isViewport || !oldNode.sharedId) continue;
 
+            // CRITICAL FIX: Skip if this is a dynamic node or related to dynamic nodes
+            if (isDynamicRelated(oldNode) || isDynamicDescendant(oldNode.id))
+              continue;
+
             const parentId = oldNode.parentId;
             if (!parentId) continue;
 
@@ -5820,11 +6098,15 @@ export class NodeDispatcher {
             if (oldNode.isViewport) continue;
 
             // Preserve isDynamic nodes and their children
-            if (oldNode.isDynamic || oldNode.dynamicParentId) {
+            if (isDynamicRelated(oldNode) || isDynamicDescendant(oldNode.id)) {
               dynamicNodesToPreserve.add(oldNode.id);
             }
 
-            if (oldNode.sharedId) {
+            if (
+              oldNode.sharedId &&
+              !isDynamicRelated(oldNode) &&
+              !isDynamicDescendant(oldNode.id)
+            ) {
               oldNodesBySharedId.set(oldNode.sharedId, oldNode);
             }
           }
@@ -5846,8 +6128,12 @@ export class NodeDispatcher {
 
           // First pass: clone all nodes
           for (const desktopNode of desktopSubtree) {
-            // Skip dynamic nodes - don't recreate them
-            if (desktopNode.isDynamic || desktopNode.dynamicParentId) continue;
+            // CRITICAL FIX: Skip dynamic nodes and their descendants completely
+            if (
+              isDynamicRelated(desktopNode) ||
+              isDynamicDescendant(desktopNode.id)
+            )
+              continue;
 
             const oldNode = oldNodesBySharedId.get(desktopNode.sharedId || "");
             const cloned = {
@@ -5856,7 +6142,7 @@ export class NodeDispatcher {
               style: { ...desktopNode.style },
             };
 
-            // CRITICAL FIX: More thoroughly respect independent styles and unsyncFromParentViewport
+            // Respect independent styles and unsyncFromParentViewport
             if (oldNode) {
               // First initialize flag objects if they don't exist
               cloned.independentStyles = cloned.independentStyles || {};
@@ -5899,8 +6185,9 @@ export class NodeDispatcher {
 
           // Second pass: update parent references and position nodes
           for (const dNode of desktopSubtree) {
-            // Skip dynamic nodes
-            if (dNode.isDynamic || dNode.dynamicParentId) continue;
+            // CRITICAL FIX: Skip dynamic nodes and their descendants completely
+            if (isDynamicRelated(dNode) || isDynamicDescendant(dNode.id))
+              continue;
 
             const newId = idMap.get(dNode.id);
             if (!newId) continue;
@@ -5968,7 +6255,10 @@ export class NodeDispatcher {
             const nodeWithSameSharedId = draft.nodes.find(
               (n) =>
                 n.sharedId === recentlyMovedSharedId &&
-                findParentViewport(n.parentId, draft.nodes) === viewport.id
+                findParentViewport(n.parentId, draft.nodes) === viewport.id &&
+                // CRITICAL FIX: Skip dynamic nodes
+                !isDynamicRelated(n) &&
+                !isDynamicDescendant(n.id)
             );
 
             if (nodeWithSameSharedId) {
@@ -5995,6 +6285,8 @@ export class NodeDispatcher {
       produce(prev, (draft) => {
         const node = draft.nodes.find((n) => n.id === nodeId);
         if (!node || !node.sharedId) return;
+
+        console.log(" SYNCING NODES ???");
 
         const sharedNodes = draft.nodes.filter(
           (n) => n.id !== nodeId && n.sharedId === node.sharedId

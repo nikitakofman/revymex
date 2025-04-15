@@ -2,12 +2,13 @@
   "id": "G9iDVcIct1sutt0-pKpB8",
   "type": "frame",
   "style": {
-    "position": "relative",
+    "position": "absolute",
     "left": "",
     "top": "",
     "width": "270px",
     "height": "233.33333333333334px",
-    "backgroundColor": "#000000",
+    "backgroundColor": "
+#000000",
     "flex": "0 0 auto",
     "display": "flex",
     "alignItems": "center",
@@ -15,7 +16,7 @@
     "zIndex": "",
     "transform": ""
   },
-  "inViewport": true,
+  "inViewport": false,
   "sharedId": "kMv9076M8VPf77ugyFsL3",
   "unsyncFromParentViewport": {
     "position": true
@@ -24,9 +25,20 @@
     "position": true
   },
   "lowerSyncProps": {},
-  "parentId": "w94KNB3yY1py5YmmAycn-",
+  "parentId": null,
   "dynamicFamilyId": "aTZqe4PyM-Qk-cidzwtCh",
   "isDynamic": true,
   "dynamicViewportId": "viewport-768",
-  "variantResponsiveId": "Stxwz5C2KqjuTcTJFdsrC"
+  "variantResponsiveId": "Stxwz5C2KqjuTcTJFdsrC",
+  "originalState": {
+    "parentId": "w94KNB3yY1py5YmmAycn-",
+    "inViewport": true,
+    "siblingPosition": 0,
+    "parentSharedId": "YxGbz3jugpQ0t5HTlu5wT"
+  },
+  "originalParentId": "w94KNB3yY1py5YmmAycn-",
+  "dynamicPosition": {
+    "x": 0,
+    "y": 0
+  }
 },

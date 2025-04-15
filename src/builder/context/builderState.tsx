@@ -170,16 +170,16 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // const nodeDisp = useMemo(() => {
-  //   const dispatcher = new NodeDispatcher(setNodeState);
-  //   return createTrackedNodeDispatcher(
-  //     dispatcher,
-  //     onOperation,
-  //     process.env.NODE_ENV !== "production"
-  //   );
-  // }, [setNodeState, onOperation]);
+  const nodeDisp = useMemo(() => {
+    const dispatcher = new NodeDispatcher(setNodeState);
+    return createTrackedNodeDispatcher(
+      dispatcher,
+      onOperation,
+      process.env.NODE_ENV !== "production"
+    );
+  }, [setNodeState, onOperation]);
 
-  const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
+  // const nodeDisp = useMemo(() => new NodeDispatcher(setNodeState), []);
 
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
 
@@ -435,9 +435,9 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
           );
         });
 
-        if (sync && !dragState.dynamicModeNodeId) {
-          nodeDisp.syncViewports();
-        }
+        // if (sync && !dragState.dynamicModeNodeId) {
+        //   nodeDisp.syncViewports();
+        // }
       }
     },
     [
