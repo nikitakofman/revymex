@@ -211,7 +211,7 @@ const Canvas = () => {
         ) : (
           // <PreviewPlay nodes={nodeState.nodes} />
           <>
-            <ViewportDevTools />
+            {/* <ViewportDevTools /> */}
             <InterfaceToolbar />
             <LeftMenu />
             <ToolbarDragPreview />
