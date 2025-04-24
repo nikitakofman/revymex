@@ -262,7 +262,7 @@ export const useMouseMove = () => {
       // console.log("is over canvas?");
       dragDisp.setDragPositions(finalX, finalY);
 
-      console.log("dragPositiosn", dragState.dragPositions);
+      // console.log("dragPositiosn", dragState.dragPositions);
     }
 
     // Handle absolute positioning in frames

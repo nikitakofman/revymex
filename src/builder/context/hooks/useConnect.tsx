@@ -5,6 +5,7 @@ import { useDragStart } from "../dnd/useDragStart";
 import { findParentViewport } from "../utils";
 
 export const useConnect = () => {
+  // Use the basic useBuilder hook without global subscriptions
   const {
     dragDisp,
     dragState,
@@ -18,7 +19,8 @@ export const useConnect = () => {
     isMoveCanvasMode,
     setNodeStyle,
     isEditingText,
-  } = useBuilder();
+  } = useBuilder(); // No global subscriptions
+
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -129,6 +131,11 @@ export const useConnect = () => {
 
   return useCallback(
     (node: Node) => {
+      // Subscribe to node-specific hover and selection state
+      // This is the crucial addition that fixes the issue
+      const isHovered = dragState.hoverNodeId === node.id;
+      const isSelected = dragState.selectedIds.includes(node.id);
+
       const handleMouseDown = (e: React.MouseEvent) => {
         // Skip all drag handling if in move canvas mode
         if (isMoveCanvasMode) {
@@ -152,6 +159,8 @@ export const useConnect = () => {
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
 
         const isAlreadySelected = dragState.selectedIds.includes(node.id);
+
+        console.log("dragState.selectedIds:", dragState.selectedIds);
 
         // Find the dynamic parent in the same viewport
         const dynamicParentInSameViewport =
@@ -211,6 +220,7 @@ export const useConnect = () => {
                 const isEdge = currentTarget && isNearEdge(e, currentTarget);
 
                 if (!isResizeHandle && !isEdge) {
+                  console.log("START DRAG");
                   handleDragStart(e, undefined, node);
                 }
               }
@@ -478,6 +488,27 @@ export const useConnect = () => {
         `;
       }
 
+      // Apply hover and selection styles directly based on state
+      const computedStyles = {
+        ...otherStyles,
+        // Apply hover style from dynamicState if relevant
+        ...(dragState.dynamicState === "hovered" && node.dynamicState?.hovered
+          ? {
+              ...node.dynamicState.hovered,
+              // Override with original position values
+              position: node.style.position,
+              left: node.style.left,
+              top: node.style.top,
+              right: node.style.right,
+              bottom: node.style.bottom,
+            }
+          : {}),
+        // Add visual indication for hover state
+        ...(isHovered ? { outline: "1px solid rgba(59, 130, 246, 0.5)" } : {}),
+        // Add visual indication for selected state
+        ...(isSelected ? { outline: "2px solid #3b82f6" } : {}),
+      };
+
       return {
         "data-node-id": node.id,
         "data-node-type": node.type,
@@ -488,39 +519,17 @@ export const useConnect = () => {
         onMouseOver: handleMouseOver,
         onMouseOut: handleMouseOut,
         draggable: false,
-        style: {
-          ...otherStyles,
-          ...(dragState.dynamicState === "hovered" && node.dynamicState?.hovered
-            ? {
-                ...node.dynamicState.hovered,
-                // Override with original position values
-                position: node.style.position,
-                left: node.style.left,
-                top: node.style.top,
-                right: node.style.right,
-                bottom: node.style.bottom,
-              }
-            : {}),
-        },
+        style: computedStyles,
       };
     },
     [
       handleDragStart,
       dragDisp,
-      dragState.dynamicModeNodeId,
-      dragState.hoverNodeId,
-      nodeState.nodes,
       nodeDisp,
-      dragState.dragSource,
       isMovingCanvas,
-      dragState.dynamicState,
-      dragState.selectedIds,
-      interfaceDisp,
       isFrameModeActive,
       isMoveCanvasMode,
       isTextModeActive,
-      findDynamicParentInSameViewport,
-      getNodeViewportId,
       setNodeStyle,
       isEditingText,
     ]
