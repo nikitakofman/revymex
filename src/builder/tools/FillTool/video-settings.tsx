@@ -5,6 +5,7 @@ import { ToolSelect } from "../_components/ToolSelect";
 import { Label } from "../_components/ToolbarAtoms";
 import { ToolbarSwitch } from "../_components/ToolbarSwitch";
 import { ImageCropPopup } from "./image-crop";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const VideoSettingsControl = ({ selectedNode }) => {
   const { setNodeStyle, dragState } = useBuilder();
@@ -16,6 +17,7 @@ export const VideoSettingsControl = ({ selectedNode }) => {
     objectFit: "cover",
   });
 
+  const currentSelectedIds = useGetSelectedIds();
   // Only use computed style for objectFit which is a CSS property
   const objectFit = useComputedStyle({
     property: "objectFit",
@@ -38,14 +40,18 @@ export const VideoSettingsControl = ({ selectedNode }) => {
 
   // Handle toggle for boolean properties
   const handleToggle = (property, value) => {
+    const selectedIds = currentSelectedIds();
+
     const boolValue = value === "true";
-    setNodeStyle({ [property]: boolValue }, dragState.selectedIds);
+    setNodeStyle({ [property]: boolValue }, selectedIds);
     setVideoProps((prev) => ({ ...prev, [property]: boolValue }));
   };
 
   // Handle fit change
   const handleFitChange = (value) => {
-    setNodeStyle({ objectFit: value }, dragState.selectedIds);
+    const selectedIds = currentSelectedIds();
+
+    setNodeStyle({ objectFit: value }, selectedIds);
     setVideoProps((prev) => ({ ...prev, objectFit: value }));
   };
 

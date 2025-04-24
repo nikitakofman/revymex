@@ -1,14 +1,24 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Zap } from "lucide-react";
+import {
+  useNodeSelected,
+  useGetSelectedIds,
+  selectOps,
+} from "../atoms/select-store";
 
 export const ConnectionHandle: React.FC<{
   node: Node;
   transform: { x: number; y: number; scale: number };
 }> = ({ node, transform }) => {
   const { dragState, dragDisp, nodeState, contentRef } = useBuilder();
+
+  // Replace global selection array subscription with node-specific selection and imperative getter
+  const isNodeSelected = useNodeSelected(node.id);
+  const getSelectedIds = useGetSelectedIds();
+
   const [isDragging, setIsDragging] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(
     null
@@ -37,77 +47,85 @@ export const ConnectionHandle: React.FC<{
   const cableIconRef = useRef<HTMLDivElement>(null);
 
   // Find the topmost parent of a node in the dynamic system
-  const findTopmostParent = (nodeId: string | number): string | number => {
-    const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
-    if (!targetNode) return nodeId;
+  const findTopmostParent = useCallback(
+    (nodeId: string | number): string | number => {
+      const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
+      if (!targetNode) return nodeId;
 
-    // FIXED: If this node doesn't have a dynamicFamilyId, it should be directly targeted without redirection
-    if (!targetNode.dynamicFamilyId) {
-      return nodeId;
-    }
-
-    // ADDED FOR BASE NODE: If this is a direct child of a base node, return the base node
-    if (targetNode.dynamicParentId && !targetNode.isVariant) {
-      const baseNode = nodeState.nodes.find(
-        (n) => n.id === targetNode.dynamicParentId
-      );
-      if (baseNode && baseNode.isDynamic) {
-        return baseNode.id;
+      // FIXED: If this node doesn't have a dynamicFamilyId, it should be directly targeted without redirection
+      if (!targetNode.dynamicFamilyId) {
+        return nodeId;
       }
-    }
 
-    // ADDED FOR BASE NODE: Check direct parent relationship
-    if (targetNode.parentId) {
-      const parentNode = nodeState.nodes.find(
-        (n) => n.id === targetNode.parentId
-      );
-      if (parentNode && parentNode.isDynamic) {
-        return parentNode.id;
+      // ADDED FOR BASE NODE: If this is a direct child of a base node, return the base node
+      if (targetNode.dynamicParentId && !targetNode.isVariant) {
+        const baseNode = nodeState.nodes.find(
+          (n) => n.id === targetNode.dynamicParentId
+        );
+        if (baseNode && baseNode.isDynamic) {
+          return baseNode.id;
+        }
       }
-    }
 
-    // If this is the main dynamic node or has no parent, it's already the top
-    if (nodeId === dragState.dynamicModeNodeId || !targetNode.parentId) {
-      return nodeId;
-    }
-
-    // Start traversing upward
-    let currentId = nodeId;
-    let currentNode = targetNode;
-
-    while (currentNode.parentId) {
-      const parentNode = nodeState.nodes.find(
-        (n) => n.id === currentNode.parentId
-      );
-
-      // If parent not found or reached a viewport, stop
-      if (!parentNode || parentNode.isViewport) break;
-
-      // If parent has the same dynamic parent ID, it's part of the same system
-      if (parentNode.dynamicParentId === dragState.dynamicModeNodeId) {
-        currentId = parentNode.id;
-        currentNode = parentNode;
-      } else {
-        // Parent isn't part of the dynamic system, stop
-        break;
+      // ADDED FOR BASE NODE: Check direct parent relationship
+      if (targetNode.parentId) {
+        const parentNode = nodeState.nodes.find(
+          (n) => n.id === targetNode.parentId
+        );
+        if (parentNode && parentNode.isDynamic) {
+          return parentNode.id;
+        }
       }
-    }
 
-    return currentId;
-  };
+      // If this is the main dynamic node or has no parent, it's already the top
+      if (nodeId === dragState.dynamicModeNodeId || !targetNode.parentId) {
+        return nodeId;
+      }
+
+      // Start traversing upward
+      let currentId = nodeId;
+      let currentNode = targetNode;
+
+      while (currentNode.parentId) {
+        const parentNode = nodeState.nodes.find(
+          (n) => n.id === currentNode.parentId
+        );
+
+        // If parent not found or reached a viewport, stop
+        if (!parentNode || parentNode.isViewport) break;
+
+        // If parent has the same dynamic parent ID, it's part of the same system
+        if (parentNode.dynamicParentId === dragState.dynamicModeNodeId) {
+          currentId = parentNode.id;
+          currentNode = parentNode;
+        } else {
+          // Parent isn't part of the dynamic system, stop
+          break;
+        }
+      }
+
+      return currentId;
+    },
+    [nodeState.nodes, dragState.dynamicModeNodeId]
+  );
 
   // Get all ancestor IDs of a node
-  const getAncestorIds = (nodeId: string | number): (string | number)[] => {
-    const ancestors: (string | number)[] = [];
-    let currentNode = nodeState.nodes.find((n) => n.id === nodeId);
+  const getAncestorIds = useCallback(
+    (nodeId: string | number): (string | number)[] => {
+      const ancestors: (string | number)[] = [];
+      let currentNode = nodeState.nodes.find((n) => n.id === nodeId);
 
-    while (currentNode && currentNode.parentId) {
-      ancestors.push(currentNode.parentId);
-      currentNode = nodeState.nodes.find((n) => n.id === currentNode.parentId);
-    }
+      while (currentNode && currentNode.parentId) {
+        ancestors.push(currentNode.parentId);
+        currentNode = nodeState.nodes.find(
+          (n) => n.id === currentNode.parentId
+        );
+      }
 
-    return ancestors;
-  };
+      return ancestors;
+    },
+    [nodeState.nodes]
+  );
 
   // Get the connection point on a target element (always on the edge)
   const getConnectionPoint = (
@@ -155,7 +173,7 @@ export const ConnectionHandle: React.FC<{
   };
 
   // Checks if the node should display the connection handle
-  const shouldShowHandle = () => {
+  const shouldShowHandle = useCallback(() => {
     // Original checks - these still work for desktop
     if (node.id === dragState.dynamicModeNodeId) return true;
     if (node.dynamicParentId === dragState.dynamicModeNodeId) return true;
@@ -196,7 +214,7 @@ export const ConnectionHandle: React.FC<{
       return true;
 
     return false;
-  };
+  }, [node, dragState.dynamicModeNodeId, nodeState.nodes]);
 
   // Ensure the source node stays selected when showing connection modal
   useEffect(() => {
@@ -204,26 +222,32 @@ export const ConnectionHandle: React.FC<{
     if (
       dragState.connectionTypeModal.show &&
       dragState.connectionTypeModal.sourceId === node.id &&
-      !dragState.selectedIds.includes(node.id)
+      !isNodeSelected
     ) {
       // Re-select this node to ensure it stays selected
-      dragDisp.selectNode(node.id);
+      selectOps.selectNode(node.id);
     }
-  }, [dragState.connectionTypeModal, node.id, dragState.selectedIds]);
+  }, [dragState.connectionTypeModal, node.id, isNodeSelected, dragDisp]);
 
   // Helper function to check if a node has a dynamicFamilyId
-  const hasDynamicFamilyId = (nodeId: string | number): boolean => {
-    const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
-    return !!targetNode?.dynamicFamilyId;
-  };
+  const hasDynamicFamilyId = useCallback(
+    (nodeId: string | number): boolean => {
+      const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
+      return !!targetNode?.dynamicFamilyId;
+    },
+    [nodeState.nodes]
+  );
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
+    // Get the current selection state at the time of the event
+    const selectedIds = getSelectedIds();
+
     // Make sure the source node is selected before dragging
-    if (!dragState.selectedIds.includes(node.id)) {
-      dragDisp.selectNode(node.id);
+    if (!selectedIds.includes(node.id)) {
+      selectOps.selectNode(node.id);
     }
 
     // Get the cable icon's center position in screen coordinates
@@ -297,6 +321,8 @@ export const ConnectionHandle: React.FC<{
 
     const handleMouseUp = (upEvent: MouseEvent) => {
       const currentHoverTarget = hoverTarget;
+      // Get current selection at time of mouse up
+      const currentSelectedIds = getSelectedIds();
 
       // Stop dragging
       setIsDragging(false);
@@ -316,8 +342,8 @@ export const ConnectionHandle: React.FC<{
         console.log("Showing modal for target:", currentHoverTarget.id);
 
         // Ensure our source node remains selected
-        if (!dragState.selectedIds.includes(node.id)) {
-          dragDisp.selectNode(node.id);
+        if (!currentSelectedIds.includes(node.id)) {
+          selectOps.selectNode(node.id);
         }
 
         // Show the connection type modal without resetting existing connections
@@ -366,8 +392,8 @@ export const ConnectionHandle: React.FC<{
               );
 
               // Ensure our source node remains selected
-              if (!dragState.selectedIds.includes(node.id)) {
-                dragDisp.selectNode(node.id);
+              if (!currentSelectedIds.includes(node.id)) {
+                selectOps.selectNode(node.id);
               }
 
               // Show the connection type modal without resetting existing connections

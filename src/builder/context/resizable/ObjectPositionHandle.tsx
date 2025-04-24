@@ -1,6 +1,7 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 interface ObjectPositionHandleProps {
   node: Node;
@@ -29,11 +30,22 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
     dragState,
   } = useBuilder();
 
+  // Use the imperative getter function instead of subscription
+  const getSelectedIds = useGetSelectedIds();
+
   const startPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const currentPositionRef = useRef<{ x: number; y: number }>({ x: 50, y: 50 });
 
   // Add state to track whether the handle is interactive
   const [isInteractive, setIsInteractive] = useState(false);
+
+  // Function to check if this node is the primary selected node
+  // This is called during render but doesn't create a subscription
+  const isPrimarySelectedNode = useCallback(() => {
+    if (!isGroupSelection) return true;
+    const selectedIds = getSelectedIds();
+    return selectedIds.length > 0 && node.id === selectedIds[0];
+  }, [isGroupSelection, node.id, getSelectedIds]);
 
   // Initialize position values based on existing objectPosition
   useEffect(() => {
@@ -107,11 +119,8 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
 
     startPosRef.current = { x: e.clientX, y: e.clientY };
 
-    // dragDisp.updateStyleHelper({
-    //   type: "objectPosition",
-    //   position: { x: e.clientX, y: e.clientY },
-    //   value: `${currentPositionRef.current.x}% ${currentPositionRef.current.y}%`,
-    // });
+    // Get the current selected IDs imperatively at the time of the event
+    const selectedIds = getSelectedIds();
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = (e.clientX - startPosRef.current.x) / transform.scale;
@@ -135,17 +144,8 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
         newY = Math.round(newY / 10) * 10;
       }
 
-      // Update helper tooltip
-      //   dragDisp.updateStyleHelper({
-      //     type: "objectPosition",
-      //     position: { x: e.clientX, y: e.clientY },
-      //     value: `${Math.round(newX)}% ${Math.round(newY)}%`,
-      //   });
-
       // Apply object position to all selected nodes if it's a group selection
-      const nodesToUpdate = isGroupSelection
-        ? dragState.selectedIds
-        : [node.id];
+      const nodesToUpdate = isGroupSelection ? selectedIds : [node.id];
 
       // Update the node style
       setNodeStyle(
@@ -173,7 +173,7 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
   };
 
   // Don't render if this isn't the primary selected node in a group
-  if (isGroupSelection && node.id !== dragState.selectedIds[0]) {
+  if (isGroupSelection && !isPrimarySelectedNode()) {
     return null;
   }
 

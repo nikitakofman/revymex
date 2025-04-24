@@ -6,6 +6,7 @@ import { Crop, Maximize, MinusCircle } from "lucide-react";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { ImageCropPopup } from "./image-crop";
 import ToolbarButton from "../_components/ToolbarButton";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ImageSettingsControl = ({ selectedNode }) => {
   const { setNodeStyle, dragState } = useBuilder();
@@ -18,6 +19,7 @@ export const ImageSettingsControl = ({ selectedNode }) => {
     altText: "",
   });
 
+  const currentSelectedIds = useGetSelectedIds();
   // State for popup handling
   const [isCropPopupOpen, setIsCropPopupOpen] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
@@ -39,13 +41,16 @@ export const ImageSettingsControl = ({ selectedNode }) => {
 
   // Handle changes to the image properties
   const handleChange = (property, value) => {
-    setNodeStyle({ [property]: value }, dragState.selectedIds);
+    const selectedIds = currentSelectedIds();
+    setNodeStyle({ [property]: value }, selectedIds);
     setImageProps((prev) => ({ ...prev, [property]: value }));
   };
 
   const handleAltTextChange = (e) => {
+    const selectedIds = currentSelectedIds();
+
     const value = e.target.value;
-    setNodeStyle({ alt: value, altText: value }, dragState.selectedIds);
+    setNodeStyle({ alt: value, altText: value }, selectedIds);
     setImageProps((prev) => ({ ...prev, altText: value }));
   };
 

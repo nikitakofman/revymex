@@ -2,6 +2,11 @@ import React, { useRef, useCallback, RefObject } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Direction, ResizableWrapperProps } from "../utils";
 import { VisualHelpers } from "./VisualHelpers";
+import {
+  useNodeSelected,
+  useGetSelectedIds,
+  selectOps,
+} from "../atoms/select-store";
 
 /**
  * If SHIFT + direct edge, we snap movement to multiples of SHIFT_INCREMENT.
@@ -103,7 +108,13 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   } = useBuilder();
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
-  const isSelected = dragState.selectedIds.includes(node.id);
+
+  // Use the node-specific subscription for this node's selection state
+  const isSelected = useNodeSelected(node.id);
+
+  // Use the imperative getter for selected IDs - no subscription
+  const getSelectedIds = useGetSelectedIds();
+
   const isLocked = node.isLocked === true;
 
   // For SHIFT+corner aspect ratio.
@@ -131,12 +142,15 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
       const sessionId = startRecording();
 
+      // Get current selected IDs at the time of the event
+      const selectedIds = getSelectedIds();
+
       // If multiple nodes are selected, use only unlocked ones
-      const selectedNodes =
-        dragState.selectedIds.length > 0
-          ? dragState.selectedIds.filter((id) => {
+      const selectedNodesToResize =
+        selectedIds.length > 0
+          ? selectedIds.filter((id) => {
               const selectedNode =
-                dragState.selectedIds.length > 1
+                selectedIds.length > 1
                   ? document.querySelector(
                       `[data-node-id="${id}"][data-node-locked="false"]`
                     )
@@ -146,7 +160,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           : [node.id];
 
       // If all selected nodes are locked, don't proceed
-      if (selectedNodes.length === 0) return;
+      if (selectedNodesToResize.length === 0) return;
 
       // Determine which handles are active based on the resize direction.
       const { xHandle, yHandle } = getHandlesFromDirection(direction);
@@ -155,7 +169,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       const finalStyleUpdates = new Map();
 
       // 1) Capture each node's initial geometry.
-      selectedNodes.forEach((nodeId) => {
+      selectedNodesToResize.forEach((nodeId) => {
         const el = document.querySelector(
           `[data-node-id="${nodeId}"]`
         ) as HTMLElement;
@@ -251,7 +265,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         // 3. Find maximum initial dimensions among selected nodes (for normalization).
         let maxInitialWidth = 0;
         let maxInitialHeight = 0;
-        selectedNodes.forEach((nodeId) => {
+        selectedNodesToResize.forEach((nodeId) => {
           const init = initialSizesRef.current[nodeId];
           if (!init) return;
           maxInitialWidth = Math.max(maxInitialWidth, init.width);
@@ -270,7 +284,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         let mainFinalHeight: number | undefined;
 
         // 4. Process each selected node.
-        selectedNodes.forEach((nodeId) => {
+        selectedNodesToResize.forEach((nodeId) => {
           const init = initialSizesRef.current[nodeId];
           if (!init) return;
           const { width, height, left, top } = init;
@@ -490,14 +504,14 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     },
     [
       node,
-      dragState.selectedIds,
       transform.scale,
       dragDisp,
       setNodeStyle,
       startRecording,
       stopRecording,
       setIsResizing,
-      isLocked, // Add dependency on isLocked state
+      isLocked,
+      getSelectedIds, // Add getSelectedIds as a dependency
     ]
   );
 
@@ -510,7 +524,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         style: {
           ...children.props.style,
           pointerEvents: noPointer ? "none" : "auto",
-          // pointerEvents: dragState.isSelectionBoxActive ? "none" : "auto",
         },
         "data-node-locked": isLocked ? "true" : "false", // Add data attribute for locked state
         children: children.props.children,
@@ -526,7 +539,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           <VisualHelpers
             elementRef={elementRef}
             node={node}
-            isSelected={isSelected}
             handleResizeStart={handleResizeStart}
           />
         )}

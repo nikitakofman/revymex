@@ -25,6 +25,7 @@ import {
   InterfaceDispatcher,
   InterfaceState,
 } from "../reducer/interfaceDispatcher";
+import { useGetSelectedIds } from "./atoms/select-store";
 
 export interface LineIndicatorState {
   show: boolean;
@@ -191,6 +192,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     startRecording,
     stopRecording,
   } = useNodeHistory(nodeInitialState);
+
+  const currentSelectedIds = useGetSelectedIds();
 
   const [dragState, setDragState] = useState(dragInitialState);
   const [interfaceState, setInterfaceState] = useState(interfaceInitialState);
@@ -518,7 +521,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       preventUnsync = false,
       preventCascade = preventUnsync
     ) => {
-      const targetIds = nodeIds || dragState.selectedIds;
+      const selectedIds = currentSelectedIds();
+      const targetIds = nodeIds || selectedIds;
 
       if (targetIds.length > 0) {
         // NEW: Filter out text property if applying to non-text elements
@@ -548,12 +552,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         // }
       }
     },
-    [
-      dragState.selectedIds,
-      nodeDisp,
-      dragState.dynamicModeNodeId,
-      nodeState.nodes,
-    ]
+    [nodeDisp, dragState.dynamicModeNodeId, nodeState.nodes]
   );
 
   const value: BuilderContextType = {

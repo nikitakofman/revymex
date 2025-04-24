@@ -1,14 +1,18 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useBuilder } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
+import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 
 const ConnectionTypeModal: React.FC = () => {
   const { dragState, dragDisp, nodeDisp, nodeState } = useBuilder();
   const { connectionTypeModal } = dragState;
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = React.useState(false);
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
 
   // Handle clicks outside the modal
   useEffect(() => {
@@ -35,7 +39,7 @@ const ConnectionTypeModal: React.FC = () => {
       clearTimeout(animationTimeout);
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [connectionTypeModal.show, dragDisp]);
+  }, [connectionTypeModal.show]);
 
   // Reset visibility when modal is hidden
   useEffect(() => {
@@ -45,93 +49,107 @@ const ConnectionTypeModal: React.FC = () => {
   }, [connectionTypeModal.show]);
 
   // Function to find responsive counterparts of a node across all viewports
-  const findResponsiveCounterparts = (nodeId: string | number) => {
-    const counterparts: string[] = [];
-    const node = nodeState.nodes.find((n) => n.id === nodeId);
+  const findResponsiveCounterparts = useCallback(
+    (nodeId: string | number) => {
+      const counterparts: string[] = [];
+      const node = nodeState.nodes.find((n) => n.id === nodeId);
 
-    if (!node || !node.variantResponsiveId) return counterparts;
+      if (!node || !node.variantResponsiveId) return counterparts;
 
-    // Find all nodes with the same variantResponsiveId (responsive siblings)
-    const responsiveNodes = nodeState.nodes.filter(
-      (n) =>
-        n.variantResponsiveId === node.variantResponsiveId && n.id !== nodeId
-    );
-
-    responsiveNodes.forEach((responsiveNode) => {
-      counterparts.push(responsiveNode.id.toString());
-    });
-
-    return counterparts;
-  };
-
-  // Function to create connections across responsive counterparts
-  const createResponsiveConnections = (
-    sourceId: string | number,
-    targetId: string | number,
-    connectionType: "click" | "hover" | "mouseLeave"
-  ) => {
-    // Get source and target nodes
-    const sourceNode = nodeState.nodes.find((n) => n.id === sourceId);
-    const targetNode = nodeState.nodes.find((n) => n.id === targetId);
-
-    if (!sourceNode || !targetNode) return;
-
-    // Find the responsive counterparts
-    const sourceCounterparts = findResponsiveCounterparts(sourceId);
-    const targetCounterparts = findResponsiveCounterparts(targetId);
-
-    console.log("Source Counterparts:", sourceCounterparts);
-    console.log("Target Counterparts:", targetCounterparts);
-
-    // Map targets to their viewport IDs for easier matching
-    const targetsByViewport = new Map();
-
-    targetNode.dynamicViewportId &&
-      targetsByViewport.set(targetNode.dynamicViewportId, targetId);
-
-    targetCounterparts.forEach((counterpartId) => {
-      const counterpart = nodeState.nodes.find((n) => n.id === counterpartId);
-      if (counterpart && counterpart.dynamicViewportId) {
-        targetsByViewport.set(counterpart.dynamicViewportId, counterpartId);
-      }
-    });
-
-    // For each source counterpart, find the target in the same viewport and connect them
-    sourceCounterparts.forEach((sourceCounterpartId) => {
-      const counterpart = nodeState.nodes.find(
-        (n) => n.id === sourceCounterpartId
+      // Find all nodes with the same variantResponsiveId (responsive siblings)
+      const responsiveNodes = nodeState.nodes.filter(
+        (n) =>
+          n.variantResponsiveId === node.variantResponsiveId && n.id !== nodeId
       );
 
-      if (counterpart && counterpart.dynamicViewportId) {
-        const viewportId = counterpart.dynamicViewportId;
-        const matchingTargetId = targetsByViewport.get(viewportId);
+      responsiveNodes.forEach((responsiveNode) => {
+        counterparts.push(responsiveNode.id.toString());
+      });
 
-        if (matchingTargetId) {
-          console.log(
-            `Creating responsive connection: ${sourceCounterpartId} -> ${matchingTargetId} (${connectionType})`
-          );
+      return counterparts;
+    },
+    [nodeState.nodes]
+  );
 
-          // Create the connection in this viewport
-          nodeDisp.addUniqueDynamicConnection(
-            sourceCounterpartId,
-            matchingTargetId,
-            connectionType,
-            dragState.dynamicModeNodeId
-          );
+  // Function to create connections across responsive counterparts
+  const createResponsiveConnections = useCallback(
+    (
+      sourceId: string | number,
+      targetId: string | number,
+      connectionType: "click" | "hover" | "mouseLeave"
+    ) => {
+      // Get source and target nodes
+      const sourceNode = nodeState.nodes.find((n) => n.id === sourceId);
+      const targetNode = nodeState.nodes.find((n) => n.id === targetId);
+
+      if (!sourceNode || !targetNode) return;
+
+      // Find the responsive counterparts
+      const sourceCounterparts = findResponsiveCounterparts(sourceId);
+      const targetCounterparts = findResponsiveCounterparts(targetId);
+
+      console.log("Source Counterparts:", sourceCounterparts);
+      console.log("Target Counterparts:", targetCounterparts);
+
+      // Map targets to their viewport IDs for easier matching
+      const targetsByViewport = new Map();
+
+      targetNode.dynamicViewportId &&
+        targetsByViewport.set(targetNode.dynamicViewportId, targetId);
+
+      targetCounterparts.forEach((counterpartId) => {
+        const counterpart = nodeState.nodes.find((n) => n.id === counterpartId);
+        if (counterpart && counterpart.dynamicViewportId) {
+          targetsByViewport.set(counterpart.dynamicViewportId, counterpartId);
         }
-      }
-    });
-  };
+      });
+
+      // For each source counterpart, find the target in the same viewport and connect them
+      sourceCounterparts.forEach((sourceCounterpartId) => {
+        const counterpart = nodeState.nodes.find(
+          (n) => n.id === sourceCounterpartId
+        );
+
+        if (counterpart && counterpart.dynamicViewportId) {
+          const viewportId = counterpart.dynamicViewportId;
+          const matchingTargetId = targetsByViewport.get(viewportId);
+
+          if (matchingTargetId) {
+            console.log(
+              `Creating responsive connection: ${sourceCounterpartId} -> ${matchingTargetId} (${connectionType})`
+            );
+
+            // Create the connection in this viewport
+            nodeDisp.addUniqueDynamicConnection(
+              sourceCounterpartId,
+              matchingTargetId,
+              connectionType,
+              dragState.dynamicModeNodeId
+            );
+          }
+        }
+      });
+    },
+    [
+      nodeState.nodes,
+      findResponsiveCounterparts,
+      dragState.dynamicModeNodeId,
+      nodeDisp,
+    ]
+  );
 
   if (!connectionTypeModal.show) return null;
 
   const handleClose = () => {
+    // Get the current selection when closing
+    const selectedIds = getSelectedIds();
+
     // Before closing, make sure the source node remains selected
     if (
       connectionTypeModal.sourceId &&
-      !dragState.selectedIds.includes(connectionTypeModal.sourceId)
+      !selectedIds.includes(connectionTypeModal.sourceId)
     ) {
-      dragDisp.selectNode(connectionTypeModal.sourceId);
+      selectOps.selectNode(connectionTypeModal.sourceId);
     }
 
     dragDisp.hideConnectionTypeModal();

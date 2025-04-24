@@ -1,6 +1,7 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 interface BorderRadiusHandleProps {
   node: Node;
@@ -29,6 +30,16 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     setIsAdjustingBorderRadius,
   } = useBuilder();
 
+  // Use the imperative getter function instead of subscription
+  const getSelectedIds = useGetSelectedIds();
+
+  // Function to check if this node is the primary selected node
+  const isPrimarySelectedNode = useCallback(() => {
+    if (!isGroupSelection) return true;
+    const selectedIds = getSelectedIds();
+    return selectedIds.length > 0 && node.id === selectedIds[0];
+  }, [isGroupSelection, node.id, getSelectedIds]);
+
   const startPosRef = useRef<number>(0);
   const startRadiusRef = useRef<number>(0);
 
@@ -39,7 +50,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInteractive(true);
-    }, 200); // 100ms delay before making it interactive
+    }, 200); // 200ms delay before making it interactive
 
     return () => {
       clearTimeout(timer);
@@ -55,6 +66,9 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
 
     const sessionId = startRecording();
     setIsAdjustingBorderRadius(true);
+
+    // Get current selection state at the time of the event
+    const selectedIds = getSelectedIds();
 
     // Get current radius in pixels
     let currentRadius = 0;
@@ -89,9 +103,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
       });
 
       // Apply border radius to all selected nodes if it's a group selection
-      const nodesToUpdate = isGroupSelection
-        ? dragState.selectedIds
-        : [node.id];
+      const nodesToUpdate = isGroupSelection ? selectedIds : [node.id];
 
       if (newRadius === 0) {
         setNodeStyle({ borderRadius: undefined }, nodesToUpdate, true);
@@ -117,7 +129,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
   };
 
   // Don't render if this isn't the primary selected node in a group
-  if (isGroupSelection && node.id !== dragState.selectedIds[0]) {
+  if (isGroupSelection && !isPrimarySelectedNode()) {
     return null;
   }
 

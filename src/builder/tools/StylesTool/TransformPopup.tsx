@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
 import { useBuilder } from "@/builder/context/builderState";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const TransformPopup = ({ selectedNode, onClose }) => {
   const { dragState, setNodeStyle } = useBuilder();
-
+  const currentSelectedIds = useGetSelectedIds();
   // Transform states
   const [scaleX, setScaleX] = useState(1);
   const [scaleY, setScaleY] = useState(1);
@@ -17,11 +18,13 @@ export const TransformPopup = ({ selectedNode, onClose }) => {
 
   // Parse transform string on component mount
   useEffect(() => {
-    if (!dragState.selectedIds.length) return;
+    const selectedIds = currentSelectedIds();
+
+    if (!selectedIds.length) return;
 
     // Get the selected node's style
     const element = document.querySelector(
-      `[data-node-id="${dragState.selectedIds[0]}"]`
+      `[data-node-id="${selectedIds[0]}"]`
     );
     if (!element) return;
 
@@ -77,7 +80,7 @@ export const TransformPopup = ({ selectedNode, onClose }) => {
     if (skewYMatch) {
       setSkewY(parseFloat(skewYMatch[1]));
     }
-  }, [dragState.selectedIds]);
+  }, [currentSelectedIds]);
 
   // Apply transforms
   const applyTransforms = () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { debounce } from "lodash";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 // Types and Interfaces
 interface StyleValue {
@@ -182,6 +183,9 @@ export function useComputedStyle({
     unit: defaultUnit,
   }));
 
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+
   const observerRef = useRef<MutationObserver | null>(null);
   const elementsRef = useRef<HTMLElement[]>([]);
   const isUpdatingRef = useRef(false);
@@ -193,7 +197,10 @@ export function useComputedStyle({
     isUpdatingRef.current = true;
 
     try {
-      const elements = dragState.selectedIds
+      // Get the current selected IDs only when computing styles
+      const selectedIds = getSelectedIds();
+
+      const elements = selectedIds
         .map(
           (id) =>
             document.querySelector(`[data-node-id="${id}"]`) as HTMLElement
@@ -244,7 +251,7 @@ export function useComputedStyle({
       isUpdatingRef.current = false;
     }
   }, [
-    dragState.selectedIds,
+    getSelectedIds,
     property,
     defaultValue,
     defaultUnit,
@@ -260,10 +267,31 @@ export function useComputedStyle({
     [updateComputedStyle]
   );
 
-  // Clear cache on selection change
+  // Setup a listener for selection changes
   useEffect(() => {
-    styleCache.clear();
-  }, [dragState.selectedIds]);
+    // Initial update on mount
+    updateComputedStyle();
+
+    // Set up a MutationObserver on document.body to detect DOM changes
+    // This avoids subscribing directly to selection changes
+    const selectionChangeObserver = new MutationObserver(() => {
+      // Clear the style cache when selection might have changed
+      styleCache.clear();
+      // Update computed style
+      updateComputedStyle();
+    });
+
+    // Observe changes to data-selected attribute on any element
+    selectionChangeObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-selected"],
+      subtree: true,
+    });
+
+    return () => {
+      selectionChangeObserver.disconnect();
+    };
+  }, [updateComputedStyle]);
 
   // Setup observers and handle cleanup
   useEffect(() => {
@@ -271,9 +299,6 @@ export function useComputedStyle({
       observerRef.current?.disconnect();
       debouncedUpdate.cancel();
     };
-
-    // Initial update
-    updateComputedStyle();
 
     // Setup mutation observer for selected elements
     if (elementsRef.current.length > 0) {
@@ -297,7 +322,7 @@ export function useComputedStyle({
     }
 
     return cleanup;
-  }, [dragState.selectedIds, nodeState.nodes, debouncedUpdate]);
+  }, [debouncedUpdate]);
 
   // Handle drag state updates
   useEffect(() => {
@@ -308,6 +333,7 @@ export function useComputedStyle({
     dragState.isDragging,
     dragState.dragPositions.x,
     dragState.dragPositions.y,
+    debouncedUpdate,
   ]);
 
   return styleValue;

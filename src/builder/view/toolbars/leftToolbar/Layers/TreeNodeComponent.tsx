@@ -27,6 +27,13 @@ import {
 } from "./utils";
 import { handleMediaToFrameTransformation } from "@/builder/context/utils";
 import { set } from "lodash";
+import { useAtomValue } from "jotai";
+import {
+  isNodeSelectedAtom,
+  selectOps,
+  selectStore,
+  useGetSelectedIds,
+} from "@/builder/context/atoms/select-store";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;
@@ -42,6 +49,11 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     nodeState,
     setIsEditingText,
   } = useBuilder();
+
+  const currentSelectedIds = useGetSelectedIds();
+
+  const { addToSelection, selectNode } = selectOps;
+
   const isDynamicMode = !!dragState.dynamicModeNodeId;
   const isDynamicNode = node.id === dragState.dynamicModeNodeId;
   const isDynamicChild = node.dynamicParentId === dragState.dynamicModeNodeId;
@@ -52,7 +64,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<number | null>(null);
   const hasChildren = node.children?.length > 0;
-  const isSelected = dragState.selectedIds.includes(node.id);
+  const isSelected = useAtomValue(isNodeSelectedAtom(node.id), {
+    store: selectStore,
+  });
   const isHidden = node.style.display === "none";
 
   // DnD state
@@ -87,10 +101,12 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
   const handleSelect = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (e.shiftKey && dragState.selectedIds.length > 0) {
-      dragDisp.addToSelection(node.id);
+
+    const selectedIds = currentSelectedIds();
+    if (e.shiftKey && selectedIds.length > 0) {
+      addToSelection(node.id);
     } else {
-      dragDisp.selectNode(node.id);
+      selectNode(node.id);
     }
   };
 
@@ -144,7 +160,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
     // First select the node
     if (!isSelected) {
-      dragDisp.selectNode(node.id);
+      selectNode(node.id);
     }
 
     // Always specify the exact node ID when making style changes
@@ -171,7 +187,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
     // First select the node if it's not already selected
     if (!isSelected) {
-      dragDisp.selectNode(node.id);
+      selectNode(node.id);
     }
 
     // Then show the context menu
@@ -220,7 +236,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
     // Select the node if it's not already selected
     if (!isSelected) {
-      dragDisp.selectNode(node.id);
+      selectNode(node.id);
     }
 
     setIsDragging(true);
@@ -456,9 +472,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
         console.error("Dragged node not found:", dragData.id);
         return;
       }
+      const selectedIds = currentSelectedIds();
 
       // Check if multi-selection is being dragged
-      const selectedIds = dragState.selectedIds;
       const isMultiSelectionDrag =
         selectedIds.length > 1 && selectedIds.includes(draggedNode.id);
 
@@ -771,7 +787,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
         }
 
         // Make sure we're selecting the dragged node to complete the operation
-        dragDisp.selectNode(draggedNode.id);
+        selectNode(draggedNode.id);
       }, 10);
     } catch (error) {
       console.error("DROP-ERROR: Error handling drop:", error);
@@ -783,7 +799,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
     // First select the node if it's not already selected
     if (!isSelected) {
-      dragDisp.selectNode(node.id);
+      selectNode(node.id);
     }
 
     // Toggle the lock state for this node

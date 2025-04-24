@@ -1,11 +1,18 @@
 "use client";
 
-import React, { useLayoutEffect, useState, useCallback, useMemo } from "react";
+import React, {
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+} from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle, Copy } from "lucide-react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPortal } from "react-dom";
+import { useGetSelectedIds } from "../context/atoms/select-store";
 
 interface Operation {
   method: string;
@@ -141,6 +148,36 @@ export const ViewportDevTools: React.FC = () => {
     operations,
     clearOperations,
   } = useBuilder();
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+  const [selectedIdsList, setSelectedIdsList] = useState<(string | number)[]>(
+    []
+  );
+
+  // Update selected IDs when needed
+  useEffect(() => {
+    // Set up a MutationObserver to detect selection changes via DOM attributes
+    const selectionObserver = new MutationObserver(() => {
+      const currentSelectedIds = getSelectedIds();
+      setSelectedIdsList(currentSelectedIds);
+    });
+
+    // Initial update
+    setSelectedIdsList(getSelectedIds());
+
+    // Observe changes to data-selected attribute
+    selectionObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-selected"],
+      subtree: true,
+    });
+
+    return () => {
+      selectionObserver.disconnect();
+    };
+  }, [getSelectedIds]);
+
   const [showTree, setShowTree] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
@@ -205,7 +242,7 @@ export const ViewportDevTools: React.FC = () => {
 
   const handleCopySelectedId = () => {
     // Get the first selected ID, or return if none
-    const selectedId = dragState.selectedIds[0];
+    const selectedId = selectedIdsList[0];
     if (!selectedId) {
       setCopyStatus("No ID selected");
       setTimeout(() => setCopyStatus(""), 2000);
@@ -243,7 +280,7 @@ export const ViewportDevTools: React.FC = () => {
         )}
 
         <div className="absolute bottom-[-40px] z-[9999] cursor-pointer right-0 p-2">
-          {dragState.selectedIds[0]}
+          {selectedIdsList[0]}
         </div>
         <button
           className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
@@ -305,7 +342,7 @@ export const ViewportDevTools: React.FC = () => {
           className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleCopySelectedId}
           title="Copy selected node ID"
-          disabled={dragState.selectedIds.length === 0}
+          disabled={selectedIdsList.length === 0}
         >
           <Copy className="w-4 h-4" />
           Copy ID
@@ -313,12 +350,12 @@ export const ViewportDevTools: React.FC = () => {
 
         <button
           className={`px-3 py-1 rounded-[var(--radius-sm)] ${
-            dragState.selectedIds.length > 0
+            selectedIdsList.length > 0
               ? "bg-[var(--button-primary-bg)] text-white"
               : "bg-[var(--control-bg)] text-[var(--text-primary)]"
           }`}
         >
-          {dragState.selectedIds.length}
+          {selectedIdsList.length}
         </button>
 
         {/* Copy status toast */}
@@ -507,3 +544,5 @@ export const ViewportDevTools: React.FC = () => {
     document.body
   );
 };
+
+export default ViewportDevTools;

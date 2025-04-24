@@ -2,6 +2,7 @@ import { useCallback, RefObject } from "react";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Transform } from "@/builder/types";
+import { selectOps } from "../atoms/select-store";
 
 interface UseImageDropProps {
   containerRef: RefObject<HTMLDivElement>;
@@ -25,6 +26,8 @@ export function useImageDrop({
   nodeDisp,
   dragDisp,
 }: UseImageDropProps) {
+  const { setSelectedIds } = selectOps;
+
   const createImageNode = useCallback(
     (
       imageSrc: string,
@@ -68,7 +71,7 @@ export function useImageDrop({
       };
 
       nodeDisp.addNode(newNode, null, null, false);
-      dragDisp.setSelectedIds([newNode.id]);
+      setSelectedIds([newNode.id]);
     },
     [containerRef, transform, nodeDisp, dragDisp]
   );

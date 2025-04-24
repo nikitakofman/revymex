@@ -1,27 +1,89 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { useBuilder } from "@/builder/context/builderState";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { ToolPopupTrigger } from "./_components/ToolbarPopupTrigger";
 import { Zap, ChevronRight, X, Plus } from "lucide-react";
+import { useGetSelectedIds } from "../context/atoms/select-store";
 
 export const InteractionsTool = () => {
   const { nodeState, dragState } = useBuilder();
-  const selectedNodeId = dragState.selectedIds[0];
-  const selectedNode = nodeState.nodes.find((n) => n.id === selectedNodeId);
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [connectionCount, setConnectionCount] = useState(0);
+  const [isDynamicRelated, setIsDynamicRelated] = useState(false);
 
   const [showPopup, setShowPopup] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
 
-  // Only show for dynamic nodes or nodes within a dynamic system
-  const isDynamicRelated =
-    selectedNode &&
-    (selectedNode.isDynamic ||
-      selectedNode.dynamicParentId ||
-      (selectedNode.dynamicConnections &&
-        selectedNode.dynamicConnections.length > 0));
+  // Update the selected node when selection changes
+  useEffect(() => {
+    // Get the current selection
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) {
+      setSelectedNode(null);
+      setIsDynamicRelated(false);
+      return;
+    }
 
-  const handleTriggerPopup = (triggerElement, e) => {
+    const selectedNodeId = selectedIds[0];
+    const node = nodeState.nodes.find((n) => n.id === selectedNodeId);
+    setSelectedNode(node);
+
+    // Update connection count
+    setConnectionCount(node?.dynamicConnections?.length || 0);
+
+    // Update dynamic related state
+    const isDynamic =
+      node &&
+      (node.isDynamic ||
+        node.dynamicParentId ||
+        (node.dynamicConnections && node.dynamicConnections.length > 0));
+    setIsDynamicRelated(isDynamic);
+  }, [nodeState.nodes, getSelectedIds]);
+
+  // Set up an observer for selection changes
+  useEffect(() => {
+    const selectionObserver = new MutationObserver(() => {
+      // When selection changes, re-run our node finding logic
+      const selectedIds = getSelectedIds();
+      if (selectedIds.length === 0) {
+        setSelectedNode(null);
+        setIsDynamicRelated(false);
+        return;
+      }
+
+      const selectedNodeId = selectedIds[0];
+      const node = nodeState.nodes.find((n) => n.id === selectedNodeId);
+      setSelectedNode(node);
+
+      // Update connection count
+      setConnectionCount(node?.dynamicConnections?.length || 0);
+
+      // Update dynamic related state
+      const isDynamic =
+        node &&
+        (node.isDynamic ||
+          node.dynamicParentId ||
+          (node.dynamicConnections && node.dynamicConnections.length > 0));
+      setIsDynamicRelated(isDynamic);
+    });
+
+    // Observe changes to data-selected attribute
+    selectionObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-selected"],
+      subtree: true,
+    });
+
+    return () => {
+      selectionObserver.disconnect();
+    };
+  }, [nodeState.nodes, getSelectedIds]);
+
+  const handleTriggerPopup = useCallback((triggerElement, e) => {
     e.stopPropagation();
 
     if (triggerElement) {
@@ -29,10 +91,7 @@ export const InteractionsTool = () => {
       setPopupPosition({ x: rect.right + 10, y: rect.top });
       setShowPopup(true);
     }
-  };
-
-  // Count the current connections
-  const connectionCount = selectedNode?.dynamicConnections?.length || 0;
+  }, []);
 
   if (!isDynamicRelated) return null;
 
@@ -64,7 +123,7 @@ export const InteractionsTool = () => {
         leftPadding
       >
         <InteractionsPopup
-          selectedNodeId={selectedNodeId}
+          selectedNode={selectedNode}
           onClose={() => setShowPopup(false)}
         />
       </ToolbarPopup>
@@ -72,9 +131,11 @@ export const InteractionsTool = () => {
   );
 };
 
-const InteractionsPopup = ({ selectedNodeId, onClose }) => {
+const InteractionsPopup = ({ selectedNode, onClose }) => {
   const { nodeState, dragState, nodeDisp } = useBuilder();
-  const selectedNode = nodeState.nodes.find((n) => n.id === selectedNodeId);
+
+  // Get the selected node ID from the passed node
+  const selectedNodeId = selectedNode?.id;
 
   // Get current viewport
   const currentViewportId = dragState.activeViewportInDynamicMode;
@@ -119,7 +180,13 @@ const InteractionsPopup = ({ selectedNodeId, onClose }) => {
 
     // Update state with found targets
     setAvailableTargets(targets);
-  }, [nodeState.nodes, currentViewportId, mainDynamicNodeId, selectedNodeId]);
+  }, [
+    nodeState.nodes,
+    currentViewportId,
+    mainDynamicNodeId,
+    selectedNodeId,
+    selectedNode,
+  ]);
 
   const addConnection = (targetId, type) => {
     if (!selectedNodeId || !targetId || !type) return;
@@ -178,15 +245,18 @@ const InteractionsPopup = ({ selectedNodeId, onClose }) => {
   };
 
   // Get human-readable name for a node
-  const getNodeDisplayName = (nodeId) => {
-    const node = nodeState.nodes.find((n) => n.id === nodeId);
-    if (!node) return "Unknown";
+  const getNodeDisplayName = useCallback(
+    (nodeId) => {
+      const node = nodeState.nodes.find((n) => n.id === nodeId);
+      if (!node) return "Unknown";
 
-    return node.variantInfo?.name || node.customName || "Unnamed";
-  };
+      return node.variantInfo?.name || node.customName || "Unnamed";
+    },
+    [nodeState.nodes]
+  );
 
   // Function to get node type display name
-  const getNodeTypeDisplay = (node) => {
+  const getNodeTypeDisplay = useCallback((node) => {
     if (!node) return "";
 
     if (node.type === "frame") return "Frame";
@@ -195,20 +265,26 @@ const InteractionsPopup = ({ selectedNodeId, onClose }) => {
 
     // Capitalize first letter
     return node.type.charAt(0).toUpperCase() + node.type.slice(1);
-  };
+  }, []);
 
   // Get viewport name
   const viewportName = currentViewport?.viewportName || "";
 
   // Get existing connection for a specific type
-  const getExistingConnection = (type) => {
-    return currentConnections.find((conn) => conn.type === type);
-  };
+  const getExistingConnection = useCallback(
+    (type) => {
+      return currentConnections.find((conn) => conn.type === type);
+    },
+    [currentConnections]
+  );
 
   // Check if a connection type is already used
-  const hasConnectionType = (type) => {
-    return currentConnections.some((conn) => conn.type === type);
-  };
+  const hasConnectionType = useCallback(
+    (type) => {
+      return currentConnections.some((conn) => conn.type === type);
+    },
+    [currentConnections]
+  );
 
   return (
     <div className="w-full ">

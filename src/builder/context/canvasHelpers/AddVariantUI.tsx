@@ -1,8 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Plus } from "lucide-react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
+import {
+  useNodeSelected,
+  useGetSelectedIds,
+  selectOps,
+} from "../atoms/select-store";
 
 interface AddVariantsUIProps {
   node: Node;
@@ -11,6 +16,10 @@ interface AddVariantsUIProps {
 
 export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   const { dragState, nodeDisp, nodeState, dragDisp, transform } = useBuilder();
+
+  // Use node-specific selection check and imperative getter
+  const isNodeSelected = useNodeSelected(node.id);
+  const getSelectedIds = useGetSelectedIds();
 
   // State for element dimensions and position
   const [elementSize, setElementSize] = useState({ width: 0, height: 0 });
@@ -360,13 +369,13 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
     // Select the newly created variant node
     if (newVariantId) {
       setTimeout(() => {
-        dragDisp.selectNode(newVariantId);
+        selectOps.selectNode(newVariantId);
       }, 1);
     }
   };
 
   // Check if this node should show the variant button
-  const shouldShowVariantButton = (): boolean => {
+  const shouldShowVariantButton = useCallback((): boolean => {
     if (!dragState.dynamicModeNodeId) return false;
 
     // Don't show if no position is available
@@ -378,12 +387,20 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
     // CRITICAL CHANGE: Only show the button when clicking directly on the topmost parent
     // Check if the current node IS the topmost parent (not a child)
     if (topmostParent && node.id === topmostParent.id) {
-      return dragState.selectedIds.includes(node.id);
+      // Use the node-specific selection state - prevents re-renders in other components
+      return isNodeSelected;
     }
 
     // For all other nodes (children), don't show the button
     return false;
-  };
+  }, [
+    dragState.dynamicModeNodeId,
+    isPositionAvailable,
+    node.dynamicFamilyId,
+    node.id,
+    topmostParent,
+    isNodeSelected,
+  ]);
 
   if (!shouldShowVariantButton() || !topmostParent) return null;
 

@@ -12,6 +12,10 @@ import {
   createSkewTransform,
   Direction,
   isAbsoluteInFrame,
+  getCumulativeRotation,
+  getCumulativeSkew,
+  computeFullMatrixChain,
+  matrixToCss,
 } from "../utils";
 import { RotateHandle } from "./RotateHandle";
 import { BorderRadiusHandle } from "./BorderRadiusHandle";
@@ -20,277 +24,24 @@ import NameDisplay from "./NameDisplay";
 import { AxeIcon } from "lucide-react";
 import { FontSizeHandle } from "./FontSizeHandle";
 import { ObjectPositionHandle } from "./ObjectPositionHandle";
-
-/* -------------------------------------------
-   2D MATRIX HELPERS
---------------------------------------------*/
-function degToRad(deg: number) {
-  return (deg * Math.PI) / 180;
-}
-
-function multiply2D(A: number[], B: number[]) {
-  // Multiply two 3x3 matrices (row-major order)
-  const C = new Array(9).fill(0);
-  C[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
-  C[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
-  C[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];
-
-  C[3] = A[3] * B[0] + A[4] * B[3] + A[5] * B[6];
-  C[4] = A[3] * B[1] + A[4] * B[4] + A[5] * B[7];
-  C[5] = A[3] * B[2] + A[4] * B[5] + A[5] * B[8];
-
-  C[6] = A[6] * B[0] + A[7] * B[3] + A[8] * B[6];
-  C[7] = A[6] * B[1] + A[7] * B[4] + A[8] * B[7];
-  C[8] = A[6] * B[2] + A[7] * B[5] + A[8] * B[8];
-  return C;
-}
-
-function applyMatrixToPoint(m: number[], x: number, y: number) {
-  const nx = m[0] * x + m[1] * y + m[2];
-  const ny = m[3] * x + m[4] * y + m[5];
-  return { x: nx, y: ny };
-}
-
-/**
- * Create a 3×3 2D transform matrix, applying:
- *   translate(tx, ty) → translate(cx, cy) → scale → skewX → skewY → translate(-cx, -cy)
- */
-function build2DMatrix({
-  tx,
-  ty,
-  cx,
-  cy,
-  scaleX,
-  scaleY,
-  skewXDeg,
-  skewYDeg,
-}: {
-  tx: number;
-  ty: number;
-  cx: number;
-  cy: number;
-  scaleX: number;
-  scaleY: number;
-  skewXDeg: number;
-  skewYDeg: number;
-}) {
-  let M = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-  // 1) Translate by (tx, ty)
-  M = multiply2D(M, [1, 0, tx, 0, 1, ty, 0, 0, 1]);
-
-  // 2) Translate pivot (cx, cy)
-  M = multiply2D(M, [1, 0, cx, 0, 1, cy, 0, 0, 1]);
-
-  // 3) Scale
-  M = multiply2D(M, [scaleX, 0, 0, 0, scaleY, 0, 0, 0, 1]);
-
-  // 4) SkewX
-  const sx = Math.tan(degToRad(skewXDeg));
-  M = multiply2D(M, [1, sx, 0, 0, 1, 0, 0, 0, 1]);
-
-  // 5) SkewY
-  const sy = Math.tan(degToRad(skewYDeg));
-  M = multiply2D(M, [1, 0, 0, sy, 1, 0, 0, 0, 1]);
-
-  // 6) Translate back (-cx, -cy)
-  M = multiply2D(M, [1, 0, -cx, 0, 1, -cy, 0, 0, 1]);
-
-  return M;
-}
-
-function matrixToCss(m: number[]) {
-  // return a "matrix(...)" 2D transform string
-  return `matrix(${m[0]}, ${m[3]}, ${m[1]}, ${m[4]}, ${m[2]}, ${m[5]})`;
-}
-
-/**
- * Parse numeric rotation (in deg) from style.rotate if present, else 0
- */
-function parseRotation(rotate: string | undefined): number {
-  if (!rotate) return 0;
-  const match = rotate.match(/([-\d.]+)deg/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-/**
- * Extract scaleX, scaleY, skewX, skewY from a node's .style.transform (like "scaleX(0.8) skewX(10deg)" etc).
- * If absent, defaults to (scale=1, skew=0).
- */
-function parseTransformValues(transformStr: string | undefined) {
-  const result = { scaleX: 1, scaleY: 1, skewX: 0, skewY: 0 };
-  if (!transformStr) return result;
-
-  // scaleX(...)
-  const sxMatch = transformStr.match(/scaleX\(([-\d.]+)\)/);
-  if (sxMatch) result.scaleX = parseFloat(sxMatch[1]);
-
-  // scaleY(...)
-  const syMatch = transformStr.match(/scaleY\(([-\d.]+)\)/);
-  if (syMatch) result.scaleY = parseFloat(syMatch[1]);
-
-  // skewX(...deg)
-  const kxMatch = transformStr.match(/skewX\(([-\d.]+)deg\)/);
-  if (kxMatch) result.skewX = parseFloat(kxMatch[1]);
-
-  // skewY(...deg)
-  const kyMatch = transformStr.match(/skewY\(([-\d.]+)deg\)/);
-  if (kyMatch) result.skewY = parseFloat(kyMatch[1]);
-
-  return result;
-}
-
-/**
- * Recursively compute a final 2D matrix for a node by:
- *   - Summing up all rotations in the chain (for rotate handle)
- *   - Multiplying all local transforms in the chain (for skew/scale).
- *
- * This returns:
- *   {
- *     totalRotationDeg: number,
- *     fullMatrix: number[]    // final 3x3 matrix from ancestors + self
- *   }
- *
- * For simplicity, we pivot each node at its center for skew/scale.
- * (Exactly as done in your POC and ResizeHandles.)
- */
-function computeFullMatrixChain(
-  node: Node,
-  nodes: Node[],
-  // The actual DOM width/height for pivot
-  width: number,
-  height: number
-) {
-  let totalRotationDeg = 0;
-
-  // We'll gather transforms from ancestor → ... → self
-  // so we can multiply them in order
-  const transformMatrices: number[][] = [];
-
-  let current: Node | undefined = node;
-  let depth = 0;
-
-  // We'll "unshift" each parent's matrix so that the root is first
-  // and the child is last, then multiply in sequence
-  while (current) {
-    // Add rotation
-    totalRotationDeg += parseRotation(current.style.rotate);
-
-    // parse local skew/scale
-    const { scaleX, scaleY, skewX, skewY } = parseTransformValues(
-      current.style.transform
-    );
-
-    // Build local matrix with pivot at the center of *this* node:
-    const localM = build2DMatrix({
-      tx: 0,
-      ty: 0,
-      cx: width / 2,
-      cy: height / 2,
-      scaleX,
-      scaleY,
-      skewXDeg: skewX,
-      skewYDeg: skewY,
-    });
-
-    // We'll store it
-    transformMatrices.unshift(localM);
-
-    if (!current.parentId) break;
-    current = nodes.find((n) => n.id === current?.parentId);
-    depth++;
-    // NOTE: If each ancestor might have a *different* width/height pivot,
-    // you would need a more advanced approach (like your POC with each parent's dimension).
-    // But if you keep it simplified to the child's dimension,
-    // or if your parent doesn't scale child differently, this is enough.
-    // If you do want *each* parent's pivot dimension, you'd track them in a chain.
-  }
-
-  // Multiply all from root → child in order
-  let M = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-  for (const mat of transformMatrices) {
-    M = multiply2D(M, mat);
-  }
-
-  return {
-    totalRotationDeg,
-    fullMatrix: M,
-  };
-}
-
-/**
- * Get cumulative skew for an element and its ancestors
- * For a child element, include only parent skew
- */
-const getCumulativeSkew = (
-  node: Node,
-  nodeState: { nodes: Node[] }
-): { skewX: number; skewY: number } => {
-  let totalSkewX = 0;
-  let totalSkewY = 0;
-  let currentNode = node;
-  let isFirst = true;
-
-  while (currentNode) {
-    if (isFirst) {
-      // Skip the first node (self) when calculating parent cumulative skew
-      isFirst = false;
-    } else {
-      const skewValues = parseSkew(currentNode.style.transform);
-      totalSkewX += skewValues.skewX;
-      totalSkewY += skewValues.skewY;
-    }
-
-    if (!currentNode.parentId) break;
-
-    currentNode =
-      nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
-    if (!currentNode) break;
-  }
-
-  return { skewX: totalSkewX, skewY: totalSkewY };
-};
-
-/**
- * NEW: Get cumulative rotation from all ancestors
- */
-const getCumulativeRotation = (
-  node: Node,
-  nodeState: { nodes: Node[] }
-): number => {
-  let totalRotation = 0;
-  let currentNode = node;
-  let isFirst = true;
-
-  while (currentNode) {
-    if (isFirst) {
-      // For the node itself, include its own rotation
-      totalRotation += parseRotation(currentNode.style.rotate);
-      isFirst = false;
-    } else {
-      // For ancestors, add their rotations to the total
-      totalRotation += parseRotation(currentNode.style.rotate);
-    }
-
-    if (!currentNode.parentId) break;
-
-    currentNode =
-      nodeState.nodes.find((n) => n.id === currentNode.parentId) || currentNode;
-    if (!currentNode) break;
-  }
-
-  return totalRotation;
-};
+import { useNodeHovered } from "../atoms/hover-store";
+import {
+  primarySelectedIdAtom,
+  selectionCountAtom,
+  selectStore,
+  useGetSelectedIds,
+  useNodeSelected,
+  useNodeTempSelected,
+} from "../atoms/select-store";
+import { useAtomValue } from "jotai";
 
 export const VisualHelpers = ({
   elementRef,
   node,
-  isSelected,
   handleResizeStart,
 }: {
   elementRef: RefObject<HTMLDivElement>;
   node: Node;
-  isSelected: boolean;
   handleResizeStart: (e: React.PointerEvent, direction: Direction) => void;
 }) => {
   // bounding rect in the *canvas* coordinate system
@@ -339,6 +90,12 @@ export const VisualHelpers = ({
     isEditingText,
   } = useBuilder();
 
+  // Use per-node subscriptions for all state
+  const isHovered = useNodeHovered(node.id);
+  const isNodeTempSelected = useNodeTempSelected(node.id);
+  const isSelected = useNodeSelected(node.id);
+  const getSelectedIds = useGetSelectedIds();
+
   const cumulativeSkew = getCumulativeSkew(node, nodeState);
 
   const isLocked = node.isLocked === true;
@@ -348,10 +105,15 @@ export const VisualHelpers = ({
     !isResizing && !isAdjustingGap && !isRotating && !dragState.dragSource;
   const showHelpers = !isMovingCanvas && isInteractive;
 
-  // Are we dealing with multi-selection?
-  const isMultiSelection = dragState.selectedIds.length > 1;
-  const isPrimarySelected = isSelected && dragState.selectedIds[0] === node.id;
-  const isHovered = dragState.hoverNodeId === node.id;
+  // Use the derived atoms for specific selection state
+  const selectionCount = useAtomValue(selectionCountAtom, {
+    store: selectStore,
+  });
+  const primarySelectedId = useAtomValue(primarySelectedIdAtom, {
+    store: selectStore,
+  });
+  const isMultiSelection = selectionCount > 1;
+  const isPrimarySelected = isSelected && primarySelectedId === node.id;
 
   /* ---------------------------------
      Calculate cumulative parent rotation
@@ -431,7 +193,6 @@ export const VisualHelpers = ({
     dragState.dragSource,
     isMovingCanvas,
     node.id,
-    dragState.hoverNodeId,
     dragDisp,
     node.style.transform,
   ]);
@@ -444,14 +205,18 @@ export const VisualHelpers = ({
 
     const updateGroupBounds = () => {
       // Only if more than 1 element is selected
-      if (!contentRef.current || dragState.selectedIds.length <= 1) {
+      if (!contentRef.current || selectionCount <= 1) {
         setGroupBoundsState(null);
         return;
       }
+
+      // Get current selection imperatively - only when needed
+      const selectedIds = getSelectedIds();
+
       const contentRect = contentRef.current.getBoundingClientRect();
       const scale = transform.scale;
 
-      const selectedElements = dragState.selectedIds
+      const selectedElements = selectedIds
         .map((id) => document.querySelector(`[data-node-id="${id}"]`))
         .filter((el): el is HTMLElement => el !== null);
 
@@ -488,7 +253,7 @@ export const VisualHelpers = ({
     tick();
 
     return () => cancelAnimationFrame(rafId);
-  }, [dragState.selectedIds, contentRef, transform.scale]);
+  }, [selectionCount, contentRef, transform.scale, getSelectedIds]);
 
   /* ---------------------------------
      3) Compute the final matrix for
@@ -555,19 +320,6 @@ export const VisualHelpers = ({
     };
   };
 
-  // const copyNodeIdToClipboard = () => {
-  //   if (node.id) {
-  //     navigator.clipboard.writeText(node.id).then(
-  //       () => {
-  //         console.log(`Node ID ${node.id} copied to clipboard.`);
-  //       },
-  //       (err) => {
-  //         console.error("Could not copy text: ", err);
-  //       }
-  //     );
-  //   }
-  // };
-
   return createPortal(
     <>
       {/* -------------------------
@@ -591,7 +343,7 @@ export const VisualHelpers = ({
           )}
 
           {/* Temp selection border */}
-          {dragState.tempSelectedIds.includes(node.id) && (
+          {isNodeTempSelected && (
             <div
               style={{
                 ...getBorderStyle(

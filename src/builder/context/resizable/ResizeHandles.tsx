@@ -1,7 +1,19 @@
-import React, { useLayoutEffect, useState, useRef, useEffect } from "react";
+import React, {
+  useLayoutEffect,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { Direction, getHandleCursor } from "../utils";
+import {
+  applyMatrixToPoint,
+  Direction,
+  getFullTransformMatrix,
+  getHandleCursor,
+  matrixToCss,
+} from "../utils";
 import { useBuilder } from "../builderState";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 interface GroupBounds {
   top: number;
@@ -43,210 +55,6 @@ interface CornerPositions {
 }
 
 /* -------------------------------------------
-   2D MATRIX HELPERS
---------------------------------------------*/
-function degToRad(deg: number) {
-  return (deg * Math.PI) / 180;
-}
-
-function multiply2D(A: number[], B: number[]) {
-  // 3x3 row-major matrix multiply
-  const C = new Array(9).fill(0);
-  C[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
-  C[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
-  C[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];
-
-  C[3] = A[3] * B[0] + A[4] * B[3] + A[5] * B[6];
-  C[4] = A[3] * B[1] + A[4] * B[4] + A[5] * B[7];
-  C[5] = A[3] * B[2] + A[4] * B[5] + A[5] * B[8];
-
-  C[6] = A[6] * B[0] + A[7] * B[3] + A[8] * B[6];
-  C[7] = A[6] * B[1] + A[7] * B[4] + A[8] * B[7];
-  C[8] = A[6] * B[2] + A[7] * B[5] + A[8] * B[8];
-  return C;
-}
-
-function applyMatrixToPoint(m: number[], x: number, y: number) {
-  const nx = m[0] * x + m[1] * y + m[2];
-  const ny = m[3] * x + m[4] * y + m[5];
-  return { x: nx, y: ny };
-}
-
-/**
- * Get full transformation chain matrix for any node (including all ancestors)
- */
-function getFullTransformMatrix(
-  node: Node,
-  nodeState: { nodes: Node[] },
-  width: number,
-  height: number
-) {
-  // Start with identity matrix
-  let fullMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-  // Gather the ancestor chain from root to this node
-  const chain: Node[] = [];
-  let current: Node | undefined = node;
-
-  while (current) {
-    chain.unshift(current); // Add to front to get root → ... → node order
-
-    if (!current.parentId) break;
-    current = nodeState.nodes.find((n) => n.id === current!.parentId);
-  }
-
-  // Process each node in the chain and multiply matrices
-  for (const node of chain) {
-    // Extract transform values
-    const skewX = parseSkewValue(node.style.transform, "skewX");
-    const skewY = parseSkewValue(node.style.transform, "skewY");
-    const scaleX = parseScaleValue(node.style.transform, "scaleX");
-    const scaleY = parseScaleValue(node.style.transform, "scaleY");
-
-    // Create local transform matrix for this node
-    const localMatrix = build2DMatrix({
-      tx: 0,
-      ty: 0,
-      cx: width / 2, // Use element's dimensions for pivoting
-      cy: height / 2,
-      scaleX,
-      scaleY,
-      skewXDeg: skewX,
-      skewYDeg: skewY,
-    });
-
-    // Multiply with accumulated matrix
-    fullMatrix = multiply2D(fullMatrix, localMatrix);
-  }
-
-  return fullMatrix;
-}
-
-/**
- * Parse skew values from transform string
- */
-function parseSkewValue(
-  transform: string | undefined,
-  prop: "skewX" | "skewY"
-): number {
-  if (!transform) return 0;
-  const regex = new RegExp(`${prop}\\(([-\\d.]+)deg\\)`);
-  const match = transform.match(regex);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-/**
- * Parse scale values from transform string
- */
-function parseScaleValue(
-  transform: string | undefined,
-  prop: "scaleX" | "scaleY"
-): number {
-  if (!transform) return 1;
-  const regex = new RegExp(`${prop}\\(([-\\d.]+)\\)`);
-  const match = transform.match(regex);
-  return match ? parseFloat(match[1]) : 1;
-}
-
-/**
- * build2DMatrix:
- *  - Applies: translate(tx, ty) → translate(cx, cy) → scaleX, scaleY → skewX, skewY → translate back.
- */
-function build2DMatrix({
-  tx,
-  ty,
-  cx,
-  cy,
-  scaleX,
-  scaleY,
-  skewXDeg,
-  skewYDeg,
-}: {
-  tx: number;
-  ty: number;
-  cx: number;
-  cy: number;
-  scaleX: number;
-  scaleY: number;
-  skewXDeg: number;
-  skewYDeg: number;
-}) {
-  // Start with identity
-  let M = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-  // 1) Translate(tx, ty)
-  M = multiply2D(M, [1, 0, tx, 0, 1, ty, 0, 0, 1]);
-
-  // 2) Translate(cx, cy)
-  M = multiply2D(M, [1, 0, cx, 0, 1, cy, 0, 0, 1]);
-
-  // 3) Scale (scaleX, scaleY)
-  M = multiply2D(M, [scaleX, 0, 0, 0, scaleY, 0, 0, 0, 1]);
-
-  // 4) SkewX
-  const sx = Math.tan(degToRad(skewXDeg));
-  M = multiply2D(M, [1, sx, 0, 0, 1, 0, 0, 0, 1]);
-
-  // 5) SkewY
-  const sy = Math.tan(degToRad(skewYDeg));
-  M = multiply2D(M, [1, 0, 0, sy, 1, 0, 0, 0, 1]);
-
-  // 6) Translate back (-cx, -cy)
-  M = multiply2D(M, [1, 0, -cx, 0, 1, -cy, 0, 0, 1]);
-
-  return M;
-}
-
-/**
- * Convert matrix to CSS string format
- */
-function matrixToCss(m: number[]) {
-  return `matrix(${m[0]}, ${m[3]}, ${m[1]}, ${m[4]}, ${m[2]}, ${m[5]})`;
-}
-
-/**
- * parseTransformValues:
- * Extracts scaleX, scaleY, skewX, skewY from the transform string.
- */
-function parseTransformValues(transformString: string | undefined) {
-  const result = {
-    skewX: 0,
-    skewY: 0,
-    scaleX: 1,
-    scaleY: 1,
-  };
-  if (!transformString) return result;
-
-  const scaleXMatch = transformString.match(/scaleX\(([-\d.]+)\)/);
-  if (scaleXMatch) {
-    result.scaleX = parseFloat(scaleXMatch[1]);
-  }
-  const scaleYMatch = transformString.match(/scaleY\(([-\d.]+)\)/);
-  if (scaleYMatch) {
-    result.scaleY = parseFloat(scaleYMatch[1]);
-  }
-  const skewXMatch = transformString.match(/skewX\(([-\d.]+)deg\)/);
-  if (skewXMatch) {
-    result.skewX = parseFloat(skewXMatch[1]);
-  }
-  const skewYMatch = transformString.match(/skewY\(([-\d.]+)deg\)/);
-  if (skewYMatch) {
-    result.skewY = parseFloat(skewYMatch[1]);
-  }
-  return result;
-}
-
-/**
- * Create a CSS transform string from skew values
- */
-function createSkewTransform(skewX: number, skewY: number): string {
-  let transform = "";
-  if (skewX !== 0) transform += `skewX(${skewX}deg) `;
-  if (skewY !== 0) transform += `skewY(${skewY}deg)`;
-  return transform.trim();
-}
-
-/* -------------------------------------------
    RESIZE HANDLES COMPONENT
 --------------------------------------------*/
 export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
@@ -255,18 +63,20 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   groupBounds,
   isGroupSelection,
   targetRef,
-  cumulativeSkew,
 }) => {
   const { dragState, transform, nodeState } = useBuilder();
   const { scale } = transform;
 
   const [isInteractive, setIsInteractive] = useState(false);
 
+  // Use the imperative getter function instead of subscription
+  const getSelectedIds = useGetSelectedIds();
+
   // Add useEffect to delay handle interactivity
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInteractive(true);
-    }, 200); // 100ms delay before making handles interactive
+    }, 200); // 200ms delay before making handles interactive
 
     return () => {
       clearTimeout(timer);
@@ -277,16 +87,21 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   const isWidthAuto = node.style.width === "auto";
   const isHeightAuto = node.style.height === "auto";
 
-  // Group selection: only render for the first selected node.
-  if (isGroupSelection && !groupBounds) return null;
-  if (isGroupSelection && node.id !== dragState.selectedIds[0]) return null;
-
   const [cornerPositions, setCornerPositions] =
     useState<CornerPositions | null>(null);
-  const [elementSize, setElementSize] = useState({ width: 0, height: 0 });
-  const [fullMatrix, setFullMatrix] = useState<number[] | null>(null);
+  const [, setElementSize] = useState({ width: 0, height: 0 });
+  const [, setFullMatrix] = useState<number[] | null>(null);
   const [matrixCss, setMatrixCss] = useState<string | null>(null);
 
+  // Function to check if this node is the primary selected node
+  // This is called during render but doesn't create a subscription
+  const isPrimarySelectedNode = useCallback(() => {
+    if (!isGroupSelection) return true;
+    const selectedIds = getSelectedIds();
+    return selectedIds.length > 0 && node.id === selectedIds[0];
+  }, [isGroupSelection, node.id, getSelectedIds]);
+
+  // Group selection: only render for the first selected node.
   useLayoutEffect(() => {
     if (isGroupSelection || !targetRef?.current) {
       setCornerPositions(null);
@@ -359,6 +174,10 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     // Including these dependencies ensures we recalculate when any transform changes
     node.style.transform,
   ]);
+
+  // Early return conditions using the isPrimarySelectedNode function
+  if (isGroupSelection && !groupBounds) return null;
+  if (isGroupSelection && !isPrimarySelectedNode()) return null;
 
   const handleBorderClick = (e: React.MouseEvent) => {
     e.preventDefault();

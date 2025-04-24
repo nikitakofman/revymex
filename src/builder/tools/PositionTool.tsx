@@ -5,10 +5,32 @@ import { ToolSelect } from "./_components/ToolSelect";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import PlaceholderToolInput from "./_components/ToolInputPlaceholder";
 import { useEffect, useState } from "react";
+import { useGetSelectedIds } from "../context/atoms/select-store";
 
 export const PositionTool = () => {
   const { dragState, nodeState, transform } = useBuilder();
   const [realTimePosition, setRealTimePosition] = useState({ x: 0, y: 0 });
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+  const [viewportNode, setViewportNode] = useState(false);
+
+  // Update viewportNode state when needed
+  useEffect(() => {
+    // Get the current selection
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) {
+      setViewportNode(false);
+      return;
+    }
+
+    // Check if the selected node is a viewport
+    const isViewport = nodeState.nodes
+      .find((n) => n.id === selectedIds[0])
+      ?.id.includes("viewport");
+
+    setViewportNode(!!isViewport);
+  }, [nodeState.nodes, getSelectedIds]);
 
   const positionStyle = useComputedStyle({
     property: "position",
@@ -22,10 +44,6 @@ export const PositionTool = () => {
     { label: "Absolute", value: "absolute" },
     { label: "Fixed", value: "fixed" },
   ];
-
-  const viewportNode = nodeState.nodes
-    .find((n) => n.id === dragState.selectedIds[0])
-    ?.id.includes("viewport");
 
   const position = positionStyle.mixed
     ? "static"
@@ -134,3 +152,5 @@ export const PositionTool = () => {
     </ToolbarSection>
   );
 };
+
+export default PositionTool;

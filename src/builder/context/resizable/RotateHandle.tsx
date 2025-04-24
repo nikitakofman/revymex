@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 const SNAP_ANGLE = 15; // Defines the increment for snapping (15 degrees)
 
@@ -30,9 +31,12 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     dragDisp,
     startRecording,
     stopRecording,
-    dragState,
     nodeState,
   } = useBuilder();
+
+  // Use the selectedIds hook from our select store
+  const currentSelectedIds = useGetSelectedIds();
+
   const initialMouseAngleRef = useRef<number>(0);
   const initialRotationRef = useRef<number>(0);
   const initialRotationsRef = useRef<Map<string | number, number>>(new Map());
@@ -86,10 +90,12 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     }
     initialRotationRef.current = currentRotation;
 
+    const selectedIds = currentSelectedIds();
+
     // For group rotation, store initial rotation of all selected nodes
     initialRotationsRef.current.clear();
     if (isGroupSelection) {
-      dragState.selectedIds.forEach((id) => {
+      selectedIds.forEach((id) => {
         const selectedNode = nodeState.nodes.find((n) => n.id === id);
         if (selectedNode) {
           let rotation = 0;
@@ -127,7 +133,8 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
 
       // Handle multiple nodes for group rotation
       if (isGroupSelection) {
-        dragState.selectedIds.forEach((nodeId) => {
+        // Use selectedIds from the hook
+        selectedIds.forEach((nodeId) => {
           const initialRotation = initialRotationsRef.current.get(nodeId) || 0;
           let newRotation = initialRotation + deltaAngleDeg;
 
@@ -180,9 +187,11 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
   };
+  const selectedIds = currentSelectedIds();
 
   // Don't render if this isn't the primary selected node in a group
-  if (isGroupSelection && node.id !== dragState.selectedIds[0]) {
+  // Use selectedIds from the hook
+  if (isGroupSelection && node.id !== selectedIds[0]) {
     return null;
   }
 
@@ -208,7 +217,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
         height: `${handleSize}px`,
         borderRadius: "50%",
         backgroundColor: "white",
-        border: `${borderWidth}px solid   ${
+        border: `${borderWidth}px solid ${
           node.isDynamic || node.dynamicParentId
             ? "var(--accent-secondary)"
             : "var(--accent)"

@@ -11,6 +11,7 @@ import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
 import { useDragStart } from "../dnd/useDragStart";
 import { hasSkewTransform } from "../utils";
+import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 
 export const GripHandles = ({
   node,
@@ -28,6 +29,11 @@ export const GripHandles = ({
     width: 0,
     height: 0,
   });
+
+  const { clearSelection, addToSelection } = selectOps;
+
+  // Use the imperative getter instead of subscription
+  const getSelectedIds = useGetSelectedIds();
 
   // Check if node has siblings (nodes with same parent)
   const hasSiblings = useMemo(() => {
@@ -167,15 +173,14 @@ export const GripHandles = ({
             }),
       }}
       onMouseDown={(e) => {
-        dragDisp.clearSelection();
-
-        dragDisp.addToSelection(targetNode.id);
+        clearSelection();
+        addToSelection(targetNode.id);
         startGripDrag(e, targetNode);
       }}
       onClick={(e) => {
         e.stopPropagation();
         console.log("CLICK", targetNode);
-        dragDisp.addToSelection(targetNode.id);
+        addToSelection(targetNode.id);
       }}
       onMouseEnter={
         isParentHandle

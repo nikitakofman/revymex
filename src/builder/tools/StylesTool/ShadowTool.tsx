@@ -4,6 +4,7 @@ import { ColorPicker } from "../_components/ColorPicker";
 import { useBuilder } from "@/builder/context/builderState";
 import { ChevronLeft } from "lucide-react";
 import { ToolbarSwitch } from "../_components/ToolbarSwitch";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ShadowToolPopup = () => {
   const { dragState, setNodeStyle } = useBuilder();
@@ -15,13 +16,17 @@ export const ShadowToolPopup = () => {
   const [inset, setInset] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
+  const currentSelectedIds = useGetSelectedIds();
+
   // This effect runs when the component mounts or when selection changes
   useEffect(() => {
-    if (!dragState.selectedIds.length) return;
+    const selectedIds = currentSelectedIds();
+
+    if (!selectedIds.length) return;
 
     // Get the selected node's style
     const element = document.querySelector(
-      `[data-node-id="${dragState.selectedIds[0]}"]`
+      `[data-node-id="${selectedIds[0]}"]`
     );
     if (!element) return;
 
@@ -62,7 +67,7 @@ export const ShadowToolPopup = () => {
 
     // Check for inset
     setInset(inlineBoxShadow.includes("inset"));
-  }, [dragState.selectedIds]);
+  }, [currentSelectedIds]);
 
   // Apply the complete shadow
   const applyShadow = () => {

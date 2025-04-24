@@ -32,6 +32,7 @@ import EditViewportModal from "@/builder/context/canvasHelpers/EditViewportModal
 import ViewportContextMenu from "@/builder/context/canvasHelpers/ViewportContextMenu";
 import AddVariantsUI from "@/builder/context/canvasHelpers/AddVariantUI";
 import PreviewPlay from "../preview/preview-play";
+import { selectOps } from "@/builder/context/atoms/select-store";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -56,6 +57,8 @@ const Canvas = () => {
     interfaceState,
     isEditingText,
   } = useBuilder();
+
+  const { clearSelection } = selectOps;
 
   // Use the cursor manager hook
   const { isDrawingMode, isMoveMode } = useCursorManager();
@@ -179,7 +182,7 @@ const Canvas = () => {
 
     if (e.target === containerRef.current || e.target === contentRef.current) {
       console.log("clicked on canvas");
-      dragDisp.clearSelection();
+      clearSelection();
       interfaceDisp.toggleLayers();
     }
   };

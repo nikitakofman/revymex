@@ -16,6 +16,7 @@ import {
   getNodeImageSource,
   getNodeVideoSource,
 } from "../utils";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 // Types
 export type FillType = "solid" | "linear" | "radial" | "image" | "video";
@@ -35,6 +36,8 @@ export const transformNodeToFrame = (node, style, nodeDisp) => {
 
 export const FillToolPopup = ({ selectedNode, onClose }) => {
   const { nodeDisp, dragState, setNodeStyle } = useBuilder();
+
+  const currentSelectedIds = useGetSelectedIds();
 
   // Determine initial fill type based on node properties
   const [fillType, setFillType] = useState<FillType>(() => {
@@ -157,14 +160,18 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
                   imageUrl={cleanImageSrc || ""}
                   disabled={!cleanImageSrc}
                   onComplete={(newUrl) => {
-                    setNodeStyle({ src: newUrl }, dragState.selectedIds);
+                    const selectedIds = currentSelectedIds();
+
+                    setNodeStyle({ src: newUrl }, selectedIds);
                   }}
                 />
               )}
             </div>
             <ImageSearchModal
               onSelectImage={(url) => {
-                setNodeStyle({ src: url }, dragState.selectedIds);
+                const selectedIds = currentSelectedIds();
+
+                setNodeStyle({ src: url }, selectedIds);
                 setCleanImageSrc(url);
               }}
               onClose={() => {}}
@@ -175,7 +182,9 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
           <div>
             <VideoSearchModal
               onSelectVideo={(url) => {
-                setNodeStyle({ src: url }, dragState.selectedIds);
+                const selectedIds = currentSelectedIds();
+
+                setNodeStyle({ src: url }, selectedIds);
               }}
               onClose={() => {}}
               embedded={true}
@@ -233,7 +242,9 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
             if (selectedNode.type !== "frame") {
               transformNodeToFrame(selectedNode, styles, nodeDisp);
             } else {
-              setNodeStyle(styles, dragState.selectedIds);
+              const selectedIds = currentSelectedIds();
+
+              setNodeStyle(styles, selectedIds);
             }
           }}
           displayMode="direct" // Use direct mode to show the color picker immediately
@@ -264,7 +275,9 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
                 if (selectedNode.type !== "frame") {
                   transformNodeToFrame(selectedNode, styles, nodeDisp);
                 } else {
-                  setNodeStyle(styles, dragState.selectedIds);
+                  const selectedIds = currentSelectedIds();
+
+                  setNodeStyle(styles, selectedIds);
                 }
                 setCleanImageSrc(url);
               }}
@@ -288,7 +301,9 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
                 if (selectedNode.type !== "frame") {
                   transformNodeToFrame(selectedNode, styles, nodeDisp);
                 } else {
-                  setNodeStyle(styles, dragState.selectedIds);
+                  const selectedIds = currentSelectedIds();
+
+                  setNodeStyle(styles, selectedIds);
                 }
               }}
               onClose={() => {}}

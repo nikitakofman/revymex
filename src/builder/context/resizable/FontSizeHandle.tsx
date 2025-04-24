@@ -1,6 +1,7 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 interface FontSizeHandleProps {
   node: Node;
@@ -37,6 +38,16 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
     nodeState,
     setIsFontSizeHandleActive,
   } = useBuilder();
+
+  // Use the imperative getter function instead of subscription
+  const getSelectedIds = useGetSelectedIds();
+
+  // Function to check if this node is the primary selected node
+  const isPrimarySelectedNode = useCallback(() => {
+    if (!isGroupSelection) return true;
+    const selectedIds = getSelectedIds();
+    return selectedIds.length > 0 && node.id === selectedIds[0];
+  }, [isGroupSelection, node.id, getSelectedIds]);
 
   const startPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const startFontSizeRef = useRef<number>(16); // Default average font size
@@ -108,6 +119,9 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
     e.stopPropagation();
 
     const sessionId = startRecording();
+
+    // Get the current selection imperatively at the time of the event
+    const selectedIds = getSelectedIds();
 
     // Extract all font sizes from the text content
     const fontSizes: { size: number; unit: string }[] = [];
@@ -261,7 +275,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
       // First update the text styles
       // Get nodes to update
       const nodesToUpdate = isGroupSelection
-        ? dragState.selectedIds.filter((id) => {
+        ? selectedIds.filter((id) => {
             const selectedNode = nodeState.nodes.find((n) => n.id === id);
             return selectedNode && selectedNode.type === "text";
           })
@@ -399,7 +413,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
   }
 
   // Don't render in group selection mode (unless it's the primary node)
-  if (isGroupSelection && node.id !== dragState.selectedIds[0]) {
+  if (isGroupSelection && !isPrimarySelectedNode()) {
     return null;
   }
 

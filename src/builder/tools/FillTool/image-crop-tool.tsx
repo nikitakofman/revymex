@@ -9,6 +9,7 @@ import "react-image-crop/dist/ReactCrop.css";
 import { useBuilder } from "@/builder/context/builderState";
 import { Label } from "../_components/ToolbarAtoms";
 import { RotateCcw, Check } from "lucide-react";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 // A helper function to get the image source from a node
 function getImageSource(node) {
@@ -52,6 +53,7 @@ export const ImageCropTool = ({ selectedNode }) => {
   const [completedCrop, setCompletedCrop] = useState(null);
   const [aspect, setAspect] = useState(undefined); // undefined for free-form
   const imgRef = useRef(null);
+  const currentSelectedIds = useGetSelectedIds();
 
   const imageSource = getImageSource(selectedNode);
 
@@ -93,6 +95,7 @@ export const ImageCropTool = ({ selectedNode }) => {
     // Generate a cropped image as base64
     const croppedImageUrl = getCroppedImg(imgRef.current, completedCrop);
 
+    const selectedIds = currentSelectedIds();
     // Apply to the node based on its type
     if (selectedNode.type === "image") {
       // For image elements
@@ -104,7 +107,7 @@ export const ImageCropTool = ({ selectedNode }) => {
           objectFit: "cover",
           transform: "none",
         },
-        dragState.selectedIds
+        selectedIds
       );
     } else {
       // For elements with background image
@@ -115,7 +118,7 @@ export const ImageCropTool = ({ selectedNode }) => {
           backgroundPosition: "center",
           backgroundSize: "cover",
         },
-        dragState.selectedIds
+        selectedIds
       );
     }
   };

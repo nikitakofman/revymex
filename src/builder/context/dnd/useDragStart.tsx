@@ -7,6 +7,7 @@ import {
 } from "../utils";
 import { nanoid } from "nanoid";
 import { createPlaceholder } from "./createPlaceholder";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 export const useDragStart = () => {
   const {
@@ -22,6 +23,8 @@ export const useDragStart = () => {
     selectedIdsRef,
     isMiddleMouseDown,
   } = useBuilder();
+
+  const currentSelectedIds = useGetSelectedIds();
 
   const getDynamicParentNode = (node: Node): Node | null => {
     let currentNode = node;
@@ -56,11 +59,11 @@ export const useDragStart = () => {
     const borderRadiusHandle = target.closest(
       '[data-border-radius-handle="true"]'
     );
-
-    selectedIdsRef.current = [...dragState.selectedIds];
+    const selectedNodes = currentSelectedIds();
+    selectedIdsRef.current = [...selectedNodes];
 
     // Store original selection
-    const originalSelectedIds = [...dragState.selectedIds];
+    const originalSelectedIds = [...selectedNodes];
 
     // NEW: Filter out any selected nodes that are children of other selected nodes
     let selectedIds = [...originalSelectedIds];

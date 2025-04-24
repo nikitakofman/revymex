@@ -20,6 +20,7 @@ import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "prosemirror-state";
 import TextMenu from "./TextMenu";
 import { findParentViewport } from "@/builder/context/utils";
+import { useNodeSelected } from "@/builder/context/atoms/select-store";
 
 // Add this extension to your list of extensions in TextElement.jsx
 
@@ -375,7 +376,8 @@ const TextElement = ({ node }: ElementProps) => {
     setIsEditingText,
     nodeState,
   } = useBuilder();
-  const isNodeSelected = dragState.selectedIds.includes(node.id);
+
+  const isNodeSelected = useNodeSelected(node.id);
 
   const getParentViewportWidth = useCallback(() => {
     const parentViewportId = findParentViewport(node.parentId, nodeState.nodes);

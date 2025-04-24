@@ -3,6 +3,17 @@ import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useBuilder } from "@/builder/context/builderState";
 import { useDragStart } from "../dnd/useDragStart";
 import { findParentViewport } from "../utils";
+import {
+  _internalHoverNodeIdAtom,
+  hoverOps,
+  hoverStore,
+  isNodeHoveredAtom,
+} from "../atoms/hover-store";
+import {
+  _internalSelectNodeIdAtom,
+  selectOps,
+  useGetSelectedIds,
+} from "../atoms/select-store";
 
 export const useConnect = () => {
   // Use the basic useBuilder hook without global subscriptions
@@ -25,6 +36,10 @@ export const useConnect = () => {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const mouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
+
+  const { setHoverNodeId } = hoverOps;
+  const { selectNode, addToSelection, clearSelection, setSelectNodeId } =
+    selectOps;
 
   const isNearEdge = (
     e: React.MouseEvent,
@@ -129,14 +144,15 @@ export const useConnect = () => {
     return null;
   };
 
+  const currentSelectedIds = useGetSelectedIds();
+
   return useCallback(
     (node: Node) => {
       // Subscribe to node-specific hover and selection state
       // This is the crucial addition that fixes the issue
-      const isHovered = dragState.hoverNodeId === node.id;
-      const isSelected = dragState.selectedIds.includes(node.id);
 
       const handleMouseDown = (e: React.MouseEvent) => {
+        const selectedIds = currentSelectedIds();
         // Skip all drag handling if in move canvas mode
         if (isMoveCanvasMode) {
           return;
@@ -158,9 +174,7 @@ export const useConnect = () => {
 
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
 
-        const isAlreadySelected = dragState.selectedIds.includes(node.id);
-
-        console.log("dragState.selectedIds:", dragState.selectedIds);
+        const isAlreadySelected = selectOps.getSelectedIds().includes(node.id);
 
         // Find the dynamic parent in the same viewport
         const dynamicParentInSameViewport =
@@ -170,18 +184,18 @@ export const useConnect = () => {
         if (!dragState.dynamicModeNodeId && dynamicParentInSameViewport) {
           // If not in dynamic mode and we have a viewport-specific dynamic parent, select it
           if (!e.shiftKey) {
-            dragDisp.selectNode(dynamicParentInSameViewport.id);
+            setSelectNodeId(dynamicParentInSameViewport.id);
           } else {
-            dragDisp.addToSelection(dynamicParentInSameViewport.id);
+            addToSelection(dynamicParentInSameViewport.id);
           }
         } else {
           // Normal selection handling
-          if (isAlreadySelected && dragState.selectedIds.length > 1) {
+          if (isAlreadySelected && selectedIds.length > 1) {
             // Don't change multi-selection
           } else if (e.shiftKey) {
-            dragDisp.addToSelection(node.id);
+            addToSelection(node.id);
           } else {
-            dragDisp.selectNode(node.id);
+            setSelectNodeId(node.id);
           }
         }
 
@@ -253,16 +267,16 @@ export const useConnect = () => {
             if (!dragState.dynamicModeNodeId && dynamicParentInSameViewport) {
               // If not in dynamic mode and we have a viewport-specific dynamic parent, select it
               if (!e.shiftKey) {
-                dragDisp.selectNode(dynamicParentInSameViewport.id);
+                setSelectNodeId(dynamicParentInSameViewport.id);
               } else {
-                dragDisp.addToSelection(dynamicParentInSameViewport.id);
+                addToSelection(dynamicParentInSameViewport.id);
               }
             } else {
               // Normal selection handling
               if (!e.shiftKey) {
-                dragDisp.selectNode(node.id);
+                setSelectNodeId(node.id);
               } else {
-                dragDisp.addToSelection(node.id);
+                addToSelection(node.id);
               }
             }
           }
@@ -363,18 +377,18 @@ export const useConnect = () => {
           !dragState.dynamicModeNodeId && dynamicParentInSameViewport
             ? dynamicParentInSameViewport.id
             : node.id;
-
+        const selectedIds = currentSelectedIds();
         // Check if the target is already selected
-        const isNodeSelected = dragState.selectedIds.includes(targetNodeId);
+        const isNodeSelected = selectedIds.includes(targetNodeId);
 
         // If not selected and not holding shift, select only this node
         if (!isNodeSelected && !e.shiftKey) {
-          dragDisp.clearSelection();
-          dragDisp.selectNode(targetNodeId);
+          clearSelection();
+          setSelectNodeId(targetNodeId);
         }
         // If not selected and holding shift, add to selection
         else if (!isNodeSelected && e.shiftKey) {
-          dragDisp.addToSelection(targetNodeId);
+          addToSelection(targetNodeId);
         }
         // Otherwise keep current selection
 
@@ -398,22 +412,22 @@ export const useConnect = () => {
           if (dragState.dynamicModeNodeId) {
             // In dynamic mode, hover over the actual node
             requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(node.id);
+              setHoverNodeId(node.id);
             });
           } else if (node.isDynamic) {
             // For dynamic nodes themselves, hover on the node
             requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(node.id);
+              setHoverNodeId(node.id);
             });
           } else if (dynamicParentInSameViewport) {
             // If this is a child of a dynamic node, hover on the parent in the same viewport
             requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(dynamicParentInSameViewport.id);
+              setHoverNodeId(dynamicParentInSameViewport.id);
             });
           } else {
             // Regular node - hover on itself
             requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(node.id);
+              setHoverNodeId(node.id);
             });
           }
         }
@@ -423,7 +437,7 @@ export const useConnect = () => {
       const handleMouseOut = (e: React.MouseEvent) => {
         if (e.target === e.currentTarget) {
           const currentHoverId = dragState.hoverNodeId;
-
+          console.log("moussing out");
           // Find dynamic parent in this specific viewport
           const dynamicParentInSameViewport =
             findDynamicParentInSameViewport(node);
@@ -432,15 +446,11 @@ export const useConnect = () => {
 
           // Case 1: We're currently hovering this exact node
           if (currentHoverId === node.id) {
-            requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(null);
-            });
+            setHoverNodeId(null);
           }
           // Case 2: We're in dynamic mode (has different hover behavior)
           else if (dragState.dynamicModeNodeId) {
-            requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(null);
-            });
+            setHoverNodeId(null);
           }
           // Case 3: If current hover is NOT our dynamic parent, clear it
           // This prevents clearing hover when moving between children of the same parent
@@ -448,11 +458,11 @@ export const useConnect = () => {
             dynamicParentInSameViewport &&
             currentHoverId !== dynamicParentInSameViewport.id
           ) {
-            requestAnimationFrame(() => {
-              dragDisp.setHoverNodeId(null);
-            });
+            setHoverNodeId(null);
           }
+
           // Otherwise keep the hover (especially when it's on the dynamic parent)
+          setHoverNodeId(null);
         }
       };
 
@@ -503,10 +513,6 @@ export const useConnect = () => {
               bottom: node.style.bottom,
             }
           : {}),
-        // Add visual indication for hover state
-        ...(isHovered ? { outline: "1px solid rgba(59, 130, 246, 0.5)" } : {}),
-        // Add visual indication for selected state
-        ...(isSelected ? { outline: "2px solid #3b82f6" } : {}),
       };
 
       return {
@@ -532,6 +538,7 @@ export const useConnect = () => {
       isTextModeActive,
       setNodeStyle,
       isEditingText,
+      setHoverNodeId,
     ]
   );
 };

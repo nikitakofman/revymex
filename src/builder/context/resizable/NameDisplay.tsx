@@ -3,10 +3,13 @@ import React, { useRef, useState, useEffect } from "react";
 import { useBuilder } from "../builderState";
 import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
 import { useDragStart } from "../dnd/useDragStart";
+import { selectOps } from "../atoms/select-store";
 
 const NameDisplay = ({ node }: { node: Node }) => {
   const { nodeState, dragState, dragDisp, transform } = useBuilder();
   const handleDragStart = useDragStart();
+
+  const { setSelectedIds } = selectOps;
 
   // Store mousedown position and time for drag detection
   const mouseDownRef = useRef({ x: 0, y: 0, time: 0 });
@@ -108,7 +111,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
         const timeDiff = Date.now() - mouseDownRef.current.time;
         if (timeDiff < 300) {
           // This is a click - select the node
-          dragDisp.setSelectedIds([node.id]);
+          setSelectedIds([node.id]);
         }
       }
 

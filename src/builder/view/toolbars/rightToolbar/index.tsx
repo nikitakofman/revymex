@@ -12,6 +12,7 @@ import { FillTool } from "@/builder/tools/FillTool";
 import Button from "@/components/ui/button";
 import StylesTool from "@/builder/tools/StylesTool";
 import InteractionsTool from "@/builder/tools/InteractionsTool";
+import { useSelectedIds } from "@/builder/context/atoms/select-store";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -31,16 +32,19 @@ const getToolTypes = (elements: Node[]) => {
 
 const ElementToolbar = () => {
   const { dragState, nodeState, setNodeStyle } = useBuilder();
+
+  const selectedIds = useSelectedIds();
+
   const selectedElements = nodeState.nodes.filter((node) =>
-    dragState.selectedIds.includes(node.id)
+    selectedIds.includes(node.id)
   );
 
   // Check if the primary selected element is hidden
   const isPrimaryElementHidden = () => {
-    if (dragState.selectedIds.length === 0) return false;
+    if (selectedIds.length === 0) return false;
 
     const primaryElement = nodeState.nodes.find(
-      (node) => node.id === dragState.selectedIds[0]
+      (node) => node.id === selectedIds[0]
     );
 
     return primaryElement?.style?.display === "none";
@@ -49,7 +53,7 @@ const ElementToolbar = () => {
   const isHidden = isPrimaryElementHidden();
   const toolTypes = getToolTypes(selectedElements);
 
-  if (dragState.selectedIds.length === 0) {
+  if (selectedIds.length === 0) {
     return (
       <div className="w-64 fixed pt-3 right-toolbar right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]" />
     );

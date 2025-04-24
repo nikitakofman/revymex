@@ -3,10 +3,15 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
 import { findIndexWithinParent } from "../utils";
+import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 
 export const useNodeActions = () => {
   const { dragState, nodeState, dragDisp, nodeDisp, transform, containerRef } =
     useBuilder();
+
+  const currentSelectedIds = useGetSelectedIds();
+
+  const { clearSelection, addToSelection, selectNode } = selectOps;
 
   const STORAGE_KEY = "builder_clipboard";
 
@@ -79,12 +84,14 @@ export const useNodeActions = () => {
 
   // Delete nodes action
   const handleDelete = () => {
-    if (!dragState.selectedIds?.length) return;
+    const selectedIds = currentSelectedIds();
+
+    if (!selectedIds?.length) return;
 
     const nodesToRemove = new Set<string | number>();
 
     // Step 1: First collect all nodes to be deleted (selected nodes and their children)
-    dragState.selectedIds.forEach((nodeId) => {
+    selectedIds.forEach((nodeId) => {
       const node = nodeState.nodes.find((n) => n.id === nodeId);
       if (!node) return;
 
@@ -220,8 +227,10 @@ export const useNodeActions = () => {
       // When duplicating from drag, use dragged nodes
       let nodesToDuplicate: Node[] = [];
 
+      const selectedIds = currentSelectedIds();
+
       if (fromContextMenu) {
-        nodesToDuplicate = dragState.selectedIds
+        nodesToDuplicate = selectedIds
           .map((id) => nodeState.nodes.find((n) => n.id === id))
           .filter((n): n is Node => n !== undefined);
       } else {
@@ -252,8 +261,8 @@ export const useNodeActions = () => {
         if (newTopNodeId) {
           // Select the new element after creation
           setTimeout(() => {
-            dragDisp.clearSelection();
-            dragDisp.addToSelection(newTopNodeId);
+            clearSelection();
+            addToSelection(newTopNodeId);
           }, 0);
         }
         return; // Exit early to avoid double processing
@@ -282,7 +291,7 @@ export const useNodeActions = () => {
 
           if (newVariantId) {
             setTimeout(() => {
-              dragDisp.selectNode(newVariantId);
+              selectNode(newVariantId);
             }, 1);
           }
         } else {
@@ -2240,7 +2249,9 @@ export const useNodeActions = () => {
   };
 
   const handleCopy = () => {
-    const selectedNodes = dragState.selectedIds
+    const selectedIds = currentSelectedIds();
+
+    const selectedNodes = selectedIds
       .map((id) => nodeState.nodes.find((n) => n.id === id))
       .filter((n): n is Node => n !== undefined);
 
@@ -2381,8 +2392,8 @@ export const useNodeActions = () => {
       const newNodeIds = Array.from(rootClonedNodes.values()).map(
         (node) => node.id
       );
-      dragDisp.clearSelection();
-      newNodeIds.forEach((id) => dragDisp.addToSelection(id));
+      clearSelection();
+      newNodeIds.forEach((id) => addToSelection(id));
     } catch (error) {
       console.error("Failed to paste from clipboard:", error);
     }

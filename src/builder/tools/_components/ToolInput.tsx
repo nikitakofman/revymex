@@ -12,6 +12,7 @@ import { Slider } from "@/components/ui/slider";
 import { ToolSelect } from "./ToolSelect";
 import { Label } from "./ToolbarAtoms";
 import { convertToNewUnit } from "@/builder/context/utils";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -161,6 +162,8 @@ export function ToolInput({
   const [isMixed, setIsMixed] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
+  const currentSelectedIds = useGetSelectedIds();
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
   const startYRef = useRef<number>(0);
@@ -187,23 +190,24 @@ export function ToolInput({
   const sessionIdRef = useRef<string | null>(null);
 
   const hasParent = useCallback(() => {
-    if (!dragState.selectedIds.length) return false;
+    const selectedIds = currentSelectedIds();
+    if (!selectedIds.length) return false;
     const selectedNode = nodeState.nodes.find(
-      (node) => node.id === dragState.selectedIds[0]
+      (node) => node.id === selectedIds[0]
     );
     return !!selectedNode?.parentId;
-  }, [dragState.selectedIds, nodeState.nodes]);
+  }, [currentSelectedIds, nodeState.nodes]);
 
   const isTextFontSize =
     props.name === "fontSize" || (isCustomMode && label === "Size");
 
   const unitOptions = useMemo(() => {
-    const selectedNode = nodeState.nodes.find(
-      (n) => n.id === dragState.selectedIds[0]
-    );
+    const selectedIds = currentSelectedIds();
+
+    const selectedNode = nodeState.nodes.find((n) => n.id === selectedIds[0]);
     // Check if the selected node has any children
     const hasChildren = () => {
-      if (!dragState.selectedIds.length) return false;
+      if (!selectedIds.length) return false;
 
       return nodeState.nodes.some((node) => node.parentId === selectedNode?.id);
     };
@@ -247,17 +251,19 @@ export function ToolInput({
     isTextFontSize,
     hasParent,
     props.name,
-    dragState.selectedIds,
+    currentSelectedIds,
     nodeState.nodes,
   ]);
 
   const getComputedStyleValue = useCallback(() => {
+    const selectedIds = currentSelectedIds();
+
     if (isCustomMode) return null;
-    if (!dragState.selectedIds.length) return null;
+    if (!selectedIds.length) return null;
 
     // Handle boxShadow properties specially
     if (isBoxShadowProp) {
-      const computedValues = dragState.selectedIds
+      const computedValues = selectedIds
         .map((id) => {
           const element = document.querySelector(
             `[data-node-id="${id}"]`
@@ -305,7 +311,7 @@ export function ToolInput({
     }
 
     // Regular property handling (non-boxShadow)
-    const computedValues = dragState.selectedIds
+    const computedValues = selectedIds
       .map((id) => {
         const element = document.querySelector(
           `[data-node-id="${id}"]`
@@ -387,7 +393,7 @@ export function ToolInput({
 
     return firstValue;
   }, [
-    dragState.selectedIds,
+    currentSelectedIds,
     props.name,
     label,
     isGridInput,
@@ -451,7 +457,7 @@ export function ToolInput({
       }
     }
   }, [
-    dragState.selectedIds,
+    currentSelectedIds,
     nodeState.nodes,
     isCustomMode,
     getComputedStyleValue,
@@ -477,11 +483,13 @@ export function ToolInput({
 
   // Special handling for box-shadow updates
   const updateBoxShadow = (newValue) => {
-    if (!dragState.selectedIds.length) return;
+    const selectedIds = currentSelectedIds();
+
+    if (!selectedIds.length) return;
 
     // Get the current box-shadow
     const element = document.querySelector(
-      `[data-node-id="${dragState.selectedIds[0]}"]`
+      `[data-node-id="${selectedIds[0]}"]`
     ) as HTMLElement;
 
     if (!element) return;
@@ -557,8 +565,10 @@ export function ToolInput({
         true
       );
     } else if (localUnit === "fill") {
+      const selectedIds = currentSelectedIds();
+
       const element = document.querySelector(
-        `[data-node-id="${dragState.selectedIds[0]}"]`
+        `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
         updateFillStyles(element, props.name || "", setNodeStyle);
@@ -600,8 +610,9 @@ export function ToolInput({
     if (isMixed && !isCustomMode) return;
 
     forceCleanupDrag();
+    const selectedIds = currentSelectedIds();
 
-    const elements = dragState.selectedIds
+    const elements = selectedIds
       .map(
         (id) => document.querySelector(`[data-node-id="${id}"]`) as HTMLElement
       )
@@ -767,8 +778,10 @@ export function ToolInput({
     }
 
     if (localUnit === "fill") {
+      const selectedIds = currentSelectedIds();
+
       const element = document.querySelector(
-        `[data-node-id="${dragState.selectedIds[0]}"]`
+        `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
         updateFillStyles(element, props.name || "", setNodeStyle);
@@ -816,8 +829,10 @@ export function ToolInput({
         true
       );
     } else if (localUnit === "fill") {
+      const selectedIds = currentSelectedIds();
+
       const element = document.querySelector(
-        `[data-node-id="${dragState.selectedIds[0]}"]`
+        `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
         updateFillStyles(element, props.name || "", setNodeStyle);
@@ -864,8 +879,10 @@ export function ToolInput({
         true
       );
     } else if (localUnit === "fill") {
+      const selectedIds = currentSelectedIds();
+
       const element = document.querySelector(
-        `[data-node-id="${dragState.selectedIds[0]}"]`
+        `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
         updateFillStyles(element, props.name || "", setNodeStyle);

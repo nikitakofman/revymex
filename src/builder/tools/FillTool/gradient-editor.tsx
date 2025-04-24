@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useBuilder } from "@/builder/context/builderState";
 import { ColorPicker } from "../_components/ColorPicker";
 import { transformNodeToFrame } from "./fill-popup";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 // Types
 export interface GradientStop {
@@ -100,6 +101,7 @@ export const GradientEditor = ({
   dragState,
   setNodeStyle,
 }: GradientEditorProps) => {
+  const currentSelectedIds = useGetSelectedIds();
   // Initialize gradient stops based on current background if available
   const [gradientStops, setGradientStops] = useState(() => {
     // Parse gradient stops from the current background if available
@@ -151,6 +153,8 @@ export const GradientEditor = ({
         ? `linear-gradient(90deg, ${gradientStopsString})`
         : `radial-gradient(circle at center, ${gradientStopsString})`;
 
+    const selectedIds = currentSelectedIds();
+
     if (selectedNode.type !== "frame") {
       transformNodeToFrame(
         selectedNode,
@@ -158,7 +162,7 @@ export const GradientEditor = ({
         nodeDisp
       );
     } else {
-      setNodeStyle({ background: gradientValue }, dragState.selectedIds);
+      setNodeStyle({ background: gradientValue }, selectedIds);
     }
   };
 

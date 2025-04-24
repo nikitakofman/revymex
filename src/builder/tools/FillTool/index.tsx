@@ -13,12 +13,14 @@ import {
   getNodeVideoSource,
   getNextImageSource,
 } from "../utils";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const FillTool = () => {
   const { nodeState, dragState } = useBuilder();
-  const selectedNode = nodeState.nodes.find(
-    (n) => n.id === dragState.selectedIds[0]
-  );
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+  const [selectedNode, setSelectedNode] = useState(null);
 
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
@@ -55,6 +57,45 @@ export const FillTool = () => {
     parseValue: false,
   });
 
+  // Update the selected node when selection changes
+  useEffect(() => {
+    // Get the current selected IDs
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) {
+      setSelectedNode(null);
+      return;
+    }
+
+    const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+    setSelectedNode(node);
+  }, [nodeState.nodes, getSelectedIds]);
+
+  // Set up an observer for selection changes
+  useEffect(() => {
+    const selectionObserver = new MutationObserver(() => {
+      // When selection changes, re-run our node finding logic
+      const selectedIds = getSelectedIds();
+      if (selectedIds.length === 0) {
+        setSelectedNode(null);
+        return;
+      }
+
+      const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+      setSelectedNode(node);
+    });
+
+    // Observe changes to data-selected attribute
+    selectionObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-selected"],
+      subtree: true,
+    });
+
+    return () => {
+      selectionObserver.disconnect();
+    };
+  }, [nodeState.nodes, getSelectedIds]);
+
   // Force re-render on style changes
   useEffect(() => {
     const interval = setInterval(() => {
@@ -68,8 +109,8 @@ export const FillTool = () => {
 
   // Directly query the DOM to get the actual image source
   useEffect(() => {
-    if (selectedNode && dragState.selectedIds.length > 0) {
-      const nodeId = dragState.selectedIds[0];
+    if (selectedNode) {
+      const nodeId = selectedNode.id;
       const element = document.querySelector(`[data-node-id="${nodeId}"]`);
 
       if (element && selectedNode.type === "image") {
@@ -81,7 +122,7 @@ export const FillTool = () => {
         setActualImageSrc(null);
       }
     }
-  }, [selectedNode, dragState.selectedIds, forceUpdate]);
+  }, [selectedNode, forceUpdate]);
 
   // Get direct node styles for more reliable tracking
   const getDirectNodeStyle = () => {
@@ -96,10 +137,10 @@ export const FillTool = () => {
     };
   };
 
+  if (!selectedNode) return null;
+
   // Get direct node styles for reliable tracking
   const directStyles = getDirectNodeStyle();
-
-  if (!selectedNode) return null;
 
   // Check if the selected node is a video or has video background
   const isVideoNode = selectedNode.type === "video";
@@ -414,3 +455,5 @@ export const FillTool = () => {
     </>
   );
 };
+
+export default FillTool;

@@ -4,6 +4,7 @@ import { buildTreeFromNodes, findOrCreateCanvasPosition } from "./utils";
 import TreeNodeComponent from "./TreeNodeComponent";
 import { TreeNodeWithChildren } from "@/builder/types";
 import { Label, ToolbarLabel } from "@/builder/tools/_components/ToolbarAtoms";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 const Layers: React.FC = () => {
   const {
@@ -15,6 +16,8 @@ const Layers: React.FC = () => {
     contentRef,
   } = useBuilder();
   const isDynamicMode = !!dragState.dynamicModeNodeId;
+
+  const currentSelectedIds = useGetSelectedIds();
 
   const activeViewportId = dragState.activeViewportInDynamicMode;
   const treeData = buildTreeFromNodes(
@@ -35,6 +38,8 @@ const Layers: React.FC = () => {
   const handlePanelDrop = (e: React.DragEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("li")) return;
 
+    const selectedIds = currentSelectedIds();
+
     e.preventDefault();
 
     try {
@@ -44,7 +49,6 @@ const Layers: React.FC = () => {
       const draggedNode = nodeState.nodes.find((n) => n.id === dragData.id);
       if (!draggedNode) return;
 
-      const selectedIds = dragState.selectedIds;
       const isMultiSelectionDrag =
         selectedIds.length > 1 && selectedIds.includes(draggedNode.id);
 

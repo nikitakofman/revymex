@@ -5,6 +5,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Label } from "../_components/ToolbarAtoms";
 import { RotateCcw, Check, Bug, X, AlertCircle } from "lucide-react";
 import { canvasPreview, generateCroppedImageUrl } from "./canvas-preview";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 // Enhanced getImageSource function to better handle frame backgrounds and blob URLs
 function getImageSource(node) {
@@ -206,6 +207,8 @@ export const ImageCropPopup = ({ selectedNode, onClose }) => {
 
   const imageSource = getImageSource(selectedNode);
 
+  const currentSelectedIds = useGetSelectedIds();
+
   // Handle crop complete event
   const onCropComplete = (crop) => {
     setCompletedCrop(crop);
@@ -311,6 +314,8 @@ export const ImageCropPopup = ({ selectedNode, onClose }) => {
         return;
       }
 
+      const selectedIds = currentSelectedIds();
+
       // Apply to the node based on its type
       if (selectedNode.type === "image") {
         // For image elements
@@ -322,7 +327,7 @@ export const ImageCropPopup = ({ selectedNode, onClose }) => {
             objectFit: "cover",
             transform: "none",
           },
-          dragState.selectedIds
+          selectedIds
         );
       } else {
         // For elements with background image (including frames)
@@ -333,7 +338,7 @@ export const ImageCropPopup = ({ selectedNode, onClose }) => {
             backgroundPosition: "center",
             backgroundSize: "cover",
           },
-          dragState.selectedIds
+          selectedIds
         );
       }
 

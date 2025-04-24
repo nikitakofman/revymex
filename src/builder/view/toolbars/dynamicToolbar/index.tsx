@@ -6,9 +6,12 @@ import { Monitor, Tablet, Smartphone } from "lucide-react";
 import { createPortal } from "react-dom";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
+import { selectOps } from "@/builder/context/atoms/select-store";
 
 export const DynamicToolbar: React.FC = () => {
   const { nodeState, nodeDisp, dragState, dragDisp } = useBuilder();
+
+  const { setSelectedIds } = selectOps;
 
   // Initial node ID when first entering dynamic mode
   const [initialNodeId, setInitialNodeId] = useState<string | null>(null);
@@ -357,7 +360,7 @@ export const DynamicToolbar: React.FC = () => {
           nodeDisp.resetDynamicNodePositions();
           dragDisp.setDynamicModeNodeId(null);
           dragDisp.setDynamicState("normal");
-          dragDisp.setSelectedIds([]);
+          setSelectedIds([]);
           dragDisp.switchDynamicViewport(null);
           setActiveViewportId(null);
           setViewportNodeIds({});
@@ -382,7 +385,7 @@ export const DynamicToolbar: React.FC = () => {
             variant={activeViewportId === viewport.id ? "primary" : "ghost"}
             onClick={() => {
               switchToViewport(viewport.id as string);
-              dragDisp.setSelectedIds([]);
+              setSelectedIds([]);
             }}
             className="flex items-center gap-1"
           >

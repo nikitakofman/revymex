@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useNodeActions } from "./useNodeActions";
+import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 
 export const useKeyboardDrag = ({ isEnabled = true }) => {
   const {
@@ -16,6 +17,10 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
+
+  const currentSelectedIds = useGetSelectedIds();
+
+  const { clearSelection, setSelectedIds } = selectOps;
 
   const isAltPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
@@ -72,10 +77,11 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
         setIsMoveCanvasMode(true);
       }
 
+      const selectedIds = currentSelectedIds();
       // Handle Delete/Backspace
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
-        dragState.selectedIds?.length > 0
+        selectedIds?.length > 0
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -107,15 +113,15 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
       if (e.key.toLowerCase() === "l" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
 
-        if (dragState.selectedIds.length > 0) {
-          nodeDisp.toggleNodeLock(dragState.selectedIds);
+        if (selectedIds.length > 0) {
+          nodeDisp.toggleNodeLock(selectedIds);
         }
       }
 
       // Hide element (display none)
       if (e.key.toLowerCase() === "i" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        if (dragState.selectedIds.length > 0) {
+        if (selectedIds.length > 0) {
           setNodeStyle(
             {
               display: "none",
@@ -136,9 +142,9 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
           .filter((node) => !node.isViewport)
           .map((node) => node.id);
 
-        dragDisp.clearSelection();
+        clearSelection();
 
-        dragDisp.setSelectedIds(selectableNodeIds);
+        setSelectedIds(selectableNodeIds);
       }
 
       if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
@@ -178,7 +184,6 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
     };
   }, [
     dragState.isDragging,
-    dragState.selectedIds,
     nodeState.nodes,
     isMoveCanvasMode,
     setIsMoveCanvasMode,

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ToolbarSection } from "../_components/ToolbarAtoms";
 import { useBuilder } from "@/builder/context/builderState";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
@@ -9,17 +9,71 @@ import { FilterToolPopup } from "./FilterToolPopup";
 import { ToolInput } from "../_components/ToolInput";
 import { ToolPopupTrigger } from "../_components/ToolbarPopupTrigger";
 import ToolbarButton from "../_components/ToolbarButton";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const StylesTool = () => {
   const { nodeState, dragState, setNodeStyle } = useBuilder();
-  const selectedNode = nodeState.nodes.find(
-    (n) => n.id === dragState.selectedIds[0]
-  );
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+  const [selectedNode, setSelectedNode] = useState(null);
 
   const [activeTool, setActiveTool] = useState(null);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
-
   const [opacityValue, setOpacityValue] = useState(1);
+
+  // Update the selected node when needed
+  useEffect(() => {
+    // Get the current selected IDs
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) {
+      setSelectedNode(null);
+      return;
+    }
+
+    const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+    setSelectedNode(node);
+
+    // Update opacity value from the node's style if available
+    if (node && node.style && node.style.opacity) {
+      setOpacityValue(parseFloat(node.style.opacity));
+    } else {
+      setOpacityValue(1); // Default opacity
+    }
+  }, [nodeState.nodes, getSelectedIds]);
+
+  // Set up an observer for selection changes
+  useEffect(() => {
+    const selectionObserver = new MutationObserver(() => {
+      // When selection changes, re-run our node finding logic
+      const selectedIds = getSelectedIds();
+      if (selectedIds.length === 0) {
+        setSelectedNode(null);
+        return;
+      }
+
+      const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+      setSelectedNode(node);
+
+      // Update opacity value from the node's style if available
+      if (node && node.style && node.style.opacity) {
+        setOpacityValue(parseFloat(node.style.opacity));
+      } else {
+        setOpacityValue(1); // Default opacity
+      }
+    });
+
+    // Observe changes to data-selected attribute
+    selectionObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-selected"],
+      subtree: true,
+    });
+
+    return () => {
+      selectionObserver.disconnect();
+    };
+  }, [nodeState.nodes, getSelectedIds]);
 
   if (!selectedNode) return null;
 

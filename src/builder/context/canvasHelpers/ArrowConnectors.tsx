@@ -1,9 +1,12 @@
 import React, { useCallback, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 export const ArrowConnectors = () => {
   const { nodeState, dragState, contentRef, transform } = useBuilder();
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
 
   const getAdjustedPosition = useCallback(
     (rect: DOMRect, containerRect: DOMRect) => {
@@ -55,15 +58,19 @@ export const ArrowConnectors = () => {
   }, [nodeState.nodes, activeViewportId]);
 
   // Find all relevant connections in the current viewport
-  // FIXED: Only include connections where the source OR target is directly selected
+  // Get the selected IDs only when computing the connections
   const relevantConnections = useMemo(() => {
-    if (!activeViewportId || dragState.selectedIds.length === 0) return [];
+    if (!activeViewportId) return [];
+
+    // Get the selected IDs imperatively only when this memo runs
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) return [];
 
     const result = [];
     const processedConnections = new Set();
 
     // Direct connections from selected nodes
-    for (const selectedId of dragState.selectedIds) {
+    for (const selectedId of selectedIds) {
       const selectedNode = nodeState.nodes.find((n) => n.id === selectedId);
       if (!selectedNode) continue;
 
@@ -105,7 +112,7 @@ export const ArrowConnectors = () => {
       // Check each connection for a selected target
       for (const conn of node.dynamicConnections) {
         // Skip if the target is not selected
-        if (!dragState.selectedIds.includes(conn.targetId)) continue;
+        if (!selectedIds.includes(conn.targetId)) continue;
 
         // Create a unique identifier for this connection
         const connectionKey = `${conn.sourceId}-${conn.targetId}-${conn.type}`;
@@ -127,8 +134,8 @@ export const ArrowConnectors = () => {
   }, [
     nodesInActiveViewport,
     activeViewportId,
-    dragState.selectedIds,
     nodeState.nodes,
+    getSelectedIds,
   ]);
 
   // Group connections by source-target pair

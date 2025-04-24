@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Crop, RotateCcw } from "lucide-react";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ImageCropInteractive = ({ selectedNode }) => {
   const { setNodeStyle, dragState } = useBuilder();
@@ -9,6 +10,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
   const cropBoxRef = useRef(null);
   const imagePreviewRef = useRef(null);
 
+  const currentSelectedIds = useGetSelectedIds();
   // Crop values as percentages
   const [cropValues, setCropValues] = useState({
     cropTop: selectedNode?.style?.cropTop || 0,
@@ -143,6 +145,8 @@ export const ImageCropInteractive = ({ selectedNode }) => {
       const posY =
         50 + ((cropValues.cropTop - cropValues.cropBottom) / 2) * scale;
 
+      const selectedIds = currentSelectedIds();
+
       setNodeStyle(
         {
           objectPosition: `${posX}% ${posY}%`,
@@ -151,7 +155,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
           // Store crop values for persistence
           ...cropValues,
         },
-        dragState.selectedIds
+        selectedIds
       );
     }
     // For elements with background image
@@ -170,6 +174,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
       const posY =
         50 + ((cropValues.cropTop - cropValues.cropBottom) / 2) * scale;
 
+      const selectedIds = currentSelectedIds();
       setNodeStyle(
         {
           backgroundPosition: `${posX}% ${posY}%`,
@@ -177,7 +182,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
           // Store crop values for persistence
           ...cropValues,
         },
-        dragState.selectedIds
+        selectedIds
       );
     }
   };
@@ -191,6 +196,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
       cropLeft: 0,
     };
     setCropValues(resetValues);
+    const selectedIds = currentSelectedIds();
 
     if (selectedNode.type === "image") {
       setNodeStyle(
@@ -200,7 +206,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
           objectFit: "cover",
           transform: "scale(1)",
         },
-        dragState.selectedIds
+        selectedIds
       );
     } else {
       setNodeStyle(
@@ -209,7 +215,7 @@ export const ImageCropInteractive = ({ selectedNode }) => {
           backgroundPosition: "center",
           backgroundSize: "cover",
         },
-        dragState.selectedIds
+        selectedIds
       );
     }
   };

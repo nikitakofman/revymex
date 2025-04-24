@@ -960,7 +960,7 @@ export function inverseRotatePoint(x, y, angleDeg) {
   return rotatePoint(x, y, -angleDeg);
 }
 
-export const parseRotation = (rotate: string) => {
+export const parseRotationFloat = (rotate: string) => {
   if (typeof rotate === "string" && rotate.endsWith("deg")) {
     return parseFloat(rotate);
   }
@@ -1937,21 +1937,6 @@ export const multiplyMatrices = (a: number[], b: number[]): number[] => {
 };
 
 /**
- * Apply a matrix to a point
- */
-export const applyMatrixToPoint = (
-  matrix: number[],
-  x: number,
-  y: number
-): { x: number; y: number } => {
-  // [x', y', 1] = [x, y, 1] * matrix
-  const resultX = matrix[0] * x + matrix[1] * y + matrix[2];
-  const resultY = matrix[3] * x + matrix[4] * y + matrix[5];
-
-  return { x: resultX, y: resultY };
-};
-
-/**
  * Create a CSS matrix3d string from a matrix array
  */
 export const createMatrixString = (matrix: number[]): string => {
@@ -2190,6 +2175,229 @@ export function createMatrix3dTransform(
   return transformValuesToCSS(transforms);
 }
 
+export const isAbsoluteInFrame = (node: Node) => {
+  return node.isAbsoluteInFrame === true && node.parentId !== null;
+};
+
+export function multiply2D(A: number[], B: number[]) {
+  // Multiply two 3x3 matrices (row-major order)
+  const C = new Array(9).fill(0);
+  C[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
+  C[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
+  C[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];
+
+  C[3] = A[3] * B[0] + A[4] * B[3] + A[5] * B[6];
+  C[4] = A[3] * B[1] + A[4] * B[4] + A[5] * B[7];
+  C[5] = A[3] * B[2] + A[4] * B[5] + A[5] * B[8];
+
+  C[6] = A[6] * B[0] + A[7] * B[3] + A[8] * B[6];
+  C[7] = A[6] * B[1] + A[7] * B[4] + A[8] * B[7];
+  C[8] = A[6] * B[2] + A[7] * B[5] + A[8] * B[8];
+  return C;
+}
+
+export function applyMatrixToPoint(m: number[], x: number, y: number) {
+  const nx = m[0] * x + m[1] * y + m[2];
+  const ny = m[3] * x + m[4] * y + m[5];
+  return { x: nx, y: ny };
+}
+
+/**
+ * Create a 3×3 2D transform matrix, applying:
+ *   translate(tx, ty) → translate(cx, cy) → scale → skewX → skewY → translate(-cx, -cy)
+ */
+export function build2DMatrix({
+  tx,
+  ty,
+  cx,
+  cy,
+  scaleX,
+  scaleY,
+  skewXDeg,
+  skewYDeg,
+}: {
+  tx: number;
+  ty: number;
+  cx: number;
+  cy: number;
+  scaleX: number;
+  scaleY: number;
+  skewXDeg: number;
+  skewYDeg: number;
+}) {
+  let M = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+  // 1) Translate by (tx, ty)
+  M = multiply2D(M, [1, 0, tx, 0, 1, ty, 0, 0, 1]);
+
+  // 2) Translate pivot (cx, cy)
+  M = multiply2D(M, [1, 0, cx, 0, 1, cy, 0, 0, 1]);
+
+  // 3) Scale
+  M = multiply2D(M, [scaleX, 0, 0, 0, scaleY, 0, 0, 0, 1]);
+
+  // 4) SkewX
+  const sx = Math.tan(degToRad(skewXDeg));
+  M = multiply2D(M, [1, sx, 0, 0, 1, 0, 0, 0, 1]);
+
+  // 5) SkewY
+  const sy = Math.tan(degToRad(skewYDeg));
+  M = multiply2D(M, [1, 0, 0, sy, 1, 0, 0, 0, 1]);
+
+  // 6) Translate back (-cx, -cy)
+  M = multiply2D(M, [1, 0, -cx, 0, 1, -cy, 0, 0, 1]);
+
+  return M;
+}
+
+export function getFullTransformMatrix(
+  node: Node,
+  nodeState: { nodes: Node[] },
+  width: number,
+  height: number
+) {
+  // Start with identity matrix
+  let fullMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+  // Gather the ancestor chain from root to this node
+  const chain: Node[] = [];
+  let current: Node | undefined = node;
+
+  while (current) {
+    chain.unshift(current); // Add to front to get root → ... → node order
+
+    if (!current.parentId) break;
+    current = nodeState.nodes.find((n) => n.id === current!.parentId);
+  }
+
+  // Process each node in the chain and multiply matrices
+  for (const node of chain) {
+    // Extract transform values
+    const skewX = parseSkewValue(node.style.transform, "skewX");
+    const skewY = parseSkewValue(node.style.transform, "skewY");
+    const scaleX = parseScaleValue(node.style.transform, "scaleX");
+    const scaleY = parseScaleValue(node.style.transform, "scaleY");
+
+    // Create local transform matrix for this node
+    const localMatrix = build2DMatrix({
+      tx: 0,
+      ty: 0,
+      cx: width / 2, // Use element's dimensions for pivoting
+      cy: height / 2,
+      scaleX,
+      scaleY,
+      skewXDeg: skewX,
+      skewYDeg: skewY,
+    });
+
+    // Multiply with accumulated matrix
+    fullMatrix = multiply2D(fullMatrix, localMatrix);
+  }
+
+  return fullMatrix;
+}
+
+function parseSkewValue(
+  transform: string | undefined,
+  prop: "skewX" | "skewY"
+): number {
+  if (!transform) return 0;
+  const regex = new RegExp(`${prop}\\(([-\\d.]+)deg\\)`);
+  const match = transform.match(regex);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+/**
+ * Parse scale values from transform string
+ */
+function parseScaleValue(
+  transform: string | undefined,
+  prop: "scaleX" | "scaleY"
+): number {
+  if (!transform) return 1;
+  const regex = new RegExp(`${prop}\\(([-\\d.]+)\\)`);
+  const match = transform.match(regex);
+  return match ? parseFloat(match[1]) : 1;
+}
+
+export function matrixToCss(m: number[]) {
+  // return a "matrix(...)" 2D transform string
+  return `matrix(${m[0]}, ${m[3]}, ${m[1]}, ${m[4]}, ${m[2]}, ${m[5]})`;
+}
+
+/**
+ * Parse numeric rotation (in deg) from style.rotate if present, else 0
+ */
+export function parseRotation(rotate: string | undefined): number {
+  if (!rotate) return 0;
+  const match = rotate.match(/([-\d.]+)deg/);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+export function computeFullMatrixChain(
+  node: Node,
+  nodes: Node[],
+  // The actual DOM width/height for pivot
+  width: number,
+  height: number
+) {
+  let totalRotationDeg = 0;
+
+  // We'll gather transforms from ancestor → ... → self
+  // so we can multiply them in order
+  const transformMatrices: number[][] = [];
+
+  let current: Node | undefined = node;
+  let depth = 0;
+
+  // We'll "unshift" each parent's matrix so that the root is first
+  // and the child is last, then multiply in sequence
+  while (current) {
+    // Add rotation
+    totalRotationDeg += parseRotation(current.style.rotate);
+
+    // parse local skew/scale
+    const { scaleX, scaleY, skewX, skewY } = parseTransformValues(
+      current.style.transform
+    );
+
+    // Build local matrix with pivot at the center of *this* node:
+    const localM = build2DMatrix({
+      tx: 0,
+      ty: 0,
+      cx: width / 2,
+      cy: height / 2,
+      scaleX,
+      scaleY,
+      skewXDeg: skewX,
+      skewYDeg: skewY,
+    });
+
+    // We'll store it
+    transformMatrices.unshift(localM);
+
+    if (!current.parentId) break;
+    current = nodes.find((n) => n.id === current?.parentId);
+    depth++;
+    // NOTE: If each ancestor might have a *different* width/height pivot,
+    // you would need a more advanced approach (like your POC with each parent's dimension).
+    // But if you keep it simplified to the child's dimension,
+    // or if your parent doesn't scale child differently, this is enough.
+    // If you do want *each* parent's pivot dimension, you'd track them in a chain.
+  }
+
+  // Multiply all from root → child in order
+  let M = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  for (const mat of transformMatrices) {
+    M = multiply2D(M, mat);
+  }
+
+  return {
+    totalRotationDeg,
+    fullMatrix: M,
+  };
+}
+
 /**
  * Get cumulative skew for an element and its ancestors
  * For a child element, include only parent skew
@@ -2252,8 +2460,4 @@ export const getCumulativeRotation = (
   }
 
   return totalRotation;
-};
-
-export const isAbsoluteInFrame = (node: Node) => {
-  return node.isAbsoluteInFrame === true && node.parentId !== null;
 };

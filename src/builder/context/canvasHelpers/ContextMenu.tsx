@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useLayoutEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "@/builder/context/builderState";
 import {
@@ -17,6 +17,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useNodeActions } from "../hooks/useNodeActions";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 const Separator = () => (
   <div className="h-[1px] bg-[var(--border-light)] mx-2 my-1" />
@@ -75,6 +76,9 @@ export const ContextMenu = () => {
     opacity: 0,
     visibility: "hidden" as "hidden" | "visible",
   });
+
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
 
   // Using useLayoutEffect to position the menu before browser paint
   useLayoutEffect(() => {
@@ -139,7 +143,7 @@ export const ContextMenu = () => {
 
   const isViewportHeaderMenu = dragState.contextMenu?.isViewportHeader;
 
-  const getMenuItems = () => {
+  const getMenuItems = useCallback(() => {
     if (isViewportHeaderMenu) {
       const node = nodeState.nodes.find(
         (n) => n.id === dragState.contextMenu?.nodeId
@@ -263,6 +267,9 @@ export const ContextMenu = () => {
       );
     }
 
+    // Get the current selected ids at the time of menu creation
+    const selectedIds = getSelectedIds();
+
     // Add standard node menu items
     menuItems.push(
       {
@@ -364,10 +371,11 @@ export const ContextMenu = () => {
         windowsShortcut: "Ctrl+L",
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
-          // Use the nodesToLock array from before
+          // Use the nodesToLock array from before, but get current selection when the handler runs
+          const currentSelectedIds = getSelectedIds();
           const nodesToLock =
-            dragState.selectedIds.length > 0
-              ? dragState.selectedIds
+            currentSelectedIds.length > 0
+              ? currentSelectedIds
               : [dragState.contextMenu?.nodeId].filter(Boolean);
 
           nodeDisp.toggleNodeLock(nodesToLock);
@@ -406,7 +414,20 @@ export const ContextMenu = () => {
     );
 
     return menuItems;
-  };
+  }, [
+    isViewportHeaderMenu,
+    isCanvasMenu,
+    nodeState.nodes,
+    dragState.contextMenu,
+    handleDelete,
+    handleCopy,
+    handlePaste,
+    handleDuplicate,
+    dragDisp,
+    nodeDisp,
+    setNodeStyle,
+    getSelectedIds,
+  ]);
 
   if (!dragState.contextMenu) return null;
 

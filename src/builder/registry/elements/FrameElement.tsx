@@ -13,15 +13,22 @@ import {
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import Image from "next/image";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useDragStart } from "@/builder/context/dnd/useDragStart";
 import Button from "@/components/ui/button";
 import { createPortal } from "react-dom";
+import {
+  useNodeSelected,
+  useGetSelectedIds,
+  selectOps,
+} from "@/builder/context/atoms/select-store";
+import { useNodeHovered, hoverOps } from "@/builder/context/atoms/hover-store";
 
 export const Frame = ({ children, node }: ElementProps) => {
   console.log(`Frame re-rendering: ${node.id}`, new Date().getTime());
 
   const connect = useConnect();
+
   const {
     dragState,
     nodeDisp,
@@ -31,6 +38,14 @@ export const Frame = ({ children, node }: ElementProps) => {
     containerRef,
     contentRef,
   } = useBuilder();
+
+  // Use per-node subscription for hover and selection state
+  const isSelected = useNodeSelected(node.id);
+  const isHovered = useNodeHovered(node.id);
+
+  // Use imperative getter instead of subscription for selectedIds
+  const getSelectedIds = useGetSelectedIds();
+
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartedRef = useRef(false);
   const dragPositionInterval = useRef<any>(null);
@@ -66,13 +81,13 @@ export const Frame = ({ children, node }: ElementProps) => {
       e.stopPropagation();
 
       // Simply select the viewport
-      dragDisp.setSelectedIds([node.id]);
+      selectOps.selectNode(node.id);
     };
 
     // Drag handler that initiates drag after movement
     const handleHeaderMouseDown = (e: React.MouseEvent) => {
       // Always select the viewport on mousedown, regardless of drag
-      dragDisp.setSelectedIds([node.id]);
+      selectOps.selectNode(node.id);
 
       // Store mouse position for movement detection
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -90,9 +105,12 @@ export const Frame = ({ children, node }: ElementProps) => {
         if (dx > 3 || dy > 3) {
           dragStartedRef.current = true;
 
+          // Get current selected IDs
+          const selectedIds = getSelectedIds();
+
           // Ensure the viewport is selected before starting drag
-          if (!dragState.selectedIds.includes(node.id)) {
-            dragDisp.setSelectedIds([node.id]);
+          if (!selectedIds.includes(node.id)) {
+            selectOps.selectNode(node.id);
           }
 
           // Start tracking the dragged element's position
@@ -197,9 +215,12 @@ export const Frame = ({ children, node }: ElementProps) => {
           dragDisp.resetDragState();
         }
 
+        // Get current selected IDs before ensuring viewport stays selected
+        const currentSelectedIds = getSelectedIds();
+
         // Ensure the viewport stays selected after drag
-        if (!dragState.selectedIds.includes(node.id)) {
-          dragDisp.setSelectedIds([node.id]);
+        if (!currentSelectedIds.includes(node.id)) {
+          selectOps.selectNode(node.id);
         }
 
         mouseDownPosRef.current = null;
@@ -290,7 +311,9 @@ export const Frame = ({ children, node }: ElementProps) => {
               <div
                 data-viewport-header="true"
                 data-viewport-id={node.id}
-                className="absolute viewport-header overflow-hidden select-none bg-[var(--control-bg)] z-[9999] flex items-center"
+                className={`absolute viewport-header overflow-hidden select-none bg-[var(--control-bg)] z-[9999] flex items-center ${
+                  isHovered ? "hover-highlight" : ""
+                }`}
                 style={{
                   // Position relative to the viewport with the same transform as the canvas
                   position: "absolute",
@@ -314,20 +337,25 @@ export const Frame = ({ children, node }: ElementProps) => {
                 }}
                 onMouseOver={(e) => {
                   e.stopPropagation();
-                  if (!dragState.selectedIds.includes(node.id)) {
+
+                  // Get current selected IDs
+                  const currentSelectedIds = getSelectedIds();
+
+                  if (!currentSelectedIds.includes(node.id)) {
                     requestAnimationFrame(() => {
-                      dragDisp.setHoverNodeId(node.id);
+                      hoverOps.setHoverNodeId(node.id);
                     });
                   }
                 }}
                 onMouseOut={(e) => {
                   e.stopPropagation();
-                  if (
-                    !dragState.selectedIds.includes(node.id) &&
-                    dragState.hoverNodeId === node.id
-                  ) {
+
+                  // Get current selected IDs
+                  const currentSelectedIds = getSelectedIds();
+
+                  if (!currentSelectedIds.includes(node.id) && isHovered) {
                     requestAnimationFrame(() => {
-                      dragDisp.setHoverNodeId(null);
+                      hoverOps.setHoverNodeId(null);
                     });
                   }
                 }}
@@ -445,7 +473,7 @@ export const Frame = ({ children, node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)}>
+      <div {...connect(node)} className={isHovered ? "hover-highlight" : ""}>
         {/* Background media wrapper */}
         {(node.style.backgroundImage || node.style.backgroundVideo) && (
           <div
@@ -470,11 +498,6 @@ export const Frame = ({ children, node }: ElementProps) => {
                   pointerEvents: "none",
                 }}
                 src={node.style.backgroundVideo}
-                // // autoPlay={node.style.autoPlay || false}
-                // loop={node.style.loop || false}
-                // muted={node.style.muted || true}
-                // controls={node.style.controls || false}
-                // playsInline
                 autoPlay={false}
                 muted
                 loop

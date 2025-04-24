@@ -2,6 +2,8 @@ import { useBuilder } from "@/builder/context/builderState";
 import { ChevronDown } from "lucide-react";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Label } from "./ToolbarAtoms";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import { useEffect, useState } from "react";
 
 interface ToolSelectProps {
   label: string;
@@ -10,6 +12,7 @@ interface ToolSelectProps {
   options: { label: string; value: string; disabled?: boolean }[];
   disabled?: boolean;
   onChange?: (value: string) => void;
+  customSelectWidth?: string;
 }
 
 export const ToolSelect = ({
@@ -23,19 +26,31 @@ export const ToolSelect = ({
 }: ToolSelectProps) => {
   const { setNodeStyle, nodeState, dragState, nodeDisp } = useBuilder();
 
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
+  const [hasParent, setHasParent] = useState(false);
+
+  // Update hasParent state when needed
+  useEffect(() => {
+    // Get the current selection
+    const selectedIds = getSelectedIds();
+
+    // Calculate if selected node has a parent
+    const nodeHasParent =
+      selectedIds.length > 0 &&
+      nodeState.nodes.some(
+        (node) => node.id === selectedIds[0] && node.parentId
+      );
+
+    setHasParent(nodeHasParent);
+  }, [nodeState.nodes, getSelectedIds]);
+
   const computedStyle = useComputedStyle({
     property: name,
     usePseudoElement: name && name.toLowerCase().startsWith("border"),
     parseValue: false,
     defaultValue: value || "",
   });
-
-  // Check if selected node has a parent
-  const hasParent =
-    dragState.selectedIds.length > 0 &&
-    nodeState.nodes.some(
-      (node) => node.id === dragState.selectedIds[0] && node.parentId
-    );
 
   // Modify options based on parent status if they're dimension-related
   const processedOptions = options.map((option) => ({
@@ -62,12 +77,14 @@ export const ToolSelect = ({
 
   // Handle position changes with special logic for absolute positioning in frames
   const handlePositionChange = (position: string) => {
-    if (dragState.selectedIds.length === 0) return;
+    // Get the current selection when handling position change
+    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) return;
 
     // If position is absolute, check if node is within a frame
     if (position === "absolute") {
       // For each selected node
-      dragState.selectedIds.forEach((nodeId) => {
+      selectedIds.forEach((nodeId) => {
         const node = nodeState.nodes.find((n) => n.id === nodeId);
         if (!node) return;
 
@@ -102,7 +119,7 @@ export const ToolSelect = ({
       });
     } else if (position !== "absolute") {
       // When changing from absolute to another position, reset the flag
-      dragState.selectedIds.forEach((nodeId) => {
+      selectedIds.forEach((nodeId) => {
         const node = nodeState.nodes.find((n) => n.id === nodeId);
         if (node?.isAbsoluteInFrame) {
           nodeDisp.updateNode(node.id, { isAbsoluteInFrame: false });
