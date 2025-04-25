@@ -11,6 +11,7 @@ import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { handleMediaToFrameTransformation } from "../utils";
 import produce from "immer";
+import { selectOps } from "../atoms/select-store";
 
 export const useMouseUp = () => {
   const {
@@ -306,7 +307,7 @@ export const useMouseUp = () => {
         // Add the node - the enhanced addNode method will handle dynamic properties
         // and call syncVariants when appropriate
         nodeDisp.addNode(newNode, targetId, position, shouldBeInViewport);
-        dragDisp.setSelectedIds([newNode.id]);
+        selectOps.setSelectedIds([newNode.id]);
 
         // Still sync with standard viewports if not in dynamic mode
         if (!dragState.dynamicModeNodeId) {
@@ -959,7 +960,7 @@ export const useMouseUp = () => {
       }
 
       nodeDisp.addNode(newNode, null, null, false);
-      dragDisp.setSelectedIds([newNode.id]);
+      selectOps.setSelectedIds([newNode.id]);
 
       if (!dragState.dynamicModeNodeId) {
         setTimeout(() => {

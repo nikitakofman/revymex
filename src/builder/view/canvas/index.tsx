@@ -33,6 +33,10 @@ import ViewportContextMenu from "@/builder/context/canvasHelpers/ViewportContext
 import AddVariantsUI from "@/builder/context/canvasHelpers/AddVariantUI";
 import PreviewPlay from "../preview/preview-play";
 import { selectOps } from "@/builder/context/atoms/select-store";
+import {
+  useIsPreviewOpen,
+  interfaceOps,
+} from "@/builder/context/atoms/interface-store";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -48,15 +52,16 @@ const Canvas = () => {
     nodeDisp,
     transform,
     setTransform,
-    interfaceDisp,
     isResizing,
     isRotating,
     isAdjustingGap,
     isAdjustingBorderRadius,
     nodeState,
-    interfaceState,
     isEditingText,
   } = useBuilder();
+
+  // Get isPreviewOpen from interface store instead of interfaceState
+  const isPreviewOpen = useIsPreviewOpen();
 
   const { clearSelection } = selectOps;
 
@@ -109,7 +114,7 @@ const Canvas = () => {
 
   // Attach event listeners when not in preview mode
   useEffect(() => {
-    if (!interfaceState.isPreviewOpen) {
+    if (!isPreviewOpen) {
       attachEventListeners();
     } else {
       detachEventListeners();
@@ -118,24 +123,18 @@ const Canvas = () => {
     return () => {
       detachEventListeners();
     };
-  }, [
-    interfaceState.isPreviewOpen,
-    handleMouseMove,
-    handleMouseUp,
-    attachEventListeners,
-    detachEventListeners,
-  ]);
+  }, [isPreviewOpen, handleMouseMove, handleMouseUp]);
 
   // Reset any necessary state when switching back from preview mode
   useEffect(() => {
-    if (!interfaceState.isPreviewOpen && eventHandlersAttached.current) {
+    if (!isPreviewOpen && eventHandlersAttached.current) {
       // Reset any necessary state when returning from preview mode
       setIsMovingCanvas(false);
 
       // Force a redraw of the canvas by triggering a window resize event
       window.dispatchEvent(new Event("resize"));
     }
-  }, [interfaceState.isPreviewOpen, setIsMovingCanvas]);
+  }, [isPreviewOpen, setIsMovingCanvas]);
 
   // Loading state detection based on critical refs and a minimum time
   useEffect(() => {
@@ -167,13 +166,13 @@ const Canvas = () => {
 
   // Update transform when switching from preview back to editor
   useEffect(() => {
-    if (!interfaceState.isPreviewOpen && contentRef.current) {
+    if (!isPreviewOpen && contentRef.current) {
       // Ensure the transform is applied to the content
       contentRef.current.style.willChange = "transform";
       contentRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
       contentRef.current.style.transformOrigin = "0 0";
     }
-  }, [interfaceState.isPreviewOpen, transform, contentRef]);
+  }, [isPreviewOpen, transform, contentRef]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (dragState.isSelectionBoxActive) {
@@ -183,7 +182,7 @@ const Canvas = () => {
     if (e.target === containerRef.current || e.target === contentRef.current) {
       console.log("clicked on canvas");
       clearSelection();
-      interfaceDisp.toggleLayers();
+      interfaceOps.toggleLayers();
     }
   };
 
@@ -206,10 +205,10 @@ const Canvas = () => {
       <Header />
       <div
         className={`fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)] ${
-          interfaceState.isPreviewOpen && ""
+          isPreviewOpen && ""
         }`}
       >
-        {interfaceState.isPreviewOpen ? (
+        {isPreviewOpen ? (
           <IframePreview nodes={nodeState.nodes} viewport={1440} />
         ) : (
           // <PreviewPlay nodes={nodeState.nodes} />

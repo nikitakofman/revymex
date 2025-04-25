@@ -7,7 +7,7 @@ import {
 } from "../utils";
 import { nanoid } from "nanoid";
 import { createPlaceholder } from "./createPlaceholder";
-import { useGetSelectedIds } from "../atoms/select-store";
+import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 
 export const useDragStart = () => {
   const {
@@ -183,7 +183,7 @@ export const useDragStart = () => {
       if (!foundParent) {
         // Clear the existing selection and just use this node
         selectedIds = [node.id];
-        dragDisp.setSelectedIds([node.id]);
+        selectOps.setSelectedIds([node.id]);
       }
     }
 

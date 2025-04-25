@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { visualOps } from "../atoms/visual-store";
 
 interface FontSizeHandleProps {
   node: Node;
@@ -222,7 +223,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
     startPosRef.current = { x: e.clientX, y: e.clientY };
 
     // Show font size helper UI initially
-    dragDisp.updateStyleHelper({
+    visualOps.updateStyleHelper({
       type: "fontSize",
       position: { x: e.clientX, y: e.clientY },
       value: averageFontSize,
@@ -308,7 +309,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
       // CRITICAL FIX: Use setTimeout to update style helper AFTER node styles
       // This prevents it from being hidden by the setNodeStyle side effects
       setTimeout(() => {
-        dragDisp.updateStyleHelper({
+        visualOps.updateStyleHelper({
           type: "fontSize",
           position: { x: e.clientX, y: e.clientY },
           value: newAverageFontSize,
@@ -319,7 +320,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
     };
 
     const handleMouseUp = () => {
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
       setIsFontSizeHandleActive(false);
       stopRecording(sessionId);
       // Reset the prevention flag

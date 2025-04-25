@@ -14,6 +14,7 @@ import {
   selectOps,
   useGetSelectedIds,
 } from "../atoms/select-store";
+import { interfaceOps } from "../atoms/interface-store";
 
 export const useConnect = () => {
   // Use the basic useBuilder hook without global subscriptions
@@ -23,10 +24,8 @@ export const useConnect = () => {
     nodeDisp,
     nodeState,
     isMovingCanvas,
-    selectedIdsRef,
     isFrameModeActive,
     isTextModeActive,
-    interfaceDisp,
     isMoveCanvasMode,
     setNodeStyle,
     isEditingText,
@@ -167,7 +166,7 @@ export const useConnect = () => {
           return;
         }
 
-        interfaceDisp.toggleLayers();
+        interfaceOps.toggleLayers();
 
         e.preventDefault();
         e.stopPropagation();

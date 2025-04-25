@@ -6,6 +6,7 @@ import {
   computeFrameDropIndicator,
   handleMediaToFrameTransformation,
 } from "@/builder/context/utils";
+import { visualOps } from "@/builder/context/atoms/visual-store";
 
 interface DrawingBoxState {
   startX: number;
@@ -72,7 +73,7 @@ export const TextCreator: React.FC = () => {
       });
 
       // Initialize style helper
-      dragDisp.updateStyleHelper({
+      visualOps.updateStyleHelper({
         type: "dimensions",
         position: { x: e.clientX, y: e.clientY },
         dimensions: {
@@ -109,7 +110,7 @@ export const TextCreator: React.FC = () => {
       );
 
       // Update style helper with current dimensions and font size
-      dragDisp.updateStyleHelper({
+      visualOps.updateStyleHelper({
         type: "dimensions",
         position: { x: e.clientX, y: e.clientY },
         dimensions: {
@@ -306,7 +307,7 @@ export const TextCreator: React.FC = () => {
       }
 
       // Hide the style helper
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
 
       // Reset state
       setBox(null);
@@ -323,7 +324,7 @@ export const TextCreator: React.FC = () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
       // Make sure to hide the style helper when unmounting
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
     };
   }, [
     containerRef,

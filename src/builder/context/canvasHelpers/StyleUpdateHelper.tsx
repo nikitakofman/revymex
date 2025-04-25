@@ -1,10 +1,9 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "@/builder/context/builderState";
+import { useStyleHelper } from "@/builder/context/atoms/visual-store";
 
 export const StyleUpdateHelper = () => {
-  const { dragState } = useBuilder();
-  const { styleHelper } = dragState;
+  const styleHelper = useStyleHelper();
 
   if (!styleHelper.show) return null;
 

@@ -10,74 +10,73 @@ import {
   LibraryBig,
 } from "lucide-react";
 import Button from "@/components/ui/button";
-import { useBuilder } from "@/builder/context/builderState";
 import { Tooltip } from "react-tooltip";
+import {
+  useIsInsertOpen,
+  useIsCmsOpen,
+  useIsPagesOpen,
+  useIsPreviewOpen,
+  useIsLibraryOpen,
+  useIsUIKitsOpen,
+  interfaceOps,
+} from "@/builder/context/atoms/interface-store";
 
 const LeftMenu = () => {
-  const { interfaceState, interfaceDisp } = useBuilder();
+  // Use individual hooks for each state we need
+  const isInsertOpen = useIsInsertOpen();
+  const isCmsOpen = useIsCmsOpen();
+  const isPagesOpen = useIsPagesOpen();
+  const isPreviewOpen = useIsPreviewOpen();
+  const isLibraryOpen = useIsLibraryOpen();
+  const isUIKitsOpen = useIsUIKitsOpen();
 
   const handleInsertClick = () => {
-    if (interfaceState.isInsertOpen) {
-      interfaceDisp.toggleInsert();
+    if (isInsertOpen) {
+      // Simply toggle off if already open
+      interfaceOps.toggleInsert();
     } else {
-      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
-      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
-      if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
-      if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
-      interfaceDisp.toggleInsert();
+      // The toggleInsert method will automatically close other panels
+      interfaceOps.toggleInsert();
     }
   };
 
   const handlePagesClick = () => {
-    if (interfaceState.isPagesOpen) {
-      interfaceDisp.togglePages();
+    if (isPagesOpen) {
+      // Simply toggle off if already open
+      interfaceOps.togglePages();
     } else {
-      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
-      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
-      if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
-      if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
-      interfaceDisp.togglePages();
+      // The togglePages method will automatically close other panels
+      interfaceOps.togglePages();
     }
   };
 
   const handleCmsClick = () => {
-    if (interfaceState.isCmsOpen) {
-      interfaceDisp.toggleCms();
+    if (isCmsOpen) {
+      // Simply toggle off if already open
+      interfaceOps.toggleCms();
     } else {
-      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
-      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
-      if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
-      if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
-      interfaceDisp.toggleCms();
+      // The toggleCms method will automatically close other panels
+      interfaceOps.toggleCms();
     }
   };
 
   const handleLibraryClick = () => {
-    if (interfaceState.isLibraryOpen) {
-      interfaceDisp.toggleLibrary();
+    if (isLibraryOpen) {
+      // Simply toggle off if already open
+      interfaceOps.toggleLibrary();
     } else {
-      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
-      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
-      if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
-      if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
-      interfaceDisp.toggleLibrary();
+      // The toggleLibrary method will automatically close other panels
+      interfaceOps.toggleLibrary();
     }
   };
 
   const handleUIKitsClick = () => {
-    if (interfaceState.isUIKitsOpen) {
-      interfaceDisp.toggleUIKits();
+    if (isUIKitsOpen) {
+      // Simply toggle off if already open
+      interfaceOps.toggleUIKits();
     } else {
-      if (interfaceState.isInsertOpen) interfaceDisp.toggleInsert();
-      if (interfaceState.isCmsOpen) interfaceDisp.toggleCms();
-      if (interfaceState.isPagesOpen) interfaceDisp.togglePages();
-      if (interfaceState.isPreviewOpen) interfaceDisp.togglePreview();
-      if (interfaceState.isLibraryOpen) interfaceDisp.toggleLibrary();
-      interfaceDisp.toggleUIKits();
+      // The toggleUIKits method will automatically close other panels
+      interfaceOps.toggleUIKits();
     }
   };
 
@@ -88,7 +87,7 @@ const LeftMenu = () => {
           leftIcon={<Plus size={32} />}
           size="md"
           className={
-            interfaceState.isInsertOpen
+            isInsertOpen
               ? "bg-[var(--accent-hover)] text-white"
               : "hover:text-black dark:hover:text-white"
           }
@@ -103,7 +102,7 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={`${
-            interfaceState.isLibraryOpen &&
+            isLibraryOpen &&
             "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
           onClick={handleLibraryClick}
@@ -116,7 +115,7 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={`${
-            interfaceState.isUIKitsOpen &&
+            isUIKitsOpen &&
             "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
           onClick={handleUIKitsClick}
@@ -129,7 +128,7 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={`${
-            interfaceState.isPagesOpen &&
+            isPagesOpen &&
             "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
           }`}
           onClick={handlePagesClick}
@@ -142,7 +141,7 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={
-            interfaceState.isCmsOpen
+            isCmsOpen
               ? "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
               : ""
           }
@@ -156,7 +155,7 @@ const LeftMenu = () => {
           size="md"
           variant="ghost"
           className={
-            interfaceState.isCmsOpen
+            isCmsOpen
               ? "bg-[var(--button-secondary-hover)] hover:bg-[var(--button-secondary-hover)]"
               : ""
           }

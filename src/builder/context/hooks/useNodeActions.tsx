@@ -165,7 +165,7 @@ export const useNodeActions = () => {
     });
 
     // Clear selection
-    dragDisp.clearSelection();
+    selectOps.clearSelection();
   };
 
   // Duplicate nodes action

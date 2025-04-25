@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { visualOps } from "../atoms/visual-store";
 
 interface BorderRadiusHandleProps {
   node: Node;
@@ -82,7 +83,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     startRadiusRef.current = currentRadius;
     startPosRef.current = e.clientY;
 
-    dragDisp.updateStyleHelper({
+    visualOps.updateStyleHelper({
       type: "radius",
       position: { x: e.clientX, y: e.clientY },
       value: currentRadius,
@@ -96,7 +97,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
         newRadius = Math.round(newRadius / 32) * 32;
       }
 
-      dragDisp.updateStyleHelper({
+      visualOps.updateStyleHelper({
         type: "radius",
         position: { x: e.clientX, y: e.clientY },
         value: newRadius,
@@ -117,7 +118,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     };
 
     const handleMouseUp = () => {
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
       stopRecording(sessionId);
       setIsAdjustingBorderRadius(false);
       window.removeEventListener("mousemove", handleMouseMove);

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import LayoutTool from "@/builder/tools/LayoutTool";
 import { ToolbarDivider } from "@/builder/tools/_components/ToolbarAtoms";
 import DimensionsTool from "@/builder/tools/DimensionsTool";
@@ -12,7 +12,7 @@ import { FillTool } from "@/builder/tools/FillTool";
 import Button from "@/components/ui/button";
 import StylesTool from "@/builder/tools/StylesTool";
 import InteractionsTool from "@/builder/tools/InteractionsTool";
-import { useSelectedIds } from "@/builder/context/atoms/select-store";
+import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -33,18 +33,25 @@ const getToolTypes = (elements: Node[]) => {
 const ElementToolbar = () => {
   const { dragState, nodeState, setNodeStyle } = useBuilder();
 
-  const selectedIds = useSelectedIds();
+  // Replace subscription with imperative getter
+  const getSelectedIds = useGetSelectedIds();
 
-  const selectedElements = nodeState.nodes.filter((node) =>
-    selectedIds.includes(node.id)
-  );
+  // Get the selected IDs at render time
+  const currentSelectedIds = getSelectedIds();
+
+  // Memoize the selected elements to prevent unnecessary calculations
+  const selectedElements = useMemo(() => {
+    return nodeState.nodes.filter((node) =>
+      currentSelectedIds.includes(node.id)
+    );
+  }, [nodeState.nodes, currentSelectedIds]);
 
   // Check if the primary selected element is hidden
   const isPrimaryElementHidden = () => {
-    if (selectedIds.length === 0) return false;
+    if (currentSelectedIds.length === 0) return false;
 
     const primaryElement = nodeState.nodes.find(
-      (node) => node.id === selectedIds[0]
+      (node) => node.id === currentSelectedIds[0]
     );
 
     return primaryElement?.style?.display === "none";
@@ -53,7 +60,7 @@ const ElementToolbar = () => {
   const isHidden = isPrimaryElementHidden();
   const toolTypes = getToolTypes(selectedElements);
 
-  if (selectedIds.length === 0) {
+  if (currentSelectedIds.length === 0) {
     return (
       <div className="w-64 fixed pt-3 right-toolbar right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]" />
     );

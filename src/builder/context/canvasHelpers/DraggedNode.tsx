@@ -12,6 +12,7 @@ import { Node } from "../../reducer/nodeDispatcher";
 import { useBuilder } from "../builderState";
 import { useSnapGrid, SnapResult } from "./SnapGrid";
 import { getFilteredNodes, isAbsoluteInFrame, parseRotation } from "../utils";
+import { visualOps } from "@/builder/context/atoms/visual-store";
 
 interface Transform {
   x: number;
@@ -57,7 +58,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   transform,
   offset,
 }) => {
-  const { dragState, nodeState, dragDisp, containerRef } = useBuilder();
+  const { dragState, nodeState, containerRef } = useBuilder();
   const initialDimensionsRef = useRef<{ width: number; height: number } | null>(
     null
   );
@@ -286,7 +287,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   // Step 3: dispatch the final guides
   useEffect(() => {
     if (!finalSnapResult) {
-      dragDisp.clearSnapGuides();
+      visualOps.clearSnapGuides();
       lastSnapRef.current = null;
       return;
     }
@@ -297,12 +298,12 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
     if (oldString !== newString) {
       lastSnapRef.current = finalSnapResult;
       if (snapGuides.length) {
-        dragDisp.setSnapGuides(snapGuides);
+        visualOps.setSnapGuides(snapGuides);
       } else {
-        dragDisp.clearSnapGuides();
+        visualOps.clearSnapGuides();
       }
     }
-  }, [finalSnapResult, dragDisp]);
+  }, [finalSnapResult]);
 
   // keep original node width/height while dragging
   useEffect(() => {

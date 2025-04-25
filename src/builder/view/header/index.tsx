@@ -6,7 +6,11 @@ import { useBuilder } from "@/builder/context/builderState";
 import RevymeIcon from "./revyme-icon";
 import { Tooltip } from "react-tooltip";
 import { ToolbarSlider } from "@/builder/tools/_components/ToolbarSlider";
-
+import {
+  useIsPreviewOpen,
+  usePreviewWidth,
+  interfaceOps,
+} from "@/builder/context/atoms/interface-store";
 import { ChevronDown } from "lucide-react";
 
 interface SimplifiedToolSelectProps {
@@ -46,15 +50,14 @@ export const SimplifiedToolSelect: React.FC<SimplifiedToolSelectProps> = ({
 };
 
 const Header = () => {
-  const {
-    interfaceState,
-    interfaceDisp,
-    nodeState,
-    nodeDisp,
-    setIsEditingText,
-  } = useBuilder();
+  const { nodeState, nodeDisp, setIsEditingText } = useBuilder();
+
+  // Get interface state from the interface store
+  const isPreviewOpen = useIsPreviewOpen();
+  const previewWidth = usePreviewWidth();
+
   const [inputValue, setInputValue] = useState(
-    interfaceState.previewWidth?.toString() || "1440"
+    previewWidth?.toString() || "1440"
   );
   const [maxWidth, setMaxWidth] = useState(2560);
   const [selectedViewport, setSelectedViewport] = useState("custom");
@@ -91,19 +94,19 @@ const Header = () => {
     };
   }, []);
 
-  // Update local state when interfaceState changes
+  // Update local state when previewWidth changes
   useEffect(() => {
-    if (interfaceState.previewWidth) {
-      setInputValue(interfaceState.previewWidth.toString());
+    if (previewWidth) {
+      setInputValue(previewWidth.toString());
 
       // Check if the new width matches any viewport width
       const matchingViewport = viewportOptions.find(
-        (option) => option.value === interfaceState.previewWidth?.toString()
+        (option) => option.value === previewWidth.toString()
       );
 
       setSelectedViewport(matchingViewport ? matchingViewport.value : "custom");
     }
-  }, [interfaceState.previewWidth, viewportOptions]);
+  }, [previewWidth, viewportOptions]);
 
   // Handler for width input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,10 +119,10 @@ const Header = () => {
     setIsEditingText(false);
     const newWidth = Number(inputValue);
     if (!isNaN(newWidth) && newWidth >= 1 && newWidth <= maxWidth) {
-      interfaceDisp.setPreviewWidth(newWidth);
+      interfaceOps.setPreviewWidth(newWidth);
     } else {
       // Reset to valid value if input is invalid
-      setInputValue(interfaceState.previewWidth?.toString() || "1440");
+      setInputValue(previewWidth?.toString() || "1440");
     }
   };
 
@@ -133,7 +136,7 @@ const Header = () => {
   // Handler for slider changes
   const handleSliderChange = (newWidth: number) => {
     setInputValue(newWidth.toString());
-    interfaceDisp.setPreviewWidth(newWidth);
+    interfaceOps.setPreviewWidth(newWidth);
     setSelectedViewport("custom");
   };
 
@@ -146,7 +149,7 @@ const Header = () => {
     const width = Number(viewportWidth);
     if (!isNaN(width)) {
       setInputValue(width.toString());
-      interfaceDisp.setPreviewWidth(width);
+      interfaceOps.setPreviewWidth(width);
       setSelectedViewport(viewportWidth);
     }
   };
@@ -162,7 +165,7 @@ const Header = () => {
       </div>
 
       {/* Preview width control in the middle */}
-      {interfaceState.isPreviewOpen && (
+      {isPreviewOpen && (
         <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-3">
           <div className="flex items-center">
             <span className="text-xs text-[var(--text-secondary)] mr-2">
@@ -222,8 +225,8 @@ const Header = () => {
           leftIcon={<Play size={20} />}
           size="sm"
           variant="primary"
-          className={interfaceState.isPreviewOpen ? "bg-[var(--accent)]" : ""}
-          onClick={() => interfaceDisp.togglePreview()}
+          className={isPreviewOpen ? "bg-[var(--accent)]" : ""}
+          onClick={() => interfaceOps.togglePreview()}
           data-tooltip-id="header-tooltip"
           data-tooltip-content="Preview"
         ></Button>

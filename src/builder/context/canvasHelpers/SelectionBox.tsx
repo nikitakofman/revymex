@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
+import { interfaceOps } from "../atoms/interface-store";
+import { selectOps } from "../atoms/select-store";
 
 interface SelectionBoxState {
   startX: number;
@@ -124,8 +126,8 @@ export const SelectionBox: React.FC = () => {
         isSelecting: true,
       });
 
-      dragDisp.clearSelection();
-      interfaceDisp.toggleLayers();
+      selectOps.clearSelection();
+      interfaceOps.toggleLayers();
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -175,11 +177,11 @@ export const SelectionBox: React.FC = () => {
         Math.abs(finalX - box.startX) < 5 && Math.abs(finalY - box.startY) < 5;
 
       if (isSmallMovement) {
-        dragDisp.clearSelection();
+        selectOps.clearSelection();
       } else {
         const selectedIds = dragState.tempSelectedIds;
         if (selectedIds.length > 0) {
-          dragDisp.setSelectedIds(selectedIds);
+          selectOps.setSelectedIds(selectedIds);
         }
       }
 

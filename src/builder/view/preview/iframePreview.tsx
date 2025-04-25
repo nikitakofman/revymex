@@ -1,8 +1,12 @@
 // src/builder/components/preview/IframePreview.tsx
 import React, { useRef, useEffect, useState } from "react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { useBuilder } from "@/builder/context/builderState";
 import { usePreview } from "./preview-context";
+import {
+  useIsPreviewOpen,
+  usePreviewWidth,
+  interfaceOps,
+} from "@/builder/context/atoms/interface-store";
 
 interface IframePreviewProps {
   nodes: Node[];
@@ -10,7 +14,10 @@ interface IframePreviewProps {
 }
 
 const IframePreview: React.FC<IframePreviewProps> = ({ nodes, viewport }) => {
-  const { interfaceState, interfaceDisp } = useBuilder();
+  // Get interface state from interface store
+  const isPreviewOpen = useIsPreviewOpen();
+  const storePreviewWidth = usePreviewWidth();
+
   // Get dynamic variant state from preview context
   const { dynamicVariants, originalNodes, transformNode } = usePreview();
 
@@ -38,9 +45,9 @@ const IframePreview: React.FC<IframePreviewProps> = ({ nodes, viewport }) => {
     return width;
   };
 
-  // Use the width from interfaceState if available, otherwise use viewport - 10 for safety
+  // Use the width from interface store if available, otherwise use viewport - 10 for safety
   const [previewWidth, setPreviewWidth] = useState(
-    getAdjustedWidth(interfaceState.previewWidth || viewport || 1440)
+    getAdjustedWidth(storePreviewWidth || viewport || 1440)
   );
 
   // Use refs to maintain current drag state without stale closures
@@ -52,17 +59,14 @@ const IframePreview: React.FC<IframePreviewProps> = ({ nodes, viewport }) => {
   // Keep track of the previous variant state to detect changes
   const previousDynamicVariantsRef = useRef(dynamicVariants);
 
-  // Listen for changes to previewWidth in the interfaceState
+  // Listen for changes to previewWidth in the interface store
   useEffect(() => {
-    if (
-      interfaceState.previewWidth &&
-      interfaceState.previewWidth !== previewWidth
-    ) {
+    if (storePreviewWidth && storePreviewWidth !== previewWidth) {
       // Always adjust the width to avoid exact viewport breakpoints
-      const adjustedWidth = getAdjustedWidth(interfaceState.previewWidth);
+      const adjustedWidth = getAdjustedWidth(storePreviewWidth);
       setPreviewWidth(adjustedWidth);
     }
-  }, [interfaceState.previewWidth, previewWidth, originalNodes]);
+  }, [storePreviewWidth, previewWidth, originalNodes]);
 
   useEffect(() => {
     // Listen for the "PREVIEW_READY" message from the iframe
@@ -223,14 +227,14 @@ const IframePreview: React.FC<IframePreviewProps> = ({ nodes, viewport }) => {
         const adjustedWidth = getAdjustedWidth(rawWidth);
 
         setPreviewWidth(adjustedWidth);
-        interfaceDisp.setPreviewWidth(adjustedWidth);
+        interfaceOps.setPreviewWidth(adjustedWidth);
       }
     };
 
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [viewport, interfaceDisp, originalNodes]);
+  }, [viewport, originalNodes]);
 
   // Send data to the iframe when it's ready and when data changes
   useEffect(() => {
@@ -343,7 +347,7 @@ const IframePreview: React.FC<IframePreviewProps> = ({ nodes, viewport }) => {
 
     setPreviewWidth(adjustedWidth);
     // Store the current width in the global state
-    interfaceDisp.setPreviewWidth(adjustedWidth);
+    interfaceOps.setPreviewWidth(adjustedWidth);
   };
 
   // Handle mouseup to end drag

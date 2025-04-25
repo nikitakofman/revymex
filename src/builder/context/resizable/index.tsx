@@ -7,6 +7,7 @@ import {
   useGetSelectedIds,
   selectOps,
 } from "../atoms/select-store";
+import { visualOps } from "../atoms/visual-store";
 
 /**
  * If SHIFT + direct edge, we snap movement to multiples of SHIFT_INCREMENT.
@@ -223,7 +224,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       setIsResizing(true);
 
       // Show the dimension overlay for the main node.
-      dragDisp.updateStyleHelper({
+      visualOps.updateStyleHelper({
         type: "dimensions",
         position: { x: e.clientX, y: e.clientY },
         dimensions: {
@@ -469,19 +470,19 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           finalStyleUpdates.set(nodeId, styleUpdate);
         });
 
-        // if (mainFinalWidth !== undefined && mainFinalHeight !== undefined) {
-        //   dragDisp.updateStyleHelper({
-        //     type: "dimensions",
-        //     position: { x: moveEvent.clientX, y: moveEvent.clientY },
-        //     dimensions: {
-        //       width: mainFinalWidth,
-        //       height: mainFinalHeight,
-        //       unit: isWidthPercent ? "%" : "px",
-        //       widthUnit: isWidthPercent ? "%" : "px",
-        //       heightUnit: isHeightPercent ? "%" : "px",
-        //     },
-        //   });
-        // }
+        if (mainFinalWidth !== undefined && mainFinalHeight !== undefined) {
+          visualOps.updateStyleHelper({
+            type: "dimensions",
+            position: { x: moveEvent.clientX, y: moveEvent.clientY },
+            dimensions: {
+              width: mainFinalWidth,
+              height: mainFinalHeight,
+              unit: isWidthPercent ? "%" : "px",
+              widthUnit: isWidthPercent ? "%" : "px",
+              heightUnit: isHeightPercent ? "%" : "px",
+            },
+          });
+        }
       };
 
       const handlePointerUp = () => {
@@ -490,7 +491,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           setNodeStyle(styleUpdate, [nodeId], true);
         });
 
-        dragDisp.hideStyleHelper();
+        visualOps.hideStyleHelper();
         stopRecording(sessionId);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);

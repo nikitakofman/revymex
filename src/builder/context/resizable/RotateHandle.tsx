@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { visualOps } from "../atoms/visual-store";
 
 const SNAP_ANGLE = 15; // Defines the increment for snapping (15 degrees)
 
@@ -110,7 +111,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
       });
     }
 
-    dragDisp.updateStyleHelper({
+    visualOps.updateStyleHelper({
       type: "rotate",
       position: { x: e.clientX, y: e.clientY },
       value: currentRotation,
@@ -125,7 +126,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
         ((currentMouseAngle - initialMouseAngleRef.current) * 180) / Math.PI;
 
       // Update UI helper
-      dragDisp.updateStyleHelper({
+      visualOps.updateStyleHelper({
         type: "rotate",
         position: { x: e.clientX, y: e.clientY },
         value: initialRotationRef.current + deltaAngleDeg,
@@ -177,7 +178,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
 
     const handleMouseUp = () => {
       setIsRotating(false);
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
       stopRecording(sessionId);
       initialRotationsRef.current.clear();
       window.removeEventListener("mousemove", handleMouseMove);

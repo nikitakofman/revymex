@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
+import { visualOps } from "../atoms/visual-store";
 
 const parseRotation = (rotate: string | undefined): number => {
   if (!rotate) return 0;
@@ -101,7 +102,7 @@ export const GapHandles = ({
     const isHorizontal =
       getComputedStyle(elementRef.current!).flexDirection === "row";
 
-    dragDisp.updateStyleHelper({
+    visualOps.updateStyleHelper({
       type: "gap",
       position: { x: e.clientX, y: e.clientY },
       value: currentGap,
@@ -118,7 +119,7 @@ export const GapHandles = ({
       const delta = isHorizontal ? deltaX : deltaY;
       const newGap = Math.max(0, currentGap + delta);
 
-      dragDisp.updateStyleHelper({
+      visualOps.updateStyleHelper({
         type: "gap",
         position: { x: moveEvent.clientX, y: moveEvent.clientY },
         value: newGap,
