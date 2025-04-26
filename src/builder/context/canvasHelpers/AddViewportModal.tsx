@@ -4,15 +4,18 @@ import { X } from "lucide-react";
 import { useBuilder } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 import { nanoid } from "nanoid";
+import { canvasOps } from "../atoms/canvas-interaction-store";
+import { useViewportModal, modalOps } from "../atoms/modal-store";
 
 const AddViewportModal: React.FC = () => {
-  const { nodeDisp, dragState, dragDisp, setIsEditingText } = useBuilder();
+  const { nodeDisp } = useBuilder();
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [widthValue, setWidthValue] = useState("768");
   const [nameValue, setNameValue] = useState("Tablet");
 
-  const { viewportModal } = dragState;
+  // Use the subscription hook for the viewport modal
+  const viewportModal = useViewportModal();
 
   // Handle clicks outside the modal
   useEffect(() => {
@@ -25,7 +28,7 @@ const AddViewportModal: React.FC = () => {
 
     const handleClickOutside = (e: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
-        dragDisp.hideViewportModal();
+        modalOps.hideViewportModal();
       }
     };
 
@@ -39,7 +42,7 @@ const AddViewportModal: React.FC = () => {
       clearTimeout(animationTimeout);
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [viewportModal.show, dragDisp]);
+  }, [viewportModal.show]);
 
   // Reset visibility when modal is hidden
   useEffect(() => {
@@ -51,7 +54,7 @@ const AddViewportModal: React.FC = () => {
   if (!viewportModal.show) return null;
 
   const handleClose = () => {
-    dragDisp.hideViewportModal();
+    modalOps.hideViewportModal();
   };
 
   const createViewport = () => {
@@ -132,8 +135,8 @@ const AddViewportModal: React.FC = () => {
               value={widthValue}
               onChange={(e) => setWidthValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              onSelect={(e) => setIsEditingText(true)}
-              onBlur={(e) => setIsEditingText(false)}
+              onSelect={(e) => canvasOps.setIsEditingText(true)}
+              onBlur={(e) => canvasOps.setIsEditingText(false)}
               min={1}
               className="w-[60px] h-7 px-2 text-xs 
                 bg-[var(--grid-line)] border border-[var(--control-border)] 
@@ -158,8 +161,8 @@ const AddViewportModal: React.FC = () => {
             type="text"
             value={nameValue}
             onChange={(e) => setNameValue(e.target.value)}
-            onSelect={() => setIsEditingText(true)}
-            onBlur={() => setIsEditingText(false)}
+            onSelect={() => canvasOps.setIsEditingText(true)}
+            onBlur={() => canvasOps.setIsEditingText(false)}
             onKeyDown={handleKeyDown}
             placeholder="Viewport name"
             className="w-[140px] h-7 px-2 text-xs 
@@ -189,7 +192,7 @@ const AddViewportModal: React.FC = () => {
       {/* Add this overlay div to block wheel panning */}
       <div
         className="fixed inset-0 bg-transparent z-[999]"
-        onClick={() => dragDisp.hideViewportModal()}
+        onClick={() => modalOps.hideViewportModal()}
         onContextMenu={(e) => e.preventDefault()}
       />
       {modalContent}

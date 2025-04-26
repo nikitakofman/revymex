@@ -152,6 +152,16 @@ export const useSelectNodeId = () => {
   return useAtomValue(selectNodeIdAtom, { store: selectStore });
 };
 
+// Imperative getter for selected IDs
+export function useGetSelectedIds() {
+  return useCallback(() => selectStore.get(_internalSelectedIdsAtom), []);
+}
+
+// Imperative getter for temporary selected IDs
+export function useGetTempSelectedIds() {
+  return useCallback(() => selectStore.get(_internalTempSelectedIdsAtom), []);
+}
+
 // Add a DEBUG function to help diagnose store issues
 export const debugSelectStore = () => {
   console.log({
@@ -170,10 +180,6 @@ selectStore.set(_internalSelectNodeIdAtom, null);
 selectStore.sub(_internalSelectedIdsAtom, () => {
   console.log("Selection changed:", selectStore.get(_internalSelectedIdsAtom));
 });
-
-export function useGetSelectedIds() {
-  return useCallback(() => selectStore.get(_internalSelectedIdsAtom), []);
-}
 
 export const selectionCountAtom = selectAtom(
   _internalSelectedIdsAtom,

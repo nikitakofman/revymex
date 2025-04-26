@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
+import { visualOps } from "../atoms/visual-store";
 
 interface ObjectPositionHandleProps {
   node: Node;
@@ -21,16 +23,10 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const {
-    setNodeStyle,
-    transform,
-    dragDisp,
-    startRecording,
-    stopRecording,
-    dragState,
-  } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
 
-  // Use the imperative getter function instead of subscription
+  const transform = useTransform();
+
   const getSelectedIds = useGetSelectedIds();
 
   const startPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -162,7 +158,7 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
     };
 
     const handleMouseUp = () => {
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
       stopRecording(sessionId);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);

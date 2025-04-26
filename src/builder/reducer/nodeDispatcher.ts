@@ -2,7 +2,6 @@ import { original, produce } from "immer";
 import { nanoid } from "nanoid";
 import { CSSProperties } from "react";
 import { findIndexWithinParent, findParentViewport } from "../context/utils";
-import { DragState } from "./dragDispatcher";
 
 export interface Position {
   x: number;
@@ -3662,7 +3661,7 @@ export class NodeDispatcher {
     node: Node,
     index: number,
     parentId: string | number | null | undefined,
-    dragState?: DragState
+    dynamicModeNodeId?: string | number | null
   ) {
     // First insert the node
     this.setState((prev) =>
@@ -3696,10 +3695,10 @@ export class NodeDispatcher {
       this._pendingVariantSyncs = new Set();
     }
 
-    if (dragState?.dynamicModeNodeId) {
+    if (dynamicModeNodeId) {
       this._pendingVariantSyncs.add({
         nodeId: node.id,
-        dynamicModeNodeId: dragState.dynamicModeNodeId,
+        dynamicModeNodeId: dynamicModeNodeId,
       });
     }
 

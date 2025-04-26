@@ -1,18 +1,26 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { useBuilder } from "../builderState";
 import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
 import { useDragStart } from "../dnd/useDragStart";
 import { selectOps } from "../atoms/select-store";
 import { useIsDragging } from "../atoms/drag-store";
 import { contextMenuOps } from "../atoms/context-menu-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
+import {
+  useDynamicModeNodeId,
+  useActiveViewportInDynamicMode,
+} from "../atoms/dynamic-store";
 
 const NameDisplay = ({ node }: { node: Node }) => {
-  const { nodeState, dragState, dragDisp, transform } = useBuilder();
+  const { nodeState } = useBuilder();
   const handleDragStart = useDragStart();
 
-  // Use the isDragging from the atom store
+  // Use atoms for state
+  const transform = useTransform();
   const isDraggingFromStore = useIsDragging();
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
 
   const { setSelectedIds } = selectOps;
 
@@ -25,7 +33,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
 
   // Get active viewport in dynamic mode
   const activeViewport = nodeState.nodes.find(
-    (nodes) => nodes.id === dragState.activeViewportInDynamicMode
+    (nodes) => nodes.id === activeViewportInDynamicMode
   );
 
   // Early returns for nodes we don't want to display names for
@@ -33,14 +41,14 @@ const NameDisplay = ({ node }: { node: Node }) => {
   if (isDraggingFromStore) return null; // Changed this line only
 
   // In normal mode (not dynamic mode), don't show names for nodes in viewports
-  if (!dragState.dynamicModeNodeId) {
+  if (!dynamicModeNodeId) {
     // Check if this node is inside a viewport
     const isInsideViewport = node.inViewport || !!node.parentId;
     if (isInsideViewport) return null;
   }
 
   // Changed: Now we're only filtering out non-top-level nodes in dynamic mode
-  if (dragState.dynamicModeNodeId && node.parentId !== null && !node.isDynamic)
+  if (dynamicModeNodeId && node.parentId !== null && !node.isDynamic)
     return null;
 
   // Determine name to display - always start with custom name or type
@@ -69,7 +77,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
   const shouldShowViewportSuffix = isBaseDynamicNode || isVariant;
 
   // FIXED: Only append viewport name for proper dynamic nodes and variants
-  if (dragState.dynamicModeNodeId && viewportName && shouldShowViewportSuffix) {
+  if (dynamicModeNodeId && viewportName && shouldShowViewportSuffix) {
     nameToDisplay = `${nameToDisplay} - ${viewportName}`;
   }
 
@@ -143,9 +151,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
         left: `0px`,
         pointerEvents: "auto", // Make sure clicks work
         textAlign: "left",
-        color: dragState.dynamicModeNodeId
-          ? "var(--accent-secondary)"
-          : "var(--accent)",
+        color: dynamicModeNodeId ? "var(--accent-secondary)" : "var(--accent)",
         whiteSpace: "nowrap",
       }}
       onMouseDown={handleMouseDown}

@@ -1,7 +1,18 @@
 // hooks/useCursorManager.ts
-import { useEffect, useState } from "react";
-import { useBuilder } from "@/builder/context/builderState";
-import { useGetIsDragging } from "../atoms/drag-store";
+import { useEffect, useRef } from "react";
+import { useGetIsDragging, useIsDragging } from "../atoms/drag-store";
+import {
+  canvasOps,
+  useGetIsFrameModeActive,
+  useGetIsMoveCanvasMode,
+  useGetIsMovingCanvas,
+  useGetIsResizing,
+  useGetIsRotating,
+  useGetIsTextModeActive,
+  useIsFrameModeActive,
+  useIsMoveCanvasMode,
+  useIsTextModeActive,
+} from "../atoms/canvas-interaction-store";
 
 // Define preventSelectStyle as a constant
 const preventSelectStyle = {
@@ -12,25 +23,60 @@ const preventSelectStyle = {
 } as const;
 
 export const useCursorManager = () => {
-  const {
-    isFrameModeActive,
-    isTextModeActive,
-    isMoveCanvasMode, // Add this from the BuilderContext
-    setIsFrameModeActive,
-    setIsTextModeActive,
-    dragState,
-    isMovingCanvas,
-    isResizing,
-    isRotating,
-  } = useBuilder();
+  // Use refs to track previous state to avoid unnecessary style updates
+  const prevCursorStyleRef = useRef("");
+  const prevSelectStyleRef = useRef({});
 
+  // Imperative getters for use in effects and event handlers
   const getIsDragging = useGetIsDragging();
+  const getMovingCanvas = useGetIsMovingCanvas();
+  const getIsMoveCanvasMode = useGetIsMoveCanvasMode();
+  const getIsRotating = useGetIsRotating();
+  const getIsFrameModeActive = useGetIsFrameModeActive();
+  const getIsTextModeActive = useGetIsTextModeActive();
+  const getIsResizing = useGetIsResizing();
+
+  // Subscription hooks for values returned from the hook
+  // Only subscribe to what we need for the return value
+  const isMoveCanvasMode = useIsMoveCanvasMode();
+  const isFrameModeActive = useIsFrameModeActive();
+  const isTextModeActive = useIsTextModeActive();
+  const isDragging = useIsDragging();
+
+  // Calculate drawing mode outside of render to avoid dependencies
+  const isDrawingMode = isFrameModeActive || isTextModeActive;
 
   // Set up the cursor and selection styles based on current modes
   useEffect(() => {
-    const isDragging = getIsDragging();
+    // Use a ref to track if effect is mounted to avoid memory leaks
+    const isMounted = { current: true };
+
+    // Function to update cursor style with debounce/optimization
+    const updateCursorStyle = (cursorStyle: string, selectStyle: object) => {
+      if (!isMounted.current) return;
+
+      // Only update if style actually changed
+      if (prevCursorStyleRef.current !== cursorStyle) {
+        document.body.style.cursor = cursorStyle;
+        prevCursorStyleRef.current = cursorStyle;
+      }
+
+      // Only update select style if it changed
+      const selectStyleStr = JSON.stringify(selectStyle);
+      if (JSON.stringify(prevSelectStyleRef.current) !== selectStyleStr) {
+        Object.assign(document.body.style, selectStyle);
+        prevSelectStyleRef.current = selectStyle;
+      }
+    };
+
     // Mouse move handler to check if we're over toolbars
     const handleMouseMove = (e: MouseEvent) => {
+      // Refresh values inside the event handler to ensure we have latest state
+      const isFrameModeActive = getIsFrameModeActive();
+      const isTextModeActive = getIsTextModeActive();
+      const isMoveCanvasMode = getIsMoveCanvasMode();
+      const isMovingCanvas = getMovingCanvas();
+
       const target = e.target as HTMLElement;
       const isOverToolbar =
         target.closest(".right-toolbar") ||
@@ -40,104 +86,109 @@ export const useCursorManager = () => {
         target.closest(".left-menu");
 
       if (isOverToolbar) {
-        // When over toolbars, use default cursor
-        document.body.style.cursor = "default";
+        updateCursorStyle("default", {});
       } else if (isFrameModeActive) {
-        document.body.style.cursor = "crosshair";
-        Object.assign(document.body.style, preventSelectStyle);
+        updateCursorStyle("crosshair", preventSelectStyle);
       } else if (isTextModeActive) {
-        document.body.style.cursor = "text";
-        Object.assign(document.body.style, preventSelectStyle);
+        updateCursorStyle("text", preventSelectStyle);
       } else if (isMoveCanvasMode) {
-        // When in move canvas mode but not actively moving
-        document.body.style.cursor = isMovingCanvas ? "grabbing" : "grab";
-        Object.assign(document.body.style, preventSelectStyle);
+        updateCursorStyle(
+          isMovingCanvas ? "grabbing" : "grab",
+          preventSelectStyle
+        );
       } else {
-        // Default cursor
-        document.body.style.cursor = "default";
-        document.body.style.userSelect = "";
-        document.body.style.WebkitUserSelect = "";
-        document.body.style.MozUserSelect = "";
-        document.body.style.msUserSelect = "";
+        updateCursorStyle("default", {
+          userSelect: "",
+          WebkitUserSelect: "",
+          MozUserSelect: "",
+          msUserSelect: "",
+        });
       }
     };
 
-    // Initial cursor setup based on current state
-    if (isFrameModeActive || isTextModeActive) {
-      // Apply initial drawing cursor, but it will be overridden
-      // by the mouse move handler if over toolbars
-      document.body.style.cursor = isFrameModeActive ? "crosshair" : "text";
-      Object.assign(document.body.style, preventSelectStyle);
-    } else if (isMoveCanvasMode) {
-      // Set grab cursor when in move canvas mode
-      document.body.style.cursor = isMovingCanvas ? "grabbing" : "grab";
-      Object.assign(document.body.style, preventSelectStyle);
-    } else if (isDragging) {
-      document.body.style.cursor = "move";
-      Object.assign(document.body.style, preventSelectStyle);
-    } else {
-      // Default cursor
-      document.body.style.cursor = "default";
-      document.body.style.userSelect = "";
-      document.body.style.WebkitUserSelect = "";
-      document.body.style.MozUserSelect = "";
-      document.body.style.msUserSelect = "";
-    }
+    // Initial cursor setup based on current state - use imperative getters
+    const initialSetup = () => {
+      const isDragging = getIsDragging();
+      const isMovingCanvas = getMovingCanvas();
+      const isMoveCanvasMode = getIsMoveCanvasMode();
+      const isFrameModeActive = getIsFrameModeActive();
+      const isTextModeActive = getIsTextModeActive();
+
+      if (isFrameModeActive) {
+        updateCursorStyle("crosshair", preventSelectStyle);
+      } else if (isTextModeActive) {
+        updateCursorStyle("text", preventSelectStyle);
+      } else if (isMoveCanvasMode) {
+        updateCursorStyle(
+          isMovingCanvas ? "grabbing" : "grab",
+          preventSelectStyle
+        );
+      } else if (isDragging) {
+        updateCursorStyle("move", preventSelectStyle);
+      } else {
+        updateCursorStyle("default", {
+          userSelect: "",
+          WebkitUserSelect: "",
+          MozUserSelect: "",
+          msUserSelect: "",
+        });
+      }
+    };
+
+    // Set initial cursor state
+    initialSetup();
 
     // Add mouse move listener
     window.addEventListener("mousemove", handleMouseMove);
 
     return () => {
-      // Cleanup styles when component unmounts
-      document.body.style.cursor = "default";
-      document.body.style.userSelect = "";
-      document.body.style.WebkitUserSelect = "";
-      document.body.style.MozUserSelect = "";
-      document.body.style.msUserSelect = "";
+      isMounted.current = false;
       window.removeEventListener("mousemove", handleMouseMove);
+
+      // Only reset if we're the last cursor manager
+      updateCursorStyle("default", {
+        userSelect: "",
+        WebkitUserSelect: "",
+        MozUserSelect: "",
+        msUserSelect: "",
+      });
     };
-  }, [
-    isFrameModeActive,
-    isTextModeActive,
-    isMoveCanvasMode, // Add this dependency
-    isMovingCanvas,
-    isResizing,
-    isRotating,
-    getIsDragging,
-  ]);
+  }, []); // Empty dependency array to run once
 
   // Handle keyboard shortcuts for drawing modes
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "f" && !e.repeat) {
-        setIsFrameModeActive(true);
-        setIsTextModeActive(false);
-      } else if (e.key.toLowerCase() === "t" && !e.repeat) {
-        setIsTextModeActive(true);
-        setIsFrameModeActive(false);
+      // Skip if there's active input elements
+      if (
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA" ||
+        document.activeElement?.isContentEditable
+      ) {
+        return;
       }
-    };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "f") {
-        setIsFrameModeActive(false);
-      } else if (e.key.toLowerCase() === "t") {
-        setIsTextModeActive(false);
+      // Using key press to toggle mode
+      if (e.key.toLowerCase() === "f" && !e.repeat) {
+        // Toggle frame mode
+        const currentFrameMode = getIsFrameModeActive();
+        if (!currentFrameMode) {
+          canvasOps.setIsFrameModeActive(true);
+          canvasOps.setIsTextModeActive(false);
+        }
+      } else if (e.key.toLowerCase() === "t" && !e.repeat) {
+        // Toggle text mode
+        const currentTextMode = getIsTextModeActive();
+        if (!currentTextMode) {
+          canvasOps.setIsTextModeActive(true);
+          canvasOps.setIsFrameModeActive(false);
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [setIsFrameModeActive, setIsTextModeActive]);
-
-  // Return any values that might be needed by components using this hook
-  return {
-    isDrawingMode: isFrameModeActive || isTextModeActive,
-    isMoveMode: isMoveCanvasMode,
-  };
+  }, []); // Empty dependency array
 };

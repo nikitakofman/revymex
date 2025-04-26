@@ -15,16 +15,12 @@ interface UseImageDropProps {
       inViewport: boolean
     ) => void;
   };
-  dragDisp: {
-    setSelectedIds: (ids: string[]) => void;
-  };
 }
 
 export function useImageDrop({
   containerRef,
   transform,
   nodeDisp,
-  dragDisp,
 }: UseImageDropProps) {
   const { setSelectedIds } = selectOps;
 
@@ -73,7 +69,7 @@ export function useImageDrop({
       nodeDisp.addNode(newNode, null, null, false);
       setSelectedIds([newNode.id]);
     },
-    [containerRef, transform, nodeDisp, dragDisp]
+    [containerRef, transform, nodeDisp]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {

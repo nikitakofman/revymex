@@ -161,7 +161,7 @@ const AlignmentGrid = ({ direction, distribution, alignment, onChange }) => {
 };
 
 export default function LayoutTool() {
-  const { setNodeStyle, nodeState, dragState } = useBuilder();
+  const { setNodeStyle } = useBuilder();
 
   // Track layout mode (Stack/Grid)
   const [layoutMode, setLayoutMode] = useState("flex");

@@ -30,22 +30,18 @@ import {
   useGetIsDragging,
 } from "@/builder/context/atoms/drag-store";
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
+import { useTransform } from "@/builder/context/atoms/canvas-interaction-store";
 
 export const Frame = ({ children, node }: ElementProps) => {
   console.log(`Frame re-rendering: ${node.id}`, new Date().getTime());
 
   const connect = useConnect();
 
-  const {
-    nodeDisp,
-    transform,
-    dragDisp,
-    setNodeStyle,
-    containerRef,
-    contentRef,
-  } = useBuilder();
+  const { nodeDisp, setNodeStyle, containerRef, contentRef } = useBuilder();
 
   const getIsDragging = useGetIsDragging();
+
+  const transform = useTransform();
 
   // Use per-node subscription for hover and selection state
   const isSelected = useNodeSelected(node.id);

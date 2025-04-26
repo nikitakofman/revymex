@@ -22,6 +22,7 @@ import {
   useNodeContextMenu,
   contextMenuOps,
 } from "../atoms/context-menu-store";
+import { modalOps } from "../atoms/modal-store";
 
 const Separator = () => (
   <div className="h-[1px] bg-[var(--border-light)] mx-2 my-1" />
@@ -68,7 +69,7 @@ const MenuItemComponent = ({
 };
 
 export const ContextMenu = () => {
-  const { dragDisp, nodeState, nodeDisp, setNodeStyle } = useBuilder();
+  const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
   const isWindows = navigator.platform.includes("Win");
@@ -162,7 +163,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             contextMenuOps.hideContextMenu();
-            dragDisp.showViewportModal({
+            modalOps.showViewportModal({
               x: nodeContextMenu?.x,
               y: nodeContextMenu?.y,
             });
@@ -174,7 +175,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             contextMenuOps.hideContextMenu();
-            dragDisp.showEditViewportModal(nodeContextMenu?.nodeId, {
+            modalOps.showEditViewportModal(nodeContextMenu?.nodeId, {
               x: nodeContextMenu?.x,
               y: nodeContextMenu?.y,
             });
@@ -427,7 +428,6 @@ export const ContextMenu = () => {
     handleCopy,
     handlePaste,
     handleDuplicate,
-    dragDisp,
     nodeDisp,
     setNodeStyle,
     getSelectedIds,

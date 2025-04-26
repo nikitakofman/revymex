@@ -13,6 +13,8 @@ import { useDragStart } from "../dnd/useDragStart";
 import { hasSkewTransform } from "../utils";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 import { dragOps } from "../atoms/drag-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 
 export const GripHandles = ({
   node,
@@ -21,8 +23,7 @@ export const GripHandles = ({
   node: Node;
   elementRef: RefObject<HTMLDivElement>;
 }) => {
-  const { dragDisp, dragState, nodeState, transform, contentRef } =
-    useBuilder();
+  const { nodeState, contentRef } = useBuilder();
   const handleDragStart = useDragStart();
   const [parentRect, setParentRect] = useState({
     top: 0,
@@ -33,8 +34,9 @@ export const GripHandles = ({
 
   const { clearSelection, addToSelection } = selectOps;
 
-  // Use the imperative getter instead of subscription
-  const getSelectedIds = useGetSelectedIds();
+  const dynamicModeNodeId = useDynamicModeNodeId();
+
+  const transform = useTransform();
 
   // Check if node has siblings (nodes with same parent)
   const hasSiblings = useMemo(() => {
@@ -88,7 +90,7 @@ export const GripHandles = ({
         });
       });
     },
-    [elementRef, dragDisp, handleDragStart]
+    [elementRef, handleDragStart]
   );
 
   const parentElement = parentNode
@@ -196,7 +198,7 @@ export const GripHandles = ({
     >
       <div
         className={`rounded-full cursor-grabbing ${
-          targetNode.isDynamic || dragState.dynamicModeNodeId
+          targetNode.isDynamic || dynamicModeNodeId
             ? `bg-[var(--accent-secondary)]`
             : `bg-[var(--accent)]`
         } flex items-center justify-center`}

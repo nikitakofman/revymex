@@ -7,6 +7,18 @@ import {
   handleMediaToFrameTransformation,
 } from "@/builder/context/utils";
 import { visualOps } from "@/builder/context/atoms/visual-store";
+import {
+  canvasOps,
+  useGetIsAdjustingBorderRadius,
+  useGetIsAdjustingGap,
+  useGetIsFrameModeActive,
+  useGetIsResizing,
+  useGetIsRotating,
+  useIsFrameModeActive,
+  useTransform,
+} from "@/builder/context/atoms/canvas-interaction-store";
+import { useGetDynamicModeNodeId } from "@/builder/context/atoms/drag-store";
+import { useGetActiveViewportInDynamicMode } from "@/builder/context/atoms/dynamic-store";
 
 interface DrawingBoxState {
   startX: number;
@@ -17,21 +29,32 @@ interface DrawingBoxState {
 }
 
 export const FrameCreator: React.FC = () => {
-  const {
-    containerRef,
-    nodeDisp,
-    transform,
-    nodeState,
-    isFrameModeActive,
-    setIsFrameModeActive,
-    dragDisp,
-    isResizing,
-    isRotating,
-    isAdjustingGap,
-    dragState,
-  } = useBuilder();
+  const { containerRef, nodeDisp, nodeState } = useBuilder();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
+
+  // Use subscription hook for rendering decisions
+  const transform = useTransform();
+  const isFrameModeActive = useIsFrameModeActive();
+
+  // Use getter hooks for event handlers
+  const getIsResizing = useGetIsResizing();
+  const getIsAdjustingGap = useGetIsAdjustingGap();
+  const getIsRotating = useGetIsRotating();
+  const getIsAdjustingBorderRadius = useGetIsAdjustingBorderRadius();
+  const getIsFrameModeActive = useGetIsFrameModeActive();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+  const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
+
+  // Check if we can enable frame creation mode
+  const canCreateFrame = () => {
+    return (
+      !getIsResizing() &&
+      !getIsAdjustingGap() &&
+      !getIsRotating() &&
+      !getIsAdjustingBorderRadius()
+    );
+  };
 
   useEffect(() => {
     const canvas = containerRef.current;
@@ -55,9 +78,14 @@ export const FrameCreator: React.FC = () => {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
+      // Get latest state values using getters
+      const isFrameModeActive = getIsFrameModeActive();
+
+      // Early return if frame mode isn't active
       if (!isFrameModeActive) return;
 
-      if (isResizing || isRotating || isAdjustingGap) return;
+      // Check if we can create a frame
+      if (!canCreateFrame()) return;
 
       targetFrameRef.current = findTargetFrame(e);
 
@@ -114,6 +142,9 @@ export const FrameCreator: React.FC = () => {
     const handleMouseUp = (e: MouseEvent) => {
       if (!box?.isDrawing) return;
 
+      const dynamicModeNodeId = getDynamicModeNodeId();
+      const activeViewportInDynamicMode = getActiveViewportInDynamicMode();
+
       const rect = canvas.getBoundingClientRect();
       const finalX = e.clientX - rect.left;
       const finalY = e.clientY - rect.top;
@@ -125,8 +156,8 @@ export const FrameCreator: React.FC = () => {
       const height = Math.abs(finalY - box.startY);
 
       // Check if we're in dynamic mode
-      const inDynamicMode = !!dragState.dynamicModeNodeId;
-      const dynamicParentId = dragState.dynamicModeNodeId;
+      const inDynamicMode = !!dynamicModeNodeId;
+      const dynamicParentId = dynamicModeNodeId;
 
       // Variables to track encapsulated dynamic elements and frame info
       let encapsulatedDynamicElements = [];
@@ -345,7 +376,7 @@ export const FrameCreator: React.FC = () => {
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
             ...(inDynamicMode && {
-              dynamicViewportId: dragState.activeViewportInDynamicMode,
+              dynamicViewportId: activeViewportInDynamicMode,
             }),
           };
 
@@ -429,7 +460,7 @@ export const FrameCreator: React.FC = () => {
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
             ...(inDynamicMode && {
-              dynamicViewportId: dragState.activeViewportInDynamicMode,
+              dynamicViewportId: activeViewportInDynamicMode,
             }),
           };
 
@@ -505,7 +536,7 @@ export const FrameCreator: React.FC = () => {
             ...(inDynamicMode && {
               dynamicParentId,
               dynamicPosition: { x: canvasX, y: canvasY },
-              dynamicViewportId: dragState.activeViewportInDynamicMode,
+              dynamicViewportId: activeViewportInDynamicMode,
             }),
           };
 
@@ -541,7 +572,7 @@ export const FrameCreator: React.FC = () => {
         }
       }
 
-      if (!dragState.dynamicModeNodeId) {
+      if (!dynamicModeNodeId) {
         // Sync viewports to create duplicates
         nodeDisp.syncViewports();
 
@@ -645,7 +676,7 @@ export const FrameCreator: React.FC = () => {
       // Reset state
       setBox(null);
       targetFrameRef.current = null;
-      setIsFrameModeActive(false);
+      canvasOps.setIsFrameModeActive(false);
 
       window.dispatchEvent(new Event("resize"));
     };
@@ -702,21 +733,22 @@ export const FrameCreator: React.FC = () => {
   }, [
     containerRef,
     box?.isDrawing,
-    isFrameModeActive,
     transform,
     nodeDisp,
     nodeState.nodes,
-    setIsFrameModeActive,
-    dragDisp,
-    isResizing,
-    isRotating,
-    isAdjustingGap,
+
+    getIsResizing,
+    getIsRotating,
+    getIsAdjustingGap,
+    getIsAdjustingBorderRadius,
+    getIsFrameModeActive,
     box?.startX,
     box?.startY,
-    dragState.dynamicModeNodeId,
-    dragState.activeViewportInDynamicMode,
+    getDynamicModeNodeId,
+    getActiveViewportInDynamicMode,
   ]);
 
+  // Early return if not in frame mode or not drawing
   if (!box?.isDrawing) return null;
 
   const left = Math.min(box.startX, box.currentX);

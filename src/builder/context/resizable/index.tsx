@@ -8,6 +8,17 @@ import {
   selectOps,
 } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
+import {
+  canvasOps,
+  useIsDraggingChevrons,
+  useIsEditingText,
+  useIsFontSizeHandleActive,
+  useIsMiddleMouseDown,
+  useIsMoveCanvasMode,
+  useIsResizing,
+  useIsTextMenuOpen,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 
 /**
  * If SHIFT + direct edge, we snap movement to multiples of SHIFT_INCREMENT.
@@ -91,27 +102,21 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   node,
   children,
 }) => {
-  const {
-    dragState,
-    transform,
-    setNodeStyle,
-    dragDisp,
-    isResizing,
-    setIsResizing,
-    startRecording,
-    stopRecording,
-    isMoveCanvasMode,
-    isEditingText,
-    isFontSizeHandleActive,
-    isMiddleMouseDown,
-    isDraggingChevrons,
-    isTextMenuOpen,
-  } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
+
+  const transform = useTransform();
+  const isMiddleMouseDown = useIsMiddleMouseDown();
+  const isResizing = useIsResizing();
+  const isDraggingChevrons = useIsDraggingChevrons();
+  const isEditingText = useIsEditingText();
+  const isTextMenuOpen = useIsTextMenuOpen();
+  const isFontSizeHandleActive = useIsFontSizeHandleActive();
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
 
   // Use the node-specific subscription for this node's selection state
   const isSelected = useNodeSelected(node.id);
+  const isMoveCanvasMode = useIsMoveCanvasMode();
 
   // Use the imperative getter for selected IDs - no subscription
   const getSelectedIds = useGetSelectedIds();
@@ -221,7 +226,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       let startX = e.clientX;
       let startY = e.clientY;
 
-      setIsResizing(true);
+      canvasOps.setIsResizing(true);
 
       // Show the dimension overlay for the main node.
       visualOps.updateStyleHelper({
@@ -495,7 +500,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         stopRecording(sessionId);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
-        setIsResizing(false);
+        canvasOps.setIsResizing(false);
         aspectRatioRef.current.primaryAxis = null;
         initialSizesRef.current = {};
       };
@@ -506,11 +511,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     [
       node,
       transform.scale,
-      dragDisp,
       setNodeStyle,
       startRecording,
       stopRecording,
-      setIsResizing,
+      canvasOps.setIsResizing,
       isLocked,
       getSelectedIds, // Add getSelectedIds as a dependency
     ]

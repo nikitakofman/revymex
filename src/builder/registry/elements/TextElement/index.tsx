@@ -21,7 +21,17 @@ import { Plugin, PluginKey } from "prosemirror-state";
 import TextMenu from "./TextMenu";
 import { findParentViewport } from "@/builder/context/utils";
 import { useNodeSelected } from "@/builder/context/atoms/select-store";
-import { useGetIsDragging } from "@/builder/context/atoms/drag-store";
+import {
+  useGetDynamicModeNodeId,
+  useGetIsDragging,
+} from "@/builder/context/atoms/drag-store";
+import {
+  canvasOps,
+  useGetIsMovingCanvas,
+  useGetIsResizing,
+  useTransform,
+} from "@/builder/context/atoms/canvas-interaction-store";
+import { dynamicOps } from "@/builder/context/atoms/dynamic-store";
 
 // Add this extension to your list of extensions in TextElement.jsx
 
@@ -366,20 +376,13 @@ const TextElement = ({ node }: ElementProps) => {
 
   const getIsDragging = useGetIsDragging();
   const connect = useConnect();
-  const {
-    setNodeStyle,
-    transform,
-    contentRef,
-    isMovingCanvas,
-    isResizing,
-    dragState,
-    dragDisp,
-    isEditingText,
-    setIsEditingText,
-    nodeState,
-  } = useBuilder();
+  const { setNodeStyle, contentRef, nodeState } = useBuilder();
 
   const isNodeSelected = useNodeSelected(node.id);
+  const transform = useTransform();
+  const getIsMovingCanvas = useGetIsMovingCanvas();
+  const getResizing = useGetIsResizing();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   const getParentViewportWidth = useCallback(() => {
     const parentViewportId = findParentViewport(node.parentId, nodeState.nodes);
@@ -720,7 +723,7 @@ const TextElement = ({ node }: ElementProps) => {
 
       // Exit edit mode
       setIsEditing(false);
-      setIsEditingText(false);
+      canvasOps.setIsEditingText(false);
       setHasSelection(false);
       setInitialEditComplete(false);
 
@@ -732,7 +735,7 @@ const TextElement = ({ node }: ElementProps) => {
   }, [
     isNodeSelected,
     editor,
-    setIsEditingText,
+    canvasOps.setIsEditingText,
     isEditing,
     displayUnit,
     convertHtmlPxToVw,
@@ -1169,7 +1172,7 @@ const TextElement = ({ node }: ElementProps) => {
         window.getSelection()?.removeAllRanges();
         setHasSelection(false);
         setIsEditing(false);
-        setIsEditingText(false);
+        canvasOps.setIsEditingText(false);
         setInitialEditComplete(false);
         editor.setEditable(false);
       }
@@ -1179,7 +1182,7 @@ const TextElement = ({ node }: ElementProps) => {
       node.id,
       node.style.text,
       setNodeStyle,
-      setIsEditingText,
+      canvasOps.setIsEditingText,
       isEditing,
       displayUnit,
       convertHtmlPxToVw,
@@ -1199,6 +1202,9 @@ const TextElement = ({ node }: ElementProps) => {
   }, [handleClickOutside]);
 
   const shouldShowMenu = useCallback(() => {
+    const isMovingCanvas = getIsMovingCanvas();
+    const isResizing = getResizing();
+
     const isDragging = getIsDragging();
     const isTextNode = node.type === "text";
     return (
@@ -1212,8 +1218,8 @@ const TextElement = ({ node }: ElementProps) => {
   }, [
     isNodeSelected,
     node.type,
-    isMovingCanvas,
-    isResizing,
+    getIsMovingCanvas,
+    getResizing,
     getIsDragging,
     hasSelection,
     isEditing,
@@ -1358,8 +1364,9 @@ const TextElement = ({ node }: ElementProps) => {
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (node.isDynamic && dragState.dynamicModeNodeId === null) {
-        dragDisp.setDynamicModeNodeId(node.id);
+      const dynamicModeNodeId = getDynamicModeNodeId();
+      if (node.isDynamic && dynamicModeNodeId === null) {
+        dynamicOps.setDynamicModeNodeId(node.id);
       } else {
         if (isNodeSelected) {
           e.stopPropagation();
@@ -1432,7 +1439,7 @@ const TextElement = ({ node }: ElementProps) => {
 
               // Enter edit mode
               setIsEditing(true);
-              setIsEditingText(true);
+              canvasOps.setIsEditingText(true);
               setInitialEditComplete(false);
 
               // Use a timeout to focus the editor after React has updated the DOM
@@ -1463,7 +1470,7 @@ const TextElement = ({ node }: ElementProps) => {
                 );
                 editor.setEditable(true);
                 setIsEditing(true);
-                setIsEditingText(true);
+                canvasOps.setIsEditingText(true);
 
                 // Focus after a brief delay
                 setTimeout(() => {
@@ -1481,12 +1488,11 @@ const TextElement = ({ node }: ElementProps) => {
       isEditing,
       initialEditComplete,
       editor,
-      dragState.dynamicModeNodeId,
-      dragDisp,
+      getDynamicModeNodeId,
       extractVwValue,
       convertHtmlVwToPx,
       getParentViewportWidth,
-      setIsEditingText,
+      canvasOps.setIsEditingText,
       safeSimulateSelection,
     ]
   );
@@ -1910,13 +1916,13 @@ const TextElement = ({ node }: ElementProps) => {
           onClick={(e) => {
             if (isEditing && isNodeSelected) {
               e.stopPropagation();
-              setIsEditingText(true);
+              canvasOps.setIsEditingText(true);
               preventExitRef.current = true;
             }
           }}
           onMouseDown={(e) => {
             if (isEditing && isNodeSelected) {
-              setIsEditingText(true);
+              canvasOps.setIsEditingText(true);
               e.stopPropagation();
               preventExitRef.current = true;
             }

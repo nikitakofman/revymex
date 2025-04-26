@@ -3,6 +3,11 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
+import {
+  canvasOps,
+  useIsRotating,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 
 const SNAP_ANGLE = 15; // Defines the increment for snapping (15 degrees)
 
@@ -24,18 +29,11 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const {
-    setNodeStyle,
-    transform,
-    setIsRotating,
-    isRotating,
-    dragDisp,
-    startRecording,
-    stopRecording,
-    nodeState,
-  } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording, nodeState } =
+    useBuilder();
 
-  // Use the selectedIds hook from our select store
+  const transform = useTransform();
+
   const currentSelectedIds = useGetSelectedIds();
 
   const initialMouseAngleRef = useRef<number>(0);
@@ -74,7 +72,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     e.stopPropagation();
 
     const sessionId = startRecording();
-    setIsRotating(true);
+    canvasOps.setIsRotating(true);
 
     const center = getElementCenter();
     const dx = e.clientX - center.x;
@@ -177,7 +175,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     };
 
     const handleMouseUp = () => {
-      setIsRotating(false);
+      canvasOps.setIsRotating(false);
       visualOps.hideStyleHelper();
       stopRecording(sessionId);
       initialRotationsRef.current.clear();
@@ -205,6 +203,8 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   const handleSize = 8 / transform.scale;
   const handleOffset = 20 / transform.scale;
   const borderWidth = 1 / transform.scale;
+
+  const isRotating = useIsRotating();
 
   return (
     <div

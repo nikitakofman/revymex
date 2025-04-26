@@ -16,6 +16,7 @@ import {
   useGetSelectedIds,
   useSelectedIds,
 } from "@/builder/context/atoms/select-store";
+import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -34,7 +35,9 @@ const getToolTypes = (elements: Node[]) => {
 };
 
 const ElementToolbar = () => {
-  const { dragState, nodeState, setNodeStyle } = useBuilder();
+  const { nodeState, setNodeStyle } = useBuilder();
+
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Replace subscription with imperative getter
   const selectedIds = useSelectedIds();
@@ -88,7 +91,7 @@ const ElementToolbar = () => {
 
   return (
     <div className="w-64 fixed right-toolbar scrollbar-hide pt-3 border-l pb-[80px] border-[var(--border-light)] right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]">
-      {dragState.dynamicModeNodeId && (
+      {dynamicModeNodeId && (
         <>
           <InteractionsTool />
           <ToolbarDivider />

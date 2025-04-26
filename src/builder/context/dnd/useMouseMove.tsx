@@ -25,11 +25,16 @@ import {
   useGetDraggedNode,
   useGetDragSource,
   useGetDropInfo,
+  useGetDynamicModeNodeId,
   useGetIsDragging,
   useGetNodeDimensions,
   useGetPlaceholderInfo,
 } from "../atoms/drag-store";
 import { visualOps } from "../atoms/visual-store";
+import {
+  useGetTransform,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 
 // Helper to compute the furthest (root) container id for a given parent id.
 const getRootContainerId = (
@@ -47,18 +52,10 @@ const getRootContainerId = (
 };
 
 export const useMouseMove = () => {
-  const {
-    dragState,
-    transform,
-    contentRef,
-    nodeDisp,
-    dragDisp,
-    nodeState,
-    containerRef,
-    setNodeStyle,
-    draggingOverCanvasRef,
-    hasLeftViewportRef,
-  } = useBuilder();
+  const { contentRef, nodeDisp, nodeState, containerRef, hasLeftViewportRef } =
+    useBuilder();
+
+  const currentTransform = useGetTransform();
 
   const getDraggedNode = useGetDraggedNode();
 
@@ -75,6 +72,8 @@ export const useMouseMove = () => {
   const getPlaceholderInfo = useGetPlaceholderInfo();
 
   const getNodeDimensions = useGetNodeDimensions();
+
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   const { startAutoScroll, updateScrollPosition, stopAutoScroll } =
     useAutoScroll();
@@ -260,6 +259,8 @@ export const useMouseMove = () => {
 
     const nodeDimensions = getNodeDimensions();
 
+    const dynamicModeNodeId = getDynamicModeNodeId();
+
     if (isDragging) {
       dragOps.setLastMousePosition(e.clientX, e.clientY);
     }
@@ -278,6 +279,8 @@ export const useMouseMove = () => {
       }
       return;
     }
+
+    const transform = currentTransform();
 
     const draggedNode = currentDraggedNode.node;
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -319,6 +322,7 @@ export const useMouseMove = () => {
           e.clientX <= parentRect.right &&
           e.clientY >= parentRect.top &&
           e.clientY <= parentRect.bottom;
+        const transform = currentTransform();
 
         if (isOverParent) {
           // Calculate position relative to parent frame
@@ -504,7 +508,7 @@ export const useMouseMove = () => {
           (n) => String(n.id) === targetId
         );
         const nodeType = dropTargetElement.getAttribute("data-node-type");
-        if (targetNode?.isDynamic && !dragState.dynamicModeNodeId) {
+        if (targetNode?.isDynamic && !dynamicModeNodeId) {
           console.log(" drop info 3 ?");
 
           dragOps.setDropInfo(null, null, canvasX, canvasY);
@@ -940,7 +944,7 @@ export const useMouseMove = () => {
           (child) => child.parentId === frameId && !isAbsoluteInFrame(child)
         );
         const frameNode = nodeState.nodes.find((n) => n.id === frameId);
-        if (frameNode?.isDynamic && !dragState.dynamicModeNodeId) {
+        if (frameNode?.isDynamic && !dynamicModeNodeId) {
           console.log(" drop info 11 ?");
 
           dragOps.setDropInfo(null, null, canvasX, canvasY);

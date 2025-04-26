@@ -35,6 +35,8 @@ import {
   useGetSelectedIds,
 } from "@/builder/context/atoms/select-store";
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
+import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;
@@ -42,22 +44,17 @@ interface TreeNodeProps {
 }
 
 const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
-  const {
-    dragState,
-    dragDisp,
-    nodeDisp,
-    setNodeStyle,
-    nodeState,
-    setIsEditingText,
-  } = useBuilder();
+  const { nodeDisp, setNodeStyle, nodeState } = useBuilder();
 
   const currentSelectedIds = useGetSelectedIds();
 
   const { addToSelection, selectNode } = selectOps;
 
-  const isDynamicMode = !!dragState.dynamicModeNodeId;
-  const isDynamicNode = node.id === dragState.dynamicModeNodeId;
-  const isDynamicChild = node.dynamicParentId === dragState.dynamicModeNodeId;
+  const dynamicModeNodeId = useDynamicModeNodeId();
+
+  const isDynamicMode = !!dynamicModeNodeId;
+  const isDynamicNode = node.id === dynamicModeNodeId;
+  const isDynamicChild = node.dynamicParentId === dynamicModeNodeId;
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [customName, setCustomName] = useState(node.customName || node.type);
@@ -130,11 +127,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     if (e.key === "Enter") {
       if (customName.trim() !== "") {
         // Pass the dynamic mode state to setCustomName
-        nodeDisp.setCustomName(
-          node.id,
-          customName.trim(),
-          !!dragState.dynamicModeNodeId
-        );
+        nodeDisp.setCustomName(node.id, customName.trim(), !!dynamicModeNodeId);
       }
       setIsEditing(false);
     } else if (e.key === "Escape") {
@@ -146,14 +139,10 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const handleBlur = () => {
     if (customName.trim() !== "") {
       // Pass the dynamic mode state to setCustomName
-      nodeDisp.setCustomName(
-        node.id,
-        customName.trim(),
-        !!dragState.dynamicModeNodeId
-      );
+      nodeDisp.setCustomName(node.id, customName.trim(), !!dynamicModeNodeId);
     }
     setIsEditing(false);
-    setIsEditingText(false);
+    canvasOps.setIsEditingText(false);
   };
 
   const handleToggleVisibility = (e: React.MouseEvent) => {
@@ -547,7 +536,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
         setIsExpanded(true);
 
         // Sync viewports if necessary
-        if (!dragState.dynamicModeNodeId) {
+        if (!dynamicModeNodeId) {
           nodeDisp.syncViewports();
         }
 
@@ -924,7 +913,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
-            onSelect={() => setIsEditingText(true)}
+            onSelect={() => canvasOps.setIsEditingText(true)}
             className={cn(
               "text-xs font-medium bg-transparent border border-[var(--border-light)] rounded ml-1 py-1 flex-1 outline-none box-border",
               isSelected ? "text-white" : "text-[var(--text-primary)]",

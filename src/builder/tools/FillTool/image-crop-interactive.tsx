@@ -4,7 +4,7 @@ import { Crop, RotateCcw } from "lucide-react";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ImageCropInteractive = ({ selectedNode }) => {
-  const { setNodeStyle, dragState } = useBuilder();
+  const { setNodeStyle } = useBuilder();
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const cropBoxRef = useRef(null);

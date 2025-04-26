@@ -8,24 +8,33 @@ import {
 import { nanoid } from "nanoid";
 import { createPlaceholder } from "./createPlaceholder";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
-import { dragOps, useIsDragging } from "../atoms/drag-store";
+import {
+  dragOps,
+  useGetDynamicModeNodeId,
+  useGetRecordingSessionId,
+  useIsDragging,
+} from "../atoms/drag-store";
+import {
+  useIsMiddleMouseDown,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 
 export const useDragStart = () => {
   const {
-    dragDisp,
     nodeDisp,
-    transform,
     contentRef,
     nodeState,
-    dragState,
     setNodeStyle,
     startRecording,
     stopRecording,
     selectedIdsRef,
-    isMiddleMouseDown,
   } = useBuilder();
 
+  const transform = useTransform();
+
   const currentSelectedIds = useGetSelectedIds();
+  const isMiddleMouseDown = useIsMiddleMouseDown();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   const getDynamicParentNode = (node: Node): Node | null => {
     let currentNode = node;
@@ -39,16 +48,18 @@ export const useDragStart = () => {
   };
 
   const isDragging = useIsDragging();
+  const getRecordingSessionId = useGetRecordingSessionId();
 
   if (isMiddleMouseDown) return null;
 
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
+    const recordingSessionId = getRecordingSessionId();
     // Check if the click is on a resize handle or its parent resize handle container
-    if (dragState.recordingSessionId && !isDragging) {
+    if (recordingSessionId && !isDragging) {
       console.warn(
         "Inconsistent state detected: recordingSessionId exists but not dragging. Resetting state."
       );
-      stopRecording(dragState.recordingSessionId);
+      stopRecording(recordingSessionId);
       dragOps.resetDragState();
       // Clean up any dangling placeholders
       const placeholders = nodeState.nodes.filter(
@@ -126,7 +137,7 @@ export const useDragStart = () => {
     dragOps.setIsDragging(true);
 
     const sessionId = startRecording();
-    dragDisp.setRecordingSessionId(sessionId);
+    dragOps.setRecordingSessionId(sessionId);
 
     if (fromToolbarType) {
       const newNode: Node = {
@@ -257,7 +268,9 @@ export const useDragStart = () => {
       return;
     }
 
-    if (!dragState.dynamicModeNodeId) {
+    const dynamicModeNodeId = getDynamicModeNodeId();
+
+    if (!dynamicModeNodeId) {
       const dynamicParent = getDynamicParentNode(node);
       if (dynamicParent && !node.isDynamic) {
         node = dynamicParent;

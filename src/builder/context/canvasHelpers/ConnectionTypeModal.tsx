@@ -4,15 +4,21 @@ import { X } from "lucide-react";
 import { useBuilder } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
+import { useGetDynamicModeNodeId } from "../atoms/dynamic-store";
+import { useConnectionTypeModal, modalOps } from "../atoms/modal-store";
 
 const ConnectionTypeModal: React.FC = () => {
-  const { dragState, dragDisp, nodeDisp, nodeState } = useBuilder();
-  const { connectionTypeModal } = dragState;
+  const { nodeDisp, nodeState } = useBuilder();
+
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = React.useState(false);
 
-  // Replace subscription with imperative getter
+  // Use the subscription hook for rendering
+  const connectionTypeModal = useConnectionTypeModal();
+
+  // Use imperative getters for event handlers
   const getSelectedIds = useGetSelectedIds();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   // Handle clicks outside the modal
   useEffect(() => {
@@ -119,12 +125,14 @@ const ConnectionTypeModal: React.FC = () => {
               `Creating responsive connection: ${sourceCounterpartId} -> ${matchingTargetId} (${connectionType})`
             );
 
+            const dynamicModeNodeId = getDynamicModeNodeId();
+
             // Create the connection in this viewport
             nodeDisp.addUniqueDynamicConnection(
               sourceCounterpartId,
               matchingTargetId,
               connectionType,
-              dragState.dynamicModeNodeId
+              dynamicModeNodeId
             );
           }
         }
@@ -133,7 +141,7 @@ const ConnectionTypeModal: React.FC = () => {
     [
       nodeState.nodes,
       findResponsiveCounterparts,
-      dragState.dynamicModeNodeId,
+      getDynamicModeNodeId,
       nodeDisp,
     ]
   );
@@ -147,12 +155,13 @@ const ConnectionTypeModal: React.FC = () => {
     // Before closing, make sure the source node remains selected
     if (
       connectionTypeModal.sourceId &&
-      !selectedIds.includes(connectionTypeModal.sourceId)
+      !selectedIds.includes(connectionTypeModal.sourceId.toString())
     ) {
       selectOps.selectNode(connectionTypeModal.sourceId);
     }
 
-    dragDisp.hideConnectionTypeModal();
+    // Use the modal ops to hide the modal
+    modalOps.hideConnectionTypeModal();
   };
 
   const handleSelectConnectionType = (
@@ -160,13 +169,14 @@ const ConnectionTypeModal: React.FC = () => {
   ) => {
     const { sourceId, targetId } = connectionTypeModal;
 
+    const dynamicModeNodeId = getDynamicModeNodeId();
     if (sourceId && targetId) {
       // Create the primary connection
       nodeDisp.addUniqueDynamicConnection(
         sourceId,
         targetId,
         type,
-        dragState.dynamicModeNodeId
+        dynamicModeNodeId
       );
 
       // Then cascade the connection to all responsive counterparts

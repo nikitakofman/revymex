@@ -8,19 +8,23 @@ import {
   dragOps,
   useGetAdditionalDraggedNodes,
   useGetDraggedNode,
+  useGetDynamicModeNodeId,
   useGetIsDragging,
   useGetNodeDimensions,
 } from "../atoms/drag-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
 
 export const useNodeActions = () => {
-  const { dragState, nodeState, dragDisp, nodeDisp, transform, containerRef } =
-    useBuilder();
+  const { nodeState, nodeDisp, containerRef } = useBuilder();
 
   const currentSelectedIds = useGetSelectedIds();
   const getIsDragging = useGetIsDragging();
   const getDraggedNode = useGetDraggedNode();
   const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
   const getNodeDimensions = useGetNodeDimensions();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+
+  const transform = useTransform();
 
   const { clearSelection, addToSelection, selectNode } = selectOps;
 
@@ -98,6 +102,7 @@ export const useNodeActions = () => {
   // Delete nodes action
   const handleDelete = () => {
     const selectedIds = currentSelectedIds();
+    const dynamicModeNodeId = getDynamicModeNodeId();
 
     if (!selectedIds?.length) return;
 
@@ -116,7 +121,7 @@ export const useNodeActions = () => {
     });
 
     // NEW: Check if we're in dynamic mode - if so, skip the shared ID lookup
-    const isInDynamicMode = !!dragState.dynamicModeNodeId;
+    const isInDynamicMode = !!dynamicModeNodeId;
 
     // Step 2: Check if any nodes are in viewports and not in dynamic mode
     const nodesInViewport =
@@ -183,13 +188,12 @@ export const useNodeActions = () => {
 
   // Duplicate nodes action
   const findTopmostParentInDynamicFamily = (node: Node) => {
+    const dynamicModeNodeId = getDynamicModeNodeId();
     // If not in dynamic mode, return null
-    if (!dragState.dynamicModeNodeId) return null;
+    if (!dynamicModeNodeId) return null;
 
     // Get the dynamic family ID
-    const familyNode = nodeState.nodes.find(
-      (n) => n.id === dragState.dynamicModeNodeId
-    );
+    const familyNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
     const familyId = familyNode?.dynamicFamilyId;
     if (!familyId) return null;
 
@@ -236,8 +240,9 @@ export const useNodeActions = () => {
   // Updated handleDuplicate function that handles dynamic mode
   const handleDuplicate = (fromContextMenu = false) => {
     const isDragging = getIsDragging();
-
     const draggedNode = getDraggedNode();
+    const dynamicModeNodeId = getDynamicModeNodeId();
+
     try {
       // When duplicating from context menu, use selected nodes
       // When duplicating from drag, use dragged nodes
@@ -266,7 +271,7 @@ export const useNodeActions = () => {
       const mainNode = nodesToDuplicate[0];
 
       // Check if we're in dynamic mode
-      const isInDynamicMode = !!dragState.dynamicModeNodeId;
+      const isInDynamicMode = !!dynamicModeNodeId;
 
       // CASE 1: Duplicating a dynamic element in normal canvas mode (not in dynamic mode)
       // We'll do this regardless of fromContextMenu
@@ -343,9 +348,9 @@ export const useNodeActions = () => {
         }
       }
 
-      dragDisp.setDuplicatedFromAlt(true);
+      dragOps.setDuplicatedFromAlt(true);
       setTimeout(() => {
-        dragDisp.setDuplicatedFromAlt(false);
+        dragOps.setDuplicatedFromAlt(false);
       }, 0);
     } catch (error) {
       console.error("Error during duplication:", error);
@@ -904,6 +909,8 @@ export const useNodeActions = () => {
   }
 
   const handleContextMenuCanvasDuplication = (nodesToDuplicate: Node[]) => {
+    const dynamicModeNodeId = getDynamicModeNodeId();
+
     const allClonedNodesByNode = new Map<string, Node[]>();
     const rootClonedNodes = new Map<string, Node>();
     let firstDuplicateId = null;
@@ -943,7 +950,7 @@ export const useNodeActions = () => {
     for (const [originalNodeId, rootClone] of rootClonedNodes.entries()) {
       const allClones = allClonedNodesByNode.get(originalNodeId) || [];
 
-      nodeDisp.insertAtIndex(rootClone, 0, null, dragState);
+      nodeDisp.insertAtIndex(rootClone, 0, null, dynamicModeNodeId);
 
       const originalNode = nodeState.nodes.find((n) => n.id === originalNodeId);
       if (originalNode) {
@@ -955,7 +962,12 @@ export const useNodeActions = () => {
         (clone) => clone.id !== rootClone.id
       );
       for (const childClone of childClones) {
-        nodeDisp.insertAtIndex(childClone, 0, childClone.parentId, dragState);
+        nodeDisp.insertAtIndex(
+          childClone,
+          0,
+          childClone.parentId,
+          dynamicModeNodeId
+        );
 
         const originalChildren = getAllChildNodes(
           originalNodeId,
@@ -976,6 +988,7 @@ export const useNodeActions = () => {
 
   // Canvas duplication helper
   const handleCanvasDuplication = (mainNode: Node) => {
+    const dynamicModeNodeId = getDynamicModeNodeId();
     const mainDragPreview = document.querySelector(
       `[data-node-dragged="${mainNode.id}"]`
     );
@@ -1049,7 +1062,7 @@ export const useNodeActions = () => {
       const allClones = allClonedNodesByNode.get(originalNodeId) || [];
 
       if (!rootClone.inViewport) {
-        nodeDisp.insertAtIndex(rootClone, 0, null, dragState);
+        nodeDisp.insertAtIndex(rootClone, 0, null, dynamicModeNodeId);
       }
 
       const originalNode = nodeState.nodes.find((n) => n.id === originalNodeId);
@@ -1061,7 +1074,12 @@ export const useNodeActions = () => {
         (clone) => clone.id !== rootClone.id
       );
       for (const childClone of childClones) {
-        nodeDisp.insertAtIndex(childClone, 0, childClone.parentId, dragState);
+        nodeDisp.insertAtIndex(
+          childClone,
+          0,
+          childClone.parentId,
+          dynamicModeNodeId
+        );
 
         const originalChildren = getAllChildNodes(
           originalNodeId,
@@ -1085,6 +1103,8 @@ export const useNodeActions = () => {
     nodesToDuplicate: Node[],
     fromContextMenu = false
   ): string | null => {
+    const dynamicModeNodeId = getDynamicModeNodeId();
+
     // Helper function to find dynamic descendants within a node
     const findDynamicDescendants = (nodeId: string, nodes: Node[]): Node[] => {
       const dynamicElements: Node[] = [];
@@ -1225,7 +1245,7 @@ export const useNodeActions = () => {
           rootClone,
           targetIndex,
           rootClone.parentId,
-          dragState
+          dynamicModeNodeId
         );
         console.log(`Inserted primary clone ${rootClone.id}`);
       }
@@ -1236,7 +1256,12 @@ export const useNodeActions = () => {
       (node) => !rootClonedNodes.includes(node)
     );
     childNodes.forEach((childNode) => {
-      nodeDisp.insertAtIndex(childNode, 0, childNode.parentId, dragState);
+      nodeDisp.insertAtIndex(
+        childNode,
+        0,
+        childNode.parentId,
+        dynamicModeNodeId
+      );
       console.log(
         `Inserted child ${childNode.id} with parent ${childNode.parentId}`
       );
@@ -1245,7 +1270,7 @@ export const useNodeActions = () => {
     // FIX: For non-dynamic duplication we no longer call pushNodes
     // because the nodes have already been inserted via insertAtIndex.
     // We only force a sync across viewports.
-    if (!dragState.dynamicModeNodeId) {
+    if (!dynamicModeNodeId) {
       nodeDisp.syncViewports();
       return firstDuplicateId;
     }
@@ -1323,7 +1348,7 @@ export const useNodeActions = () => {
           viewportClone,
           targetIndex,
           viewportClone.parentId,
-          dragState
+          dynamicModeNodeId
         );
         console.log(
           `Created cross-viewport clone ${viewportClone.id} in viewport ${relatedNode.dynamicViewportId}`
@@ -1348,7 +1373,7 @@ export const useNodeActions = () => {
             viewportChildClone,
             0,
             viewportChildClone.parentId,
-            dragState
+            dynamicModeNodeId
           );
           console.log(
             `Created child ${viewportChildClone.id} for viewport clone ${viewportClone.id}`
@@ -1378,7 +1403,7 @@ export const useNodeActions = () => {
                 childClone,
                 0,
                 childClone.parentId,
-                dragState
+                dynamicModeNodeId
               );
               handleChildrenRecursively(child.id, childClone.id, viewportId);
             });

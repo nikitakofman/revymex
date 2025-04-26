@@ -16,7 +16,6 @@ interface GradientEditorProps {
   fillType: "linear" | "radial";
   selectedNode: any;
   nodeDisp: any;
-  dragState: any;
   setNodeStyle: any;
 }
 
@@ -98,7 +97,6 @@ export const GradientEditor = ({
   fillType,
   selectedNode,
   nodeDisp,
-  dragState,
   setNodeStyle,
 }: GradientEditorProps) => {
   const currentSelectedIds = useGetSelectedIds();

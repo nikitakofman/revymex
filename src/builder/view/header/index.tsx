@@ -12,6 +12,7 @@ import {
   interfaceOps,
 } from "@/builder/context/atoms/interface-store";
 import { ChevronDown } from "lucide-react";
+import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
 
 interface SimplifiedToolSelectProps {
   value: string;
@@ -50,7 +51,7 @@ export const SimplifiedToolSelect: React.FC<SimplifiedToolSelectProps> = ({
 };
 
 const Header = () => {
-  const { nodeState, nodeDisp, setIsEditingText } = useBuilder();
+  const { nodeState } = useBuilder();
 
   // Get interface state from the interface store
   const isPreviewOpen = useIsPreviewOpen();
@@ -116,7 +117,7 @@ const Header = () => {
 
   // Handler for input blur (apply changes)
   const handleInputBlur = () => {
-    setIsEditingText(false);
+    canvasOps.setIsEditingText(false);
     const newWidth = Number(inputValue);
     if (!isNaN(newWidth) && newWidth >= 1 && newWidth <= maxWidth) {
       interfaceOps.setPreviewWidth(newWidth);
@@ -177,7 +178,7 @@ const Header = () => {
               onChange={handleInputChange}
               onBlur={handleInputBlur}
               onKeyDown={handleKeyDown}
-              onSelect={(e) => setIsEditingText(true)}
+              onSelect={(e) => canvasOps.setIsEditingText(true)}
               min={1}
               max={maxWidth}
               className="w-[60px] h-7 px-2 text-xs 

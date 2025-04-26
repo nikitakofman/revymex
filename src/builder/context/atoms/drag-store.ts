@@ -76,6 +76,8 @@ export interface DragState {
     }
   >;
   dynamicModeNodeId: string | null;
+  duplicatedFromAlt: boolean;
+  recordingSessionId: string | null;
 }
 
 // Initial state
@@ -93,6 +95,8 @@ const initialDragState: DragState = {
   placeholderInfo: null,
   nodeDimensions: {},
   dynamicModeNodeId: null,
+  duplicatedFromAlt: false,
+  recordingSessionId: null,
 };
 
 // Base atom for drag state
@@ -152,6 +156,16 @@ export const placeholderInfoAtom = selectAtom(
 export const nodeDimensionsAtom = selectAtom(
   _internalDragStateAtom,
   (state) => state.nodeDimensions
+);
+
+export const duplicatedFromAltAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.duplicatedFromAlt
+);
+
+export const recordingSessionIdAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.recordingSessionId
 );
 
 // Create a singleton instance of drag operations
@@ -296,6 +310,20 @@ const dragOperations = {
     }));
   },
 
+  setDuplicatedFromAlt: (duplicatedFromAlt: boolean) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      duplicatedFromAlt,
+    }));
+  },
+
+  setRecordingSessionId: (sessionId: string | null) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      recordingSessionId: sessionId,
+    }));
+  },
+
   resetDragState: () => {
     dragStore.set(_internalDragStateAtom, {
       ...initialDragState,
@@ -356,6 +384,14 @@ export const usePlaceholderInfo = () => {
 
 export const useNodeDimensions = () => {
   return useAtomValue(nodeDimensionsAtom, { store: dragStore });
+};
+
+export const useDuplicatedFromAlt = () => {
+  return useAtomValue(duplicatedFromAltAtom, { store: dragStore });
+};
+
+export const useRecordingSessionId = () => {
+  return useAtomValue(recordingSessionIdAtom, { store: dragStore });
 };
 
 // Full state hook
@@ -427,6 +463,18 @@ export const useGetNodeDimensions = () => {
 export const useGetDynamicModeNodeId = () => {
   return useCallback(() => {
     return dragStore.get(_internalDragStateAtom).dynamicModeNodeId;
+  }, []);
+};
+
+export const useGetDuplicatedFromAlt = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).duplicatedFromAlt;
+  }, []);
+};
+
+export const useGetRecordingSessionId = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).recordingSessionId;
   }, []);
 };
 

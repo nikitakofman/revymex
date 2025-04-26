@@ -14,16 +14,25 @@ import {
   useGetDraggedNode,
   useGetIsDragging,
 } from "../context/atoms/drag-store";
+import { useTransform } from "../context/atoms/canvas-interaction-store";
+import {
+  useActiveViewportInDynamicMode,
+  useDynamicModeNodeId,
+} from "../context/atoms/dynamic-store";
 
 interface RenderNodesProps {
   filter: "inViewport" | "outOfViewport" | "dynamicMode";
 }
 
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
-  const { nodeState, dragState, transform } = useBuilder();
+  const { nodeState } = useBuilder();
   const getIsDragging = useGetIsDragging();
   const getDraggedNode = useGetDraggedNode();
   const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
+
+  const transform = useTransform();
 
   const [virtualReference, setVirtualReference] =
     useState<VirtualReference | null>(null);
@@ -53,8 +62,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     };
   }, [getIsDragging]);
 
-  // Get the active viewport ID from dragState
-  const activeViewportId = dragState.activeViewportInDynamicMode;
+  const activeViewportId = activeViewportInDynamicMode;
 
   // Find the active viewport node to get its width
   const activeViewport = activeViewportId
@@ -70,7 +78,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   const viewportFilteredNodes = getFilteredNodes(
     nodeState.nodes,
     filter,
-    dragState.dynamicModeNodeId,
+    dynamicModeNodeId,
     activeViewportId
   );
 

@@ -2,6 +2,12 @@ import React, { useEffect, useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { visualOps } from "../atoms/visual-store";
+import {
+  canvasOps,
+  useIsMovingCanvas,
+  useIsResizing,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 
 const parseRotation = (rotate: string | undefined): number => {
   if (!rotate) return 0;
@@ -32,19 +38,14 @@ export const GapHandles = ({
   isSelected: boolean;
   elementRef: React.RefObject<HTMLDivElement>;
 }) => {
-  const {
-    setNodeStyle,
-    nodeState,
-    dragDisp,
-    transform,
-    setIsAdjustingGap,
-    isResizing,
-    isMovingCanvas,
-    startRecording,
-    stopRecording,
-  } = useBuilder();
+  const { setNodeStyle, nodeState, startRecording, stopRecording } =
+    useBuilder();
   const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
   const [isInteractive, setIsInteractive] = useState(false);
+
+  const transform = useTransform();
+  const isMovingCanvas = useIsMovingCanvas();
+  const isResizing = useIsResizing();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -112,7 +113,7 @@ export const GapHandles = ({
       moveEvent.preventDefault();
       moveEvent.stopPropagation();
 
-      setIsAdjustingGap(true);
+      canvasOps.setIsAdjustingGap(true);
 
       const deltaX = (moveEvent.clientX - startX) / transform.scale;
       const deltaY = (moveEvent.clientY - startY) / transform.scale;
@@ -129,10 +130,10 @@ export const GapHandles = ({
     };
 
     const handleMouseUp = () => {
-      dragDisp.hideStyleHelper();
+      visualOps.hideStyleHelper();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
-      setIsAdjustingGap(false);
+      canvasOps.setIsAdjustingGap(false);
       stopRecording(sessionId);
       window.dispatchEvent(new Event("resize"));
     };

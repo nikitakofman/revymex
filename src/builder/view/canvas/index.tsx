@@ -30,8 +30,6 @@ import IframePreview from "../preview/iframePreview";
 import AddViewportModal from "@/builder/context/canvasHelpers/AddViewportModal";
 import EditViewportModal from "@/builder/context/canvasHelpers/EditViewportModal";
 import ViewportContextMenu from "@/builder/context/canvasHelpers/ViewportContextMenu";
-import AddVariantsUI from "@/builder/context/canvasHelpers/AddVariantUI";
-import PreviewPlay from "../preview/preview-play";
 import { selectOps } from "@/builder/context/atoms/select-store";
 import {
   useIsPreviewOpen,
@@ -39,40 +37,35 @@ import {
 } from "@/builder/context/atoms/interface-store";
 import { useIsDragging } from "@/builder/context/atoms/drag-store";
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
+import {
+  canvasOps,
+  useGetIsSelectionBoxActive,
+  useIsEditingText,
+  useIsMovingCanvas,
+  useTransform,
+} from "@/builder/context/atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const eventHandlersAttached = useRef(false);
 
-  const {
-    containerRef,
-    contentRef,
-    dragState,
-    isMovingCanvas,
-    setIsMovingCanvas,
-    dragDisp,
-    nodeDisp,
-    transform,
-    setTransform,
-    isResizing,
-    isRotating,
-    isAdjustingGap,
-    isAdjustingBorderRadius,
-    nodeState,
-    isEditingText,
-  } = useBuilder();
+  const { containerRef, contentRef, nodeDisp, nodeState } = useBuilder();
 
   // Get isPreviewOpen from interface store instead of interfaceState
   const isPreviewOpen = useIsPreviewOpen();
 
-  const isDragging = useIsDragging();
+  const transform = useTransform();
+
+  const isMovingCanvas = useIsMovingCanvas();
+
+  const isEditingText = useIsEditingText();
+
+  const getIsSelectionBoxActive = useGetIsSelectionBoxActive();
 
   const { clearSelection } = selectOps;
 
-  // Use the cursor manager hook
-  const { isDrawingMode, isMoveMode } = useCursorManager();
-
-  useMoveCanvas();
+  // useMoveCanvas();
 
   // With this approach:
   useKeyboardDrag({ isEnabled: !isEditingText });
@@ -85,7 +78,6 @@ const Canvas = () => {
     containerRef,
     transform,
     nodeDisp,
-    dragDisp,
   });
 
   useEffect(() => {
@@ -133,12 +125,12 @@ const Canvas = () => {
   useEffect(() => {
     if (!isPreviewOpen && eventHandlersAttached.current) {
       // Reset any necessary state when returning from preview mode
-      setIsMovingCanvas(false);
+      canvasOps.setIsMovingCanvas(false);
 
       // Force a redraw of the canvas by triggering a window resize event
       window.dispatchEvent(new Event("resize"));
     }
-  }, [isPreviewOpen, setIsMovingCanvas]);
+  }, [isPreviewOpen, canvasOps.setIsMovingCanvas]);
 
   // Loading state detection based on critical refs and a minimum time
   useEffect(() => {
@@ -179,7 +171,9 @@ const Canvas = () => {
   }, [isPreviewOpen, transform, contentRef]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (dragState.isSelectionBoxActive) {
+    const isSelectionBoxActive = getIsSelectionBoxActive();
+
+    if (isSelectionBoxActive) {
       return;
     }
 
@@ -199,8 +193,7 @@ const Canvas = () => {
     }
   };
 
-  const isAnyResize =
-    !isResizing && !isAdjustingGap && !isRotating && !isAdjustingBorderRadius;
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   return (
     <>
@@ -239,9 +232,9 @@ const Canvas = () => {
               <SnapGuides />
               {/* <DebugSnapGrid /> */}
               <StyleUpdateHelper />
-              {!isDrawingMode && !isMoveMode && !isDragging && <SelectionBox />}
-              {isAnyResize && <FrameCreator />}
-              {isAnyResize && <TextCreator />}
+              <SelectionBox />
+              <FrameCreator />
+              <TextCreator />
               {!isMovingCanvas && <ArrowConnectors />}
               <div
                 ref={contentRef}
@@ -253,7 +246,7 @@ const Canvas = () => {
                   transformOrigin: "0 0",
                 }}
               >
-                {dragState.dynamicModeNodeId ? (
+                {dynamicModeNodeId ? (
                   <RenderNodes filter="dynamicMode" />
                 ) : (
                   <RenderNodes filter="outOfViewport" />

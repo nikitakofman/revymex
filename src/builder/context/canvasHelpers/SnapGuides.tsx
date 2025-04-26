@@ -5,11 +5,11 @@ import { useBuilder } from "@/builder/context/builderState";
 import { SnapLine } from "@/builder/context/canvasHelpers/SnapGrid";
 import { useSnapGuides } from "@/builder/context/atoms/visual-store";
 import { useIsDragging } from "../atoms/drag-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
 
 const SnapGuides: React.FC = () => {
-  const { transform, dragState } = useBuilder();
   const snapGuides = useSnapGuides();
-
+  const transform = useTransform();
   const isDragging = useIsDragging();
 
   if (!isDragging || !snapGuides?.length) return null;

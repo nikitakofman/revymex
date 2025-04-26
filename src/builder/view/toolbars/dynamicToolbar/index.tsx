@@ -7,25 +7,34 @@ import { createPortal } from "react-dom";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
 import { selectOps } from "@/builder/context/atoms/select-store";
+import {
+  useDynamicModeNodeId,
+  useActiveViewportInDynamicMode,
+  dynamicOps,
+} from "@/builder/context/atoms/dynamic-store";
 
 export const DynamicToolbar: React.FC = () => {
-  const { nodeState, nodeDisp, dragState, dragDisp } = useBuilder();
+  const { nodeState, nodeDisp } = useBuilder();
+
+  // Use atoms for state
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
 
   const { setSelectedIds } = selectOps;
 
   // Initial node ID when first entering dynamic mode
   const [initialNodeId, setInitialNodeId] = useState<string | null>(null);
   const [activeViewportId, setActiveViewportId] = useState<string | null>(
-    dragState.activeViewportInDynamicMode
+    activeViewportInDynamicMode
   );
 
   useEffect(() => {
-    setActiveViewportId(dragState.activeViewportInDynamicMode);
+    setActiveViewportId(activeViewportInDynamicMode);
 
     return () => {
       setActiveViewportId(null);
     };
-  }, [dragState.activeViewportInDynamicMode]);
+  }, [activeViewportInDynamicMode]);
 
   // Improved viewport node mapping - include more identifiers
   const [viewportNodeIds, setViewportNodeIds] = useState<
@@ -62,15 +71,15 @@ export const DynamicToolbar: React.FC = () => {
 
   // When first entering dynamic mode, save the initial node ID
   React.useEffect(() => {
-    if (dragState.dynamicModeNodeId && !initialNodeId) {
-      console.log(`Initializing with node: ${dragState.dynamicModeNodeId}`);
+    if (dynamicModeNodeId && !initialNodeId) {
+      console.log(`Initializing with node: ${dynamicModeNodeId}`);
 
       // Save the initial node ID
-      setInitialNodeId(dragState.dynamicModeNodeId as string);
+      setInitialNodeId(dynamicModeNodeId as string);
 
       // Get the current node
       const currentNode = nodeState.nodes.find(
-        (n) => n.id === dragState.dynamicModeNodeId
+        (n) => n.id === dynamicModeNodeId
       );
       if (!currentNode) return;
 
@@ -81,7 +90,7 @@ export const DynamicToolbar: React.FC = () => {
       );
       if (parentViewport) {
         setActiveViewportId(parentViewport as string);
-        dragDisp.switchDynamicViewport(parentViewport as string);
+        dynamicOps.switchDynamicViewport(parentViewport as string);
       }
 
       // Initialize mapping with the current node
@@ -150,13 +159,7 @@ export const DynamicToolbar: React.FC = () => {
       console.log("Initial viewport mapping:", initialMapping);
       setViewportNodeIds(initialMapping);
     }
-  }, [
-    dragState.dynamicModeNodeId,
-    initialNodeId,
-    nodeState.nodes,
-    viewports,
-    dragDisp,
-  ]);
+  }, [dynamicModeNodeId, initialNodeId, nodeState.nodes, viewports]);
 
   // Function to get the best node to display for a viewport
   const getBestNodeForViewport = useCallback(
@@ -196,8 +199,8 @@ export const DynamicToolbar: React.FC = () => {
       // Update the active viewport ID
       setActiveViewportId(viewportId);
 
-      // Store it in drag state
-      dragDisp.switchDynamicViewport(viewportId);
+      // Store it in dynamic store
+      dynamicOps.switchDynamicViewport(viewportId);
 
       // Get the node IDs for this viewport from the mapping
       const targetNodeIds = viewportNodeIds[viewportId] || [];
@@ -208,7 +211,7 @@ export const DynamicToolbar: React.FC = () => {
 
         if (bestNodeId) {
           console.log(`Using best node for ${viewportId}: ${bestNodeId}`);
-          dragDisp.setDynamicModeNodeId(bestNodeId);
+          dynamicOps.setDynamicModeNodeId(bestNodeId);
           return;
         }
       }
@@ -218,7 +221,7 @@ export const DynamicToolbar: React.FC = () => {
 
       // Get the current dynamic node to find its sharedId
       const currentDynamicNode = nodeState.nodes.find(
-        (n) => n.id === dragState.dynamicModeNodeId
+        (n) => n.id === dynamicModeNodeId
       );
 
       if (!currentDynamicNode) {
@@ -308,7 +311,7 @@ export const DynamicToolbar: React.FC = () => {
 
       if (counterpart) {
         console.log(`Found counterpart: ${counterpart.id}`);
-        dragDisp.setDynamicModeNodeId(counterpart.id);
+        dynamicOps.setDynamicModeNodeId(counterpart.id);
 
         // Update mapping for future use
         setViewportNodeIds((prev) => {
@@ -330,10 +333,9 @@ export const DynamicToolbar: React.FC = () => {
       }
     },
     [
-      dragDisp,
       nodeState.nodes,
       viewportNodeIds,
-      dragState.dynamicModeNodeId,
+      dynamicModeNodeId,
       getBestNodeForViewport,
     ]
   );
@@ -349,7 +351,7 @@ export const DynamicToolbar: React.FC = () => {
     }
   }, []);
 
-  if (!dragState.dynamicModeNodeId) return null;
+  if (!dynamicModeNodeId) return null;
 
   return createPortal(
     <div className="fixed p-4 resize top-[52px] items-center left-[308px] flex gap-3 shadow-[var(--shadow-sm)] border-b border-[var(--border-default)] bg-[var(--bg-canvas)] w-[calc(100%-565px)]">
@@ -358,10 +360,9 @@ export const DynamicToolbar: React.FC = () => {
         className="outline outline-[var(--accent-secondary)]"
         onClick={() => {
           nodeDisp.resetDynamicNodePositions();
-          dragDisp.setDynamicModeNodeId(null);
-          dragDisp.setDynamicState("normal");
+          dynamicOps.setDynamicModeNodeId(null);
           setSelectedIds([]);
-          dragDisp.switchDynamicViewport(null);
+          dynamicOps.switchDynamicViewport(null);
           setActiveViewportId(null);
           setViewportNodeIds({});
           setInitialNodeId(null);

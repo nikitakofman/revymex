@@ -195,7 +195,7 @@ function debugNodeImageSource(node) {
 }
 
 export const ImageCropPopup = ({ selectedNode, onClose }) => {
-  const { setNodeStyle, dragState } = useBuilder();
+  const { setNodeStyle } = useBuilder();
   const [crop, setCrop] = useState();
   const [completedCrop, setCompletedCrop] = useState(null);
   const [aspect, setAspect] = useState(undefined); // undefined for free-form

@@ -12,54 +12,59 @@ import {
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
 import { ThemeToggle } from "@/providers/ThemeToggle";
-import { useBuilder } from "@/builder/context/builderState";
 import { Tooltip } from "react-tooltip";
+import {
+  canvasOps,
+  useIsFrameModeActive,
+  useIsMoveCanvasMode,
+  useIsMiddleMouseDown,
+  useIsTextModeActive,
+} from "@/builder/context/atoms/canvas-interaction-store";
+import { useCursorManager } from "@/builder/context/hooks/useCursorManager";
 
 const BottomToolbar = () => {
-  const {
-    isFrameModeActive,
-    setIsFrameModeActive,
-    isTextModeActive,
-    setIsTextModeActive,
-    isMoveCanvasMode,
-    setIsMoveCanvasMode,
-    isMiddleMouseDown,
-  } = useBuilder();
+  // Use subscription hooks for all state that affects rendering
+  const isMiddleMouseDown = useIsMiddleMouseDown();
+  const isFrameModeActive = useIsFrameModeActive();
+  const isMoveCanvasMode = useIsMoveCanvasMode();
+  const isTextModeActive = useIsTextModeActive();
+
+  useCursorManager();
 
   // Handle Frame and Text mode toggles
   const handleFrameClick = () => {
     // If frame mode is already active, turn it off
     if (isFrameModeActive) {
-      setIsFrameModeActive(false);
+      canvasOps.setIsFrameModeActive(false);
     } else {
       // Turn on frame mode and ensure other modes are off
-      setIsFrameModeActive(true);
-      setIsTextModeActive(false);
-      setIsMoveCanvasMode(false);
+      canvasOps.setIsFrameModeActive(true);
+      canvasOps.setIsTextModeActive(false);
+      canvasOps.setIsMoveCanvasMode(false);
     }
   };
 
   const handleTextClick = () => {
     // If text mode is already active, turn it off
     if (isTextModeActive) {
-      setIsTextModeActive(false);
+      canvasOps.setIsTextModeActive(false);
     } else {
       // Turn on text mode and ensure other modes are off
-      setIsTextModeActive(true);
-      setIsFrameModeActive(false);
-      setIsMoveCanvasMode(false);
+      canvasOps.setIsTextModeActive(true);
+      canvasOps.setIsFrameModeActive(false);
+      canvasOps.setIsMoveCanvasMode(false);
     }
   };
 
   const handleMoveCanvasClick = () => {
     // If move canvas mode is already active, turn it off
     if (isMoveCanvasMode) {
-      setIsMoveCanvasMode(false);
+      canvasOps.setIsMoveCanvasMode(false);
     } else {
       // Turn on move canvas mode and ensure other modes are off
-      setIsMoveCanvasMode(true);
-      setIsFrameModeActive(false);
-      setIsTextModeActive(false);
+      canvasOps.setIsMoveCanvasMode(true);
+      canvasOps.setIsFrameModeActive(false);
+      canvasOps.setIsTextModeActive(false);
     }
   };
 

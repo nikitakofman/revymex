@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useBuilder } from "../builderState";
 import TransformManager from "@/builder/view/canvas/transform-manager";
+import {
+  canvasOps,
+  useGetIsMoveCanvasMode,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 
 export const useMoveCanvas = () => {
-  const {
-    containerRef,
-    contentRef,
-    transform,
-    setTransform,
-    isMoveCanvasMode,
-    setIsMovingCanvas,
-  } = useBuilder();
+  const { containerRef, contentRef } = useBuilder();
 
   const isDraggingRef = useRef(false);
   const lastPositionRef = useRef({ x: 0, y: 0 });
+
+  const transform = useTransform();
+  const getIsMoveCanvasMode = useGetIsMoveCanvasMode();
 
   // Initialize TransformManager with contentRef on mount
   useEffect(() => {
@@ -33,6 +34,8 @@ export const useMoveCanvas = () => {
 
   const handleMouseDown = useCallback(
     (e) => {
+      const isMoveCanvasMode = getIsMoveCanvasMode();
+
       if (!isMoveCanvasMode) return;
 
       // Only handle primary mouse button (left click)
@@ -41,9 +44,9 @@ export const useMoveCanvas = () => {
       isDraggingRef.current = true;
       lastPositionRef.current = { x: e.clientX, y: e.clientY };
       document.body.style.cursor = "grabbing";
-      setIsMovingCanvas(true);
+      canvasOps.setIsMovingCanvas(true);
     },
-    [isMoveCanvasMode, setIsMovingCanvas]
+    [getIsMoveCanvasMode, canvasOps.setIsMovingCanvas]
   );
 
   const handleMouseMove = useCallback(
@@ -70,11 +73,13 @@ export const useMoveCanvas = () => {
   );
 
   const handleMouseUp = useCallback(() => {
+    const isMoveCanvasMode = getIsMoveCanvasMode();
+
     if (!isDraggingRef.current) return;
 
     isDraggingRef.current = false;
     document.body.style.cursor = isMoveCanvasMode ? "grab" : "default";
-    setIsMovingCanvas(false);
+    canvasOps.setIsMovingCanvas(false);
 
     // IMPORTANT: We don't update React state after panning
     // This prevents the re-rendering cascade
@@ -85,7 +90,7 @@ export const useMoveCanvas = () => {
 
     // const finalTransform = TransformManager.getTransform();
     // setTransform(finalTransform);
-  }, [isMoveCanvasMode, setIsMovingCanvas]);
+  }, [getIsMoveCanvasMode, canvasOps.setIsMovingCanvas]);
 
   // Set up event listeners
   useEffect(() => {
@@ -105,6 +110,8 @@ export const useMoveCanvas = () => {
 
   // Update cursor based on mode
   useEffect(() => {
+    const isMoveCanvasMode = getIsMoveCanvasMode();
+
     if (isDraggingRef.current) {
       document.body.style.cursor = "grabbing";
     } else if (isMoveCanvasMode) {
@@ -112,15 +119,17 @@ export const useMoveCanvas = () => {
     } else {
       document.body.style.cursor = ""; // Reset to default
     }
-  }, [isMoveCanvasMode]);
+  }, [getIsMoveCanvasMode]);
 
   // When exiting move mode, ensure dragging is canceled
   useEffect(() => {
+    const isMoveCanvasMode = getIsMoveCanvasMode();
+
     if (!isMoveCanvasMode && isDraggingRef.current) {
       isDraggingRef.current = false;
-      setIsMovingCanvas(false);
+      canvasOps.setIsMovingCanvas(false);
     }
-  }, [isMoveCanvasMode, setIsMovingCanvas]);
+  }, [getIsMoveCanvasMode, canvasOps.setIsMovingCanvas]);
 
   // Handle zoom operations that occur outside of this hook
   useEffect(() => {

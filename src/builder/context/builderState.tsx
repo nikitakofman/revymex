@@ -11,22 +11,20 @@ import React, {
 } from "react";
 import { NodeState } from "../reducer/nodeDispatcher";
 import { DragState } from "../reducer/dragDispatcher";
-import {
-  dragInitialState,
-  interfaceInitialState,
-  nodeInitialState,
-} from "../reducer/state";
+import { dragInitialState, nodeInitialState } from "../reducer/state";
 import { NodeDispatcher } from "../reducer/nodeDispatcher";
 import { DragDispatcher } from "../reducer/dragDispatcher";
-import { debounce } from "lodash";
 import { useNodeHistory } from "./hooks/useHistory";
 import { createTrackedNodeDispatcher } from "./hooks/useNodeDispTracker";
-import {
-  InterfaceDispatcher,
-  InterfaceState,
-} from "../reducer/interfaceDispatcher";
 import { useGetSelectedIds } from "./atoms/select-store";
-import { useGetIsDragging } from "./atoms/drag-store";
+import { useGetDynamicModeNodeId, useGetIsDragging } from "./atoms/drag-store";
+import { useIsPreviewOpen } from "./atoms/interface-store";
+import {
+  useTransform,
+  canvasOps,
+  useIsMovingCanvas,
+  useIsMiddleMouseDown,
+} from "./atoms/canvas-interaction-store";
 
 export interface LineIndicatorState {
   show: boolean;
@@ -63,17 +61,7 @@ interface BuilderContextType {
   ) => void;
   nodeDisp: NodeDispatcher;
   dragDisp: DragDispatcher;
-  isMovingCanvas: boolean;
-  setIsMovingCanvas: React.Dispatch<React.SetStateAction<boolean>>;
   elementRef: React.RefObject<HTMLDivElement | null>;
-  isResizing: boolean;
-  setIsResizing: React.Dispatch<React.SetStateAction<boolean>>;
-  isAdjustingGap: boolean;
-  setIsAdjustingGap: React.Dispatch<React.SetStateAction<boolean>>;
-  isRotating: boolean;
-  setIsRotating: React.Dispatch<React.SetStateAction<boolean>>;
-  isAdjustingBorderRadius: boolean;
-  setIsAdjustingBorderRadius: React.Dispatch<React.SetStateAction<boolean>>;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -82,31 +70,14 @@ interface BuilderContextType {
   clearOperations: () => void;
   startRecording: () => string;
   stopRecording: (sessionId: string) => boolean;
-  interfaceState: InterfaceState;
-  interfaceDisp: InterfaceDispatcher;
   dragDimensionsRef: RefObject<DragDimensions>;
   selectedIdsRef: RefObject<(string | number)[]>;
-  isFrameModeActive: boolean;
-  setIsFrameModeActive: React.Dispatch<React.SetStateAction<boolean>>;
-  isTextModeActive: boolean;
-  setIsTextModeActive: React.Dispatch<React.SetStateAction<boolean>>;
-  isMoveCanvasMode: boolean;
-  setIsMoveCanvasMode: React.Dispatch<React.SetStateAction<boolean>>;
   popupRef: RefObject<HTMLDivElement | null>;
   handleWheel: (e: WheelEvent) => void;
   attachWheelListener: () => void;
   detachWheelListener: () => void;
   draggingOverCanvasRef: RefObject<boolean>;
   hasLeftViewportRef: RefObject<boolean>;
-  isEditingText: boolean;
-  setIsEditingText: React.Dispatch<React.SetStateAction<boolean>>;
-  isFontSizeHandleActive: boolean;
-  setIsFontSizeHandleActive: React.Dispatch<React.SetStateAction<boolean>>;
-  isMiddleMouseDown: boolean;
-  isDraggingChevrons: boolean;
-  setIsDraggingChevrons: React.Dispatch<React.SetStateAction<boolean>>;
-  isTextMenuOpen: boolean;
-  setIsTextMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface RecordingSession {
@@ -199,21 +170,11 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const getIsDragging = useGetIsDragging();
 
   const [dragState, setDragState] = useState(dragInitialState);
-  const [interfaceState, setInterfaceState] = useState(interfaceInitialState);
-  const [isFrameModeActive, setIsFrameModeActive] = useState(false);
-  const [isTextModeActive, setIsTextModeActive] = useState(false);
-  const [transform, setTransform] = useState({ x: 480, y: 200, scale: 0.3 });
-  const [isMovingCanvas, setIsMovingCanvas] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
-  const [isAdjustingGap, setIsAdjustingGap] = useState(false);
-  const [isRotating, setIsRotating] = useState(false);
-  const [isTextMenuOpen, setIsTextMenuOpen] = useState(false);
-  const [isEditingText, setIsEditingText] = useState(false);
-  const [isAdjustingBorderRadius, setIsAdjustingBorderRadius] = useState(false);
-  const [isFontSizeHandleActive, setIsFontSizeHandleActive] = useState(false);
-  const [isDraggingChevrons, setIsDraggingChevrons] = useState(false);
-  const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
-  const [isMiddleMouseDown, setIsMiddleMouseDown] = useState(false);
+
+  const transform = useTransform();
+  const isMovingCanvas = useIsMovingCanvas();
+  const isMiddleMouseDown = useIsMiddleMouseDown();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -232,6 +193,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const operationsRef = useRef<Operation[]>([]);
 
+  const isPreviewOpen = useIsPreviewOpen();
+
   const onOperation = useCallback((operation: Operation) => {
     operationsRef.current = [...operationsRef.current.slice(-99), operation];
     requestAnimationFrame(() => {
@@ -249,11 +212,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   }, [setNodeState, onOperation]);
 
   const dragDisp = useMemo(() => new DragDispatcher(setDragState), []);
-
-  const interfaceDisp = useMemo(
-    () => new InterfaceDispatcher(setInterfaceState),
-    []
-  );
 
   // Initialize the TransformManager when contentRef is available
   useEffect(() => {
@@ -286,20 +244,12 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
 
-  const debouncedSetTransform = useMemo(
-    () =>
-      debounce((newTransform: { x: number; y: number; scale: number }) => {
-        setTransform(newTransform);
-      }, 5),
-    []
-  );
-
   // Add these event handlers near your existing wheel handler
   const handleMouseDown = useCallback((e) => {
     // Check if it's the middle mouse button (button === 1)
     if (e.button === 1) {
       e.preventDefault();
-      setIsMiddleMouseDown(true);
+      canvasOps.setIsMiddleMouseDown(true);
       lastMousePosRef.current = { x: e.clientX, y: e.clientY };
 
       // Reset movement tracking on mouse down
@@ -313,11 +263,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const handleMouseMove = useCallback(
     (e) => {
-      if (
-        isMiddleMouseDown &&
-        containerRef.current &&
-        !interfaceState.isPreviewOpen
-      ) {
+      if (isMiddleMouseDown && containerRef.current && !isPreviewOpen) {
         e.preventDefault();
 
         // Calculate the delta from the last position
@@ -335,7 +281,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         });
 
         // Set isMovingCanvas directly instead of through a function
-        setIsMovingCanvas(true);
+        canvasOps.setIsMovingCanvas(true);
 
         // Clear any existing timer
         if (moveTimerRef.current) {
@@ -343,14 +289,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [isMiddleMouseDown, interfaceState.isPreviewOpen]
+    [isMiddleMouseDown, isPreviewOpen]
   );
 
   const handleMouseUp = useCallback(
     (e) => {
       if (e.button === 1 || isMiddleMouseDown) {
         e.preventDefault();
-        setIsMiddleMouseDown(false);
+        canvasOps.setIsMiddleMouseDown(false);
 
         if (containerRef.current) {
           containerRef.current.style.cursor = "";
@@ -358,11 +304,11 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
         // Only update React state if we actually moved
         if (TransformManager.hasMovedSinceMouseDown) {
-          setTransform(TransformManager.getTransform());
+          canvasOps.setTransform(TransformManager.getTransform());
         }
 
         // Always reset isMovingCanvas and clear any timers
-        setIsMovingCanvas(false);
+        canvasOps.setIsMovingCanvas(false);
         if (moveTimerRef.current) {
           clearTimeout(moveTimerRef.current);
           moveTimerRef.current = null;
@@ -378,7 +324,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     (e: WheelEvent) => {
       e.preventDefault();
 
-      if (!containerRef.current || interfaceState.isPreviewOpen) return;
+      if (!containerRef.current || isPreviewOpen) return;
 
       // Get current transform from TransformManager
       const currentTransform = TransformManager.getTransform();
@@ -415,7 +361,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       }
 
       // Temporarily set isMovingCanvas true for visual feedback
-      setIsMovingCanvas(true);
+      canvasOps.setIsMovingCanvas(true);
 
       // Start a timer to sync React state after wheel events stop
       if (moveTimerRef.current) {
@@ -424,13 +370,13 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
       moveTimerRef.current = setTimeout(() => {
         // Reset isMovingCanvas
-        setIsMovingCanvas(false);
+        canvasOps.setIsMovingCanvas(false);
 
         // Then update React state with final position
-        setTransform(TransformManager.getTransform());
+        canvasOps.setTransform(TransformManager.getTransform());
       }, 200);
     },
-    [interfaceState.isPreviewOpen]
+    [isPreviewOpen]
   );
 
   // Add a safety effect to reset isMovingCanvas
@@ -438,7 +384,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     // Reset isMovingCanvas when mouse is released
     const handleGlobalMouseUp = () => {
       if (isMovingCanvas && !isMiddleMouseDown) {
-        setIsMovingCanvas(false);
+        canvasOps.setIsMovingCanvas(false);
       }
     };
 
@@ -481,7 +427,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   // Attach/detach wheel listener based on preview state
   useEffect(() => {
-    if (interfaceState.isPreviewOpen) {
+    if (isPreviewOpen) {
       detachWheelListener();
     } else {
       attachWheelListener();
@@ -490,7 +436,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     return () => {
       detachWheelListener();
     };
-  }, [interfaceState.isPreviewOpen, attachWheelListener, detachWheelListener]);
+  }, [isPreviewOpen, attachWheelListener, detachWheelListener]);
 
   // Keep TransformManager in sync with React state for non-panning operations
   useEffect(() => {
@@ -539,12 +485,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
           return { id, styles };
         });
 
+        const dynamicModeNodeId = getDynamicModeNodeId();
+
         // Update each node with appropriate styles
         nodesToUpdate.forEach(({ id, styles }) => {
           nodeDisp.updateNodeStyle(
             [id],
             styles,
-            dragState.dynamicModeNodeId,
+            dynamicModeNodeId,
             preventUnsync,
             preventCascade
           );
@@ -555,7 +503,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         // }
       }
     },
-    [nodeDisp, dragState.dynamicModeNodeId, nodeState.nodes]
+    [nodeDisp, getDynamicModeNodeId, nodeState.nodes]
   );
 
   const value: BuilderContextType = {
@@ -563,20 +511,10 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     dragState,
     containerRef,
     contentRef,
-    transform,
-    setTransform,
     setNodeStyle,
     nodeDisp,
     dragDisp,
-    isMovingCanvas,
-    setIsMovingCanvas,
     elementRef,
-    isResizing,
-    setIsResizing,
-    isAdjustingGap,
-    setIsAdjustingGap,
-    isRotating,
-    setIsRotating,
     undo,
     redo,
     canUndo,
@@ -585,33 +523,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     clearOperations: useCallback(() => setOperations([]), []),
     startRecording,
     stopRecording,
-    interfaceState,
-    interfaceDisp,
     dragDimensionsRef,
     selectedIdsRef,
-    isFrameModeActive,
-    setIsFrameModeActive,
-    isTextModeActive,
-    setIsTextModeActive,
-    isAdjustingBorderRadius,
-    setIsAdjustingBorderRadius,
-    isMoveCanvasMode,
-    setIsMoveCanvasMode,
     popupRef,
     handleWheel,
     attachWheelListener,
     detachWheelListener,
     draggingOverCanvasRef,
     hasLeftViewportRef,
-    isEditingText,
-    setIsEditingText,
-    isFontSizeHandleActive,
-    setIsFontSizeHandleActive,
-    isMiddleMouseDown,
-    isDraggingChevrons,
-    setIsDraggingChevrons,
-    isTextMenuOpen,
-    setIsTextMenuOpen,
   };
 
   return (

@@ -9,7 +9,7 @@ import ToolbarButton from "../_components/ToolbarButton";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ImageSettingsControl = ({ selectedNode }) => {
-  const { setNodeStyle, dragState } = useBuilder();
+  const { setNodeStyle } = useBuilder();
   const [imageProps, setImageProps] = useState({
     objectFit: "cover",
     objectPosition: "center",

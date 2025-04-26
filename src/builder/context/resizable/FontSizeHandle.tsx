@@ -3,6 +3,8 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
+import { canvasOps, useTransform } from "../atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 
 interface FontSizeHandleProps {
   node: Node;
@@ -31,17 +33,18 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 }) => {
   const {
     setNodeStyle,
-    transform,
-    dragDisp,
+
     startRecording,
     stopRecording,
     dragState,
     nodeState,
-    setIsFontSizeHandleActive,
   } = useBuilder();
+
+  const transform = useTransform();
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Function to check if this node is the primary selected node
   const isPrimarySelectedNode = useCallback(() => {
@@ -110,10 +113,9 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
   }, [elementRef]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    // If not yet interactive, don't process the event
     if (!isInteractive) return;
 
-    setIsFontSizeHandleActive(true);
+    canvasOps.setIsFontSizeHandleActive(true);
     preventStyleHelperReset.current = true;
 
     e.preventDefault();
@@ -321,7 +323,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 
     const handleMouseUp = () => {
       visualOps.hideStyleHelper();
-      setIsFontSizeHandleActive(false);
+      canvasOps.setIsFontSizeHandleActive(false);
       stopRecording(sessionId);
       // Reset the prevention flag
       preventStyleHelperReset.current = false;
@@ -438,7 +440,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
         borderRadius: "50%",
         backgroundColor: "white",
         border: `${borderWidth}px solid ${
-          node.isDynamic || dragState.dynamicModeNodeId
+          node.isDynamic || dynamicModeNodeId
             ? "var(--accent-secondary)"
             : "var(--accent)"
         }`,

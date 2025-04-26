@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { interfaceOps } from "../atoms/interface-store";
-import { selectOps } from "../atoms/select-store";
-import { useGetDragSource, useGetIsDragging } from "../atoms/drag-store";
+import { selectOps, useGetTempSelectedIds } from "../atoms/select-store";
+import {
+  useGetDragSource,
+  useGetIsDragging,
+  useIsDragging,
+} from "../atoms/drag-store";
+import {
+  useIsMiddleMouseDown,
+  useTransform,
+  useIsMoveCanvasMode,
+  useIsFrameModeActive,
+  useIsTextModeActive,
+  canvasOps,
+} from "../atoms/canvas-interaction-store";
 
 interface SelectionBoxState {
   startX: number;
@@ -13,19 +25,28 @@ interface SelectionBoxState {
 }
 
 export const SelectionBox: React.FC = () => {
-  const {
-    containerRef,
-    dragDisp,
-    nodeState,
-    transform,
-    dragState,
-    interfaceDisp,
-    isMiddleMouseDown,
-  } = useBuilder();
+  const { containerRef, nodeState } = useBuilder();
 
+  // Subscribe to all states that affect whether we should show the selection box
+  const transform = useTransform();
+  const isMiddleMouseDown = useIsMiddleMouseDown();
+  const isMoveCanvasMode = useIsMoveCanvasMode();
+  const isFrameModeActive = useIsFrameModeActive();
+  const isTextModeActive = useIsTextModeActive();
+  const isDragging = useIsDragging();
+  const getTempIds = useGetTempSelectedIds();
+
+  // Calculate isDrawingMode from frame mode and text mode
+  const isDrawingMode = isFrameModeActive || isTextModeActive;
+
+  // Get all hooks BEFORE any conditional returns
   const getIsDragging = useGetIsDragging();
   const getDragSource = useGetDragSource();
   const [box, setBox] = useState<SelectionBoxState | null>(null);
+
+  // Note: this should be below all hook calls
+  const shouldRender =
+    !isDrawingMode && !isMoveCanvasMode && !isDragging && !isMiddleMouseDown;
 
   const updateSelection = useCallback(
     (selectionRect: DOMRect) => {
@@ -83,13 +104,16 @@ export const SelectionBox: React.FC = () => {
       });
 
       const nodeIds = selectedNodes.map(({ node }) => node.id);
-      dragDisp.setTempSelectedIds(nodeIds);
+      selectOps.setTempSelectedIds(nodeIds);
       return nodeIds;
     },
-    [containerRef, transform, dragDisp, nodeState]
+    [containerRef, transform, nodeState]
   );
 
   useEffect(() => {
+    // Skip effect if component should not render
+    if (!shouldRender) return;
+
     const canvas = containerRef.current;
     if (!canvas) return;
 
@@ -123,7 +147,7 @@ export const SelectionBox: React.FC = () => {
       // Remove the header check since we want to handle viewport clicks
       if (target !== canvas && !node?.isViewport) return;
 
-      dragDisp.setIsSelectionBoxActive(true);
+      canvasOps.setIsSelectionBoxActive(true);
       const rect = canvas.getBoundingClientRect();
       setBox({
         startX: e.clientX - rect.left,
@@ -168,7 +192,7 @@ export const SelectionBox: React.FC = () => {
 
       // Clear selection box active state
       setTimeout(() => {
-        dragDisp.setIsSelectionBoxActive(false);
+        canvasOps.setIsSelectionBoxActive(false);
       }, 0);
 
       const rect = canvas.getBoundingClientRect();
@@ -182,13 +206,15 @@ export const SelectionBox: React.FC = () => {
         Math.abs(finalY - box.startY)
       );
 
+      const tempSelectedIds = getTempIds();
+
       const isSmallMovement =
         Math.abs(finalX - box.startX) < 5 && Math.abs(finalY - box.startY) < 5;
 
       if (isSmallMovement) {
         selectOps.clearSelection();
       } else {
-        const selectedIds = dragState.tempSelectedIds;
+        const selectedIds = tempSelectedIds;
         if (selectedIds.length > 0) {
           selectOps.setSelectedIds(selectedIds);
         }
@@ -196,7 +222,7 @@ export const SelectionBox: React.FC = () => {
 
       // Reset state
       setBox(null);
-      dragDisp.setTempSelectedIds([]);
+      selectOps.setTempSelectedIds([]);
     };
 
     // Use canvas-level listener for mousedown, but window-level for move and up
@@ -210,21 +236,20 @@ export const SelectionBox: React.FC = () => {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [
+    shouldRender, // Add this to dependency array
     containerRef,
     box?.isSelecting,
     updateSelection,
-    dragDisp,
     box?.startX,
     box?.startY,
-    dragState.tempSelectedIds,
+    getTempIds,
     getIsDragging,
     getDragSource,
     nodeState.nodes,
   ]);
 
-  if (!box?.isSelecting) return null;
-
-  if (isMiddleMouseDown) return null;
+  // Only render the box if all conditions are met
+  if (!shouldRender || !box?.isSelecting) return null;
 
   const left = Math.min(box.startX, box.currentX);
   const top = Math.min(box.startY, box.currentY);

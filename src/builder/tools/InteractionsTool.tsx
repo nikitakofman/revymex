@@ -5,9 +5,13 @@ import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup
 import { ToolPopupTrigger } from "./_components/ToolbarPopupTrigger";
 import { Zap, ChevronRight, X, Plus } from "lucide-react";
 import { useSelectedIds } from "../context/atoms/select-store";
+import {
+  useActiveViewportInDynamicMode,
+  useDynamicModeNodeId,
+} from "../context/atoms/dynamic-store";
 
 export const InteractionsTool = () => {
-  const { nodeState, dragState } = useBuilder();
+  const { nodeState } = useBuilder();
 
   // Replace subscription with imperative getter
 
@@ -132,13 +136,14 @@ export const InteractionsTool = () => {
 };
 
 const InteractionsPopup = ({ selectedNode, onClose }) => {
-  const { nodeState, dragState, nodeDisp } = useBuilder();
-
+  const { nodeState, nodeDisp } = useBuilder();
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
   // Get the selected node ID from the passed node
   const selectedNodeId = selectedNode?.id;
 
   // Get current viewport
-  const currentViewportId = dragState.activeViewportInDynamicMode;
+  const currentViewportId = activeViewportInDynamicMode;
   const currentViewport = nodeState.nodes.find(
     (n) => n.id === currentViewportId
   );
@@ -146,7 +151,7 @@ const InteractionsPopup = ({ selectedNode, onClose }) => {
   // Find the main dynamic node (either this node or its parent)
   const mainDynamicNodeId = selectedNode?.isDynamic
     ? selectedNode.id
-    : selectedNode?.dynamicParentId || dragState.dynamicModeNodeId;
+    : selectedNode?.dynamicParentId || dynamicModeNodeId;
 
   // Get current connections for the selected node
   const currentConnections = selectedNode?.dynamicConnections || [];

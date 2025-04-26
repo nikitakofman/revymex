@@ -7,6 +7,17 @@ import {
   handleMediaToFrameTransformation,
 } from "@/builder/context/utils";
 import { visualOps } from "@/builder/context/atoms/visual-store";
+import {
+  canvasOps,
+  useGetIsAdjustingBorderRadius,
+  useGetIsAdjustingGap,
+  useGetIsResizing,
+  useGetIsRotating,
+  useIsTextModeActive,
+  useGetTransform,
+} from "@/builder/context/atoms/canvas-interaction-store";
+import { useGetDynamicModeNodeId } from "@/builder/context/atoms/drag-store";
+import { useGetActiveViewportInDynamicMode } from "@/builder/context/atoms/dynamic-store";
 
 interface DrawingBoxState {
   startX: number;
@@ -17,25 +28,32 @@ interface DrawingBoxState {
 }
 
 export const TextCreator: React.FC = () => {
-  const {
-    containerRef,
-    nodeDisp,
-    transform,
-    nodeState,
-    setNodeStyle,
-    isTextModeActive,
-    setIsTextModeActive,
-    dragDisp,
-    isResizing,
-    isRotating,
-    isAdjustingGap,
-    dragState,
-  } = useBuilder();
+  const { containerRef, nodeDisp, nodeState, setNodeStyle } = useBuilder();
+
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
 
-  // The key press effect is now moved to Canvas component,
-  // we no longer need to handle T key press here
+  // Use subscription hook for text mode as it affects rendering
+  const isTextModeActive = useIsTextModeActive();
+
+  // Use getters for transform and other states that are used in event handlers
+  const getTransform = useGetTransform();
+  const getIsResizing = useGetIsResizing();
+  const getIsAdjustingGap = useGetIsAdjustingGap();
+  const getIsRotating = useGetIsRotating();
+  const getIsAdjustingBorderRadius = useGetIsAdjustingBorderRadius();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+  const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
+
+  // Check if we can enable text creation mode
+  const canCreateText = () => {
+    return (
+      !getIsResizing() &&
+      !getIsAdjustingGap() &&
+      !getIsRotating() &&
+      !getIsAdjustingBorderRadius()
+    );
+  };
 
   useEffect(() => {
     const canvas = containerRef.current;
@@ -59,7 +77,11 @@ export const TextCreator: React.FC = () => {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
+      // Early return if not in text mode
       if (!isTextModeActive) return;
+
+      // Early return if we can't create text
+      if (!canCreateText()) return;
 
       targetFrameRef.current = findTargetFrame(e);
 
@@ -87,7 +109,8 @@ export const TextCreator: React.FC = () => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!box?.isDrawing) return;
 
-      if (isResizing || isRotating || isAdjustingGap) return;
+      // Get current transform for calculations
+      const transform = getTransform();
 
       const rect = canvas.getBoundingClientRect();
       const newX = e.clientX - rect.left;
@@ -125,6 +148,10 @@ export const TextCreator: React.FC = () => {
     const handleMouseUp = (e: MouseEvent) => {
       if (!box?.isDrawing) return;
 
+      const dynamicModeNodeId = getDynamicModeNodeId();
+      const activeViewportInDynamicMode = getActiveViewportInDynamicMode();
+
+      const transform = getTransform();
       const rect = canvas.getBoundingClientRect();
       const finalX = e.clientX - rect.left;
       const finalY = e.clientY - rect.top;
@@ -136,8 +163,8 @@ export const TextCreator: React.FC = () => {
       const height = Math.abs(finalY - box.startY);
 
       // Check if we're in dynamic mode
-      const inDynamicMode = !!dragState.dynamicModeNodeId;
-      const dynamicParentId = dragState.dynamicModeNodeId;
+      const inDynamicMode = !!dynamicModeNodeId;
+      const dynamicParentId = dynamicModeNodeId;
 
       if (width > 5 && height > 5) {
         const canvasX = (left - transform.x) / transform.scale;
@@ -195,7 +222,7 @@ export const TextCreator: React.FC = () => {
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
             ...(inDynamicMode && {
-              dynamicViewportId: dragState.activeViewportInDynamicMode,
+              dynamicViewportId: activeViewportInDynamicMode,
             }),
           };
 
@@ -237,7 +264,7 @@ export const TextCreator: React.FC = () => {
             // If in dynamic mode, add the dynamic parent ID
             ...(inDynamicMode && { dynamicParentId }),
             ...(inDynamicMode && {
-              dynamicViewportId: dragState.activeViewportInDynamicMode,
+              dynamicViewportId: activeViewportInDynamicMode,
             }),
           };
 
@@ -278,7 +305,7 @@ export const TextCreator: React.FC = () => {
             ...(inDynamicMode && {
               dynamicParentId,
               dynamicPosition: { x: canvasX, y: canvasY },
-              dynamicViewportId: dragState.activeViewportInDynamicMode,
+              dynamicViewportId: activeViewportInDynamicMode,
             }),
           };
 
@@ -301,7 +328,7 @@ export const TextCreator: React.FC = () => {
         }
       }
 
-      if (!dragState.dynamicModeNodeId) {
+      if (!dynamicModeNodeId) {
         // Only sync viewports if we're NOT in dynamic mode
         nodeDisp.syncViewports();
       }
@@ -312,7 +339,9 @@ export const TextCreator: React.FC = () => {
       // Reset state
       setBox(null);
       targetFrameRef.current = null;
-      setIsTextModeActive(false); // Still need to reset text mode after drawing
+
+      // Use canvasOps instead of setIsTextModeActive
+      canvasOps.setIsTextModeActive(false);
     };
 
     canvas.addEventListener("mousedown", handleMouseDown);
@@ -330,21 +359,16 @@ export const TextCreator: React.FC = () => {
     containerRef,
     box?.isDrawing,
     isTextModeActive,
-    transform,
     nodeDisp,
     nodeState.nodes,
     setNodeStyle,
-    setIsTextModeActive,
-    dragDisp,
-    isResizing,
-    isRotating,
-    isAdjustingGap,
     box?.startX,
     box?.startY,
-    dragState.dynamicModeNodeId,
-    dragState.activeViewportInDynamicMode,
+    getDynamicModeNodeId,
+    getActiveViewportInDynamicMode,
   ]);
 
+  // Early return if not drawing
   if (!box?.isDrawing) return null;
 
   const left = Math.min(box.startX, box.currentX);

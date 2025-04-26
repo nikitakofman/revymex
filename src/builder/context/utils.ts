@@ -1,4 +1,4 @@
-import { DragState, SnapGuideLine } from "@/builder/reducer/dragDispatcher";
+import { SnapGuideLine } from "@/builder/reducer/dragDispatcher";
 import {
   Node,
   NodeDispatcher,
@@ -1341,49 +1341,6 @@ export function getFilteredNodes(
     return true;
   });
 }
-
-// dragFrameUtils.ts
-export const handleFrameDropInteraction = (
-  frameElement: Element,
-  frameChildren: { id: string | number; rect: DOMRect }[],
-  mouseX: number,
-  mouseY: number,
-  draggedNode: Node,
-  nodeState: { nodes: Node[] },
-  dragDisp: any,
-  dragState: DragState,
-  canvasX: number,
-  canvasY: number
-) => {
-  const frameId = frameElement.getAttribute("data-node-id")!;
-  const targetNode = nodeState.nodes.find((n) => String(n.id) === frameId);
-
-  if (targetNode?.isDynamic && !dragState.dynamicModeNodeId) {
-    dragDisp.setDropInfo(null, null, canvasX, canvasY);
-    return;
-  }
-
-  const result = computeFrameDropIndicator(
-    frameElement,
-    frameChildren,
-    mouseX,
-    mouseY
-  );
-
-  if (result) {
-    dragDisp.setDropInfo(
-      result.dropInfo.targetId,
-      result.dropInfo.position,
-      canvasX,
-      canvasY
-    );
-    if (result.lineIndicator.show) {
-      dragDisp.setLineIndicator(result.lineIndicator);
-    } else {
-      dragDisp.hideLineIndicator();
-    }
-  }
-};
 
 type NodePosition = {
   id: string | number;

@@ -6,9 +6,10 @@ import {
   useViewportContextMenu,
   contextMenuOps,
 } from "../atoms/context-menu-store";
+import { modalOps } from "../atoms/modal-store";
 
 const ViewportContextMenu = () => {
-  const { dragDisp, nodeDisp } = useBuilder();
+  const { nodeDisp } = useBuilder();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState({
     left: 0,
@@ -85,7 +86,7 @@ const ViewportContextMenu = () => {
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
         contextMenuOps.hideViewportContextMenu();
-        dragDisp.showViewportModal({
+        modalOps.showViewportModal({
           x: viewportContextMenu.position.x,
           y: viewportContextMenu.position.y,
         });
@@ -97,7 +98,7 @@ const ViewportContextMenu = () => {
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
         contextMenuOps.hideViewportContextMenu();
-        dragDisp.showEditViewportModal(viewportContextMenu.viewportId, {
+        modalOps.showEditViewportModal(viewportContextMenu.viewportId, {
           x: viewportContextMenu.position.x,
           y: viewportContextMenu.position.y,
         });
@@ -105,7 +106,7 @@ const ViewportContextMenu = () => {
     },
     {
       label: "Align Viewports",
-      icon: AlignHorizontalJustifyCenter, // Import this from lucide-react
+      icon: AlignHorizontalJustifyCenter,
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
         nodeDisp.alignViewports();

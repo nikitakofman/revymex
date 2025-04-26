@@ -24,7 +24,7 @@ export const ToolSelect = ({
   onChange,
   customSelectWidth,
 }: ToolSelectProps) => {
-  const { setNodeStyle, nodeState, dragState, nodeDisp } = useBuilder();
+  const { setNodeStyle, nodeState, nodeDisp } = useBuilder();
 
   // Replace subscription with imperative getter
   const getSelectedIds = useGetSelectedIds();

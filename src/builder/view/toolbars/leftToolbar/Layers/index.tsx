@@ -5,26 +5,28 @@ import TreeNodeComponent from "./TreeNodeComponent";
 import { TreeNodeWithChildren } from "@/builder/types";
 import { Label, ToolbarLabel } from "@/builder/tools/_components/ToolbarAtoms";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import { useTransform } from "@/builder/context/atoms/canvas-interaction-store";
+import {
+  useDynamicModeNodeId,
+  useActiveViewportInDynamicMode,
+} from "@/builder/context/atoms/dynamic-store";
 
 const Layers: React.FC = () => {
-  const {
-    nodeState,
-    dragState,
-    nodeDisp,
-    setNodeStyle,
-    transform,
-    contentRef,
-  } = useBuilder();
-  const isDynamicMode = !!dragState.dynamicModeNodeId;
+  const { nodeState, nodeDisp, setNodeStyle, contentRef } = useBuilder();
+
+  // Use atoms for state
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
+  const isDynamicMode = !!dynamicModeNodeId;
 
   const currentSelectedIds = useGetSelectedIds();
+  const transform = useTransform();
 
-  const activeViewportId = dragState.activeViewportInDynamicMode;
   const treeData = buildTreeFromNodes(
     nodeState.nodes,
     isDynamicMode,
-    dragState.dynamicModeNodeId as string | number | null,
-    activeViewportId
+    dynamicModeNodeId,
+    activeViewportInDynamicMode
   );
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -101,7 +103,7 @@ const Layers: React.FC = () => {
         );
       }
 
-      if (!dragState.dynamicModeNodeId) {
+      if (!dynamicModeNodeId) {
         nodeDisp.syncViewports();
       }
     } catch (error) {

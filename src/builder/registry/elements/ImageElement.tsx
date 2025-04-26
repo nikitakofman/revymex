@@ -15,7 +15,6 @@ export const ImageElement = ({
   className = "",
 }: ExtendedElementProps) => {
   const connect = useConnect();
-  const { dragState } = useBuilder();
   const dropInfo = useDropInfo();
 
   const isDropTarget =
@@ -36,11 +35,7 @@ export const ImageElement = ({
             objectPosition: node.style.objectPosition,
             pointerEvents: "none",
           }}
-          src={
-            dragState.dynamicState === "hovered"
-              ? node.dynamicState?.hovered?.src
-              : node.style.src || "https://batiment.imag.fr/img/imag.png"
-          }
+          src={node.style.src || "https://batiment.imag.fr/img/imag.png"}
           alt="Image"
         />
 

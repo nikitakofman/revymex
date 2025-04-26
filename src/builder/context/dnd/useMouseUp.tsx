@@ -19,24 +19,23 @@ import {
   useGetDraggedNode,
   useGetDragSource,
   useGetDropInfo,
+  useGetDynamicModeNodeId,
   useGetIsDragging,
   useGetNodeDimensions,
   useGetPlaceholderInfo,
+  useGetRecordingSessionId,
 } from "../atoms/drag-store";
 import { visualOps } from "../atoms/visual-store";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
+import { useGetActiveViewportInDynamicMode } from "../atoms/dynamic-store";
 
 export const useMouseUp = () => {
   const {
-    dragState,
-    dragDisp,
     nodeDisp,
     containerRef,
-    transform,
     nodeState,
     setNodeStyle,
     stopRecording,
-    selectedIdsRef,
-    draggingOverCanvasRef,
     hasLeftViewportRef,
   } = useBuilder();
 
@@ -53,6 +52,10 @@ export const useMouseUp = () => {
   const getDragSource = useGetDragSource();
   const getPlaceholderInfo = useGetPlaceholderInfo();
   const getNodeDimensions = useGetNodeDimensions();
+  const getTransform = useGetTransform();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+  const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
+  const getRecordingSessionId = useGetRecordingSessionId();
 
   return () => {
     const dragSource = getDragSource();
@@ -61,8 +64,10 @@ export const useMouseUp = () => {
     const dropInfo = getDropInfo();
     const placeholderInfo = getPlaceholderInfo();
     const nodeDimensions = getNodeDimensions();
-
-    console.log("drop info in mouse up handler", dropInfo);
+    const transform = getTransform();
+    const dynamicModeNodeId = getDynamicModeNodeId();
+    const activeViewportInDynamicMode = getActiveViewportInDynamicMode();
+    const recordingSessionId = getRecordingSessionId();
 
     if (!isDragging || !currentDraggedNode) {
       return;
@@ -78,15 +83,9 @@ export const useMouseUp = () => {
     const realNodeId = draggedNode.id;
     const sharedId = nanoid();
 
-    const dropWidth =
-      dragState.originalWidthHeight.width !== 0
-        ? dragState.originalWidthHeight.width
-        : draggedNode.style.width;
+    const dropWidth = draggedNode.style.width;
 
-    const dropHeight =
-      dragState.originalWidthHeight.height !== 0
-        ? dragState.originalWidthHeight.height
-        : draggedNode.style.height;
+    const dropHeight = draggedNode.style.height;
 
     const sourceViewportId: string | number | null = findParentViewport(
       draggedNode.parentId,
@@ -165,10 +164,10 @@ export const useMouseUp = () => {
 
           visualOps.hideLineIndicator();
           dragOps.resetDragState();
-          stopRecording(dragState.recordingSessionId);
+          stopRecording(recordingSessionId);
 
           // Always sync new elements to all viewports
-          if (isNewElement && !dragState.dynamicModeNodeId) {
+          if (isNewElement && !dynamicModeNodeId) {
             setTimeout(() => {
               nodeDisp.syncDroppedNodeWithChildren(realNodeId);
             }, 0);
@@ -238,9 +237,9 @@ export const useMouseUp = () => {
 
           visualOps.hideLineIndicator();
           dragOps.resetDragState();
-          stopRecording(dragState.recordingSessionId);
+          stopRecording(recordingSessionId);
 
-          if (isNewElement && !dragState.dynamicModeNodeId) {
+          if (isNewElement && !dynamicModeNodeId) {
             setTimeout(() => {
               nodeDisp.syncDroppedNodeWithChildren(realNodeId);
             }, 0);
@@ -281,14 +280,14 @@ export const useMouseUp = () => {
         );
 
         if (transformed) {
-          if (isNewElement && !dragState.dynamicModeNodeId) {
+          if (isNewElement && !dynamicModeNodeId) {
             setTimeout(() => {
               nodeDisp.syncDroppedNodeWithChildren(realNodeId);
             }, 0);
           }
           visualOps.hideLineIndicator();
           dragOps.resetDragState();
-          stopRecording(dragState.recordingSessionId);
+          stopRecording(recordingSessionId);
           return;
         }
       }
@@ -300,7 +299,7 @@ export const useMouseUp = () => {
 
       console.log("isWithinViewport:", shouldBeInViewport);
       const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
-      const activeViewportId = dragState.activeViewportInDynamicMode;
+      const activeViewportId = activeViewportInDynamicMode;
 
       if (draggedItem) {
         // Adding a new element from the toolbar or canvas
@@ -333,7 +332,7 @@ export const useMouseUp = () => {
         selectOps.setSelectedIds([newNode.id]);
 
         // Still sync with standard viewports if not in dynamic mode
-        if (!dragState.dynamicModeNodeId) {
+        if (!dynamicModeNodeId) {
           setTimeout(() => {
             // Enhanced sync for non-dynamic mode
             nodeDisp.syncDroppedNodeWithChildren(realNodeId);
@@ -384,7 +383,7 @@ export const useMouseUp = () => {
 
             if (
               targetFrame?.dynamicParentId &&
-              dragState.dynamicModeNodeId &&
+              dynamicModeNodeId &&
               activeViewportId
             ) {
               nodeDisp.updateNode(info.node.id, {
@@ -447,7 +446,7 @@ export const useMouseUp = () => {
             zIndex: "",
             left: "",
             top: "",
-            ...(dragState.originalWidthHeight.isFillMode
+            ...(draggedNode?.style.flex === "1 0 0px"
               ? { flex: "1 0 0px" }
               : {}),
           },
@@ -456,7 +455,7 @@ export const useMouseUp = () => {
         );
 
         // ENHANCED SYNC LOGIC: Use syncDroppedNodeWithChildren for ALL moves to viewport components
-        if (movingToViewportComponent && !dragState.dynamicModeNodeId) {
+        if (movingToViewportComponent && !dynamicModeNodeId) {
           // Get the moved node with its updated parent
           const movedNode = nodeState.nodes.find((n) => n.id === realNodeId);
 
@@ -494,7 +493,7 @@ export const useMouseUp = () => {
           }
         }
         // For repositioning on canvas, only sync the position changes
-        else if (!isNewElement && !dragState.dynamicModeNodeId) {
+        else if (!isNewElement && !dynamicModeNodeId) {
           nodeDisp.syncNodePosition(realNodeId);
           nodeDisp.removePlaceholders();
         }
@@ -504,7 +503,7 @@ export const useMouseUp = () => {
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
-      stopRecording(dragState.recordingSessionId as string);
+      stopRecording(recordingSessionId as string);
       return;
     }
 
@@ -793,7 +792,7 @@ export const useMouseUp = () => {
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
-      stopRecording(dragState.recordingSessionId);
+      stopRecording(recordingSessionId);
       return;
     }
 
@@ -829,20 +828,17 @@ export const useMouseUp = () => {
         nodeDisp.removeNode(counterpart.id);
       });
 
-      if (dragState.dynamicModeNodeId) {
+      if (dynamicModeNodeId) {
         console.log("indynamicmode");
-        console.log(
-          "dragState.activeViewportInDynamicMode",
-          dragState.dynamicModeNodeId
-        );
-        console.log("draggedNode.id", dragState.activeViewportInDynamicMode);
+        console.log("activeViewportInDynamicMode", dynamicModeNodeId);
+        console.log("draggedNode.id", activeViewportInDynamicMode);
         // Update the node to be a direct child of the current active viewport
 
         nodeDisp.updateNode(draggedNode.id, {
-          dynamicParentId: dragState.dynamicModeNodeId,
+          dynamicParentId: dynamicModeNodeId,
           dynamicFamilyId: null,
           // Keep it in the dynamic environment
-          dynamicViewportId: dragState.activeViewportInDynamicMode,
+          dynamicViewportId: activeViewportInDynamicMode,
         });
       } else {
         // Clear sharedId from the dragged node to make it a standalone element
@@ -945,7 +941,7 @@ export const useMouseUp = () => {
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
-      stopRecording(dragState.recordingSessionId);
+      stopRecording(recordingSessionId);
       return;
     }
 
@@ -970,12 +966,12 @@ export const useMouseUp = () => {
         } as Node["style"],
       };
 
-      if (dragState.dynamicModeNodeId) {
+      if (dynamicModeNodeId) {
         newNode.dynamicPosition = { x: centeredX, y: centeredY };
-        newNode.dynamicParentId = dragState.dynamicModeNodeId;
+        newNode.dynamicParentId = dynamicModeNodeId;
 
-        if (dragState.activeViewportInDynamicMode) {
-          newNode.dynamicViewportId = dragState.activeViewportInDynamicMode;
+        if (activeViewportInDynamicMode) {
+          newNode.dynamicViewportId = activeViewportInDynamicMode;
         }
 
         lastAddedNodeIdRef.current = newNode.id;
@@ -984,7 +980,7 @@ export const useMouseUp = () => {
       nodeDisp.addNode(newNode, null, null, false);
       selectOps.setSelectedIds([newNode.id]);
 
-      if (!dragState.dynamicModeNodeId) {
+      if (!dynamicModeNodeId) {
         setTimeout(() => {
           nodeDisp.syncDroppedNodeWithChildren(realNodeId);
         }, 0);
@@ -994,7 +990,7 @@ export const useMouseUp = () => {
       dragOps.resetDragState();
       originalIndexRef.current = null;
       hasLeftViewportRef.current = false;
-      stopRecording(dragState.recordingSessionId);
+      stopRecording(recordingSessionId);
       return;
     }
 
@@ -1176,7 +1172,7 @@ export const useMouseUp = () => {
       dragOps.resetDragState();
       originalIndexRef.current = null;
       hasLeftViewportRef.current = false;
-      stopRecording(dragState.recordingSessionId);
+      stopRecording(recordingSessionId);
     }
   };
 };

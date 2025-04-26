@@ -6,7 +6,6 @@ import { useBuilder } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../context/atoms/select-store";
 
 const DimensionsTool = () => {
-  const { dragState } = useBuilder();
   const [widthUnit, setWidthUnit] = useState("px");
   const [heightUnit, setHeightUnit] = useState("px");
   const [isViewport, setIsViewport] = useState(true);

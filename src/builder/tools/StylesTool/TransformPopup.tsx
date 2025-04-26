@@ -4,7 +4,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const TransformPopup = ({ selectedNode, onClose }) => {
-  const { dragState, setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilder();
   const currentSelectedIds = useGetSelectedIds();
   // Transform states
   const [scaleX, setScaleX] = useState(1);

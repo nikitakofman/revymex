@@ -2,6 +2,7 @@
 import { atom, createStore } from "jotai/vanilla";
 import { atomFamily, selectAtom } from "jotai/utils";
 import { useAtomValue } from "jotai";
+import { useCallback } from "react";
 
 // Create a separate store just for hover state
 export const hoverStore = createStore();
@@ -45,6 +46,13 @@ export const useNodeHovered = (nodeId: string | number) => {
 // Custom hook to get the current hovered node ID (if needed)
 export const useHoveredNodeId = () => {
   return useAtomValue(hoverNodeIdAtom, { store: hoverStore });
+};
+
+// Imperative getter hook for the hovered node ID
+export const useGetHoveredNodeId = () => {
+  return useCallback(() => {
+    return hoverStore.get(_internalHoverNodeIdAtom);
+  }, []);
 };
 
 // Initialize the store with null value

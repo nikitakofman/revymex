@@ -3,6 +3,7 @@ import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
+import { canvasOps, useTransform } from "../atoms/canvas-interaction-store";
 
 interface BorderRadiusHandleProps {
   node: Node;
@@ -21,18 +22,11 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const {
-    setNodeStyle,
-    transform,
-    dragDisp,
-    startRecording,
-    stopRecording,
-    dragState,
-    setIsAdjustingBorderRadius,
-  } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();
+  const transform = useTransform();
 
   // Function to check if this node is the primary selected node
   const isPrimarySelectedNode = useCallback(() => {
@@ -66,7 +60,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     e.stopPropagation();
 
     const sessionId = startRecording();
-    setIsAdjustingBorderRadius(true);
+    canvasOps.setIsAdjustingBorderRadius(true);
 
     // Get current selection state at the time of the event
     const selectedIds = getSelectedIds();
@@ -120,7 +114,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
     const handleMouseUp = () => {
       visualOps.hideStyleHelper();
       stopRecording(sessionId);
-      setIsAdjustingBorderRadius(false);
+      canvasOps.setIsAdjustingBorderRadius(false);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };

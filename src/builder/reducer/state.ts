@@ -1,5 +1,4 @@
 import { DragState } from "./dragDispatcher";
-import { InterfaceState } from "./interfaceDispatcher";
 import { Node } from "./nodeDispatcher";
 
 const VIEWPORT_GAP = 160;
@@ -265,15 +264,4 @@ export const dragInitialState: DragState = {
       y: 0,
     },
   },
-};
-
-export const interfaceInitialState: InterfaceState = {
-  isInsertOpen: false,
-  isLayersOpen: false,
-  isCmsOpen: false,
-  isPreviewOpen: false,
-  isPagesOpen: false,
-  isComponentsOpen: false,
-  isTyping: false,
-  previewWidth: null,
 };

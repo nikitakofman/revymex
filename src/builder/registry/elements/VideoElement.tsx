@@ -7,7 +7,6 @@ import { useDropInfo } from "@/builder/context/atoms/drag-store";
 
 export const VideoElement = ({ node }: ElementProps) => {
   const connect = useConnect();
-  const { dragState } = useBuilder();
   const dropInfo = useDropInfo();
 
   const isDropTarget =
@@ -29,10 +28,8 @@ export const VideoElement = ({ node }: ElementProps) => {
             pointerEvents: "none",
           }}
           src={
-            dragState.dynamicState === "hovered"
-              ? node.dynamicState?.hovered?.src
-              : node.style.src ||
-                "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
+            node.style.src ||
+            "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
           }
           controls={false}
           autoPlay={false}

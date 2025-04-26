@@ -28,6 +28,8 @@ import { Editor } from "@tiptap/react";
 import { FixedSizeList as List } from "react-window";
 import SimpleColorPicker from "./SimpleColorPicker";
 import { findParentViewport } from "@/builder/context/utils";
+import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
 
 interface TextMenuProps {
   BubbleMenuPortal: ({
@@ -79,14 +81,7 @@ const TextMenu = ({
 
   node,
 }: TextMenuProps) => {
-  const {
-    transform,
-    contentRef,
-    nodeState,
-    setNodeStyle,
-    setIsTextMenuOpen,
-    dragState,
-  } = useBuilder();
+  const { nodeState, setNodeStyle } = useBuilder();
   const [fonts, setFonts] = useState<Array<{ family: string }>>([]);
   const [showFontPicker, setShowFontPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,6 +93,8 @@ const TextMenu = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadedFonts = useRef(new Set<string>());
   const selectionBeforeFocus = useRef(null);
+
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Helper function to get the correct viewport width
   const getViewportWidth = useCallback(() => {
@@ -132,12 +129,12 @@ const TextMenu = ({
   );
 
   useEffect(() => {
-    setIsTextMenuOpen(true);
+    canvasOps.setIsTextMenuOpen(true);
 
     return () => {
-      setIsTextMenuOpen(false);
+      canvasOps.setIsTextMenuOpen(false);
     };
-  }, [setIsTextMenuOpen]);
+  }, []);
 
   // Fetch Google fonts
   useEffect(() => {
@@ -326,7 +323,7 @@ const TextMenu = ({
         style={{
           position: "fixed",
           left: "50%",
-          top: dragState.dynamicModeNodeId ? "130px" : "76px",
+          top: dynamicModeNodeId ? "130px" : "76px",
           transform: "translateX(-50%)",
           zIndex: 50,
         }}

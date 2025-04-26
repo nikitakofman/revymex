@@ -8,7 +8,7 @@ import { ImageCropPopup } from "./image-crop";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const VideoSettingsControl = ({ selectedNode }) => {
-  const { setNodeStyle, dragState } = useBuilder();
+  const { setNodeStyle } = useBuilder();
   const [videoProps, setVideoProps] = useState({
     autoplay: false,
     loop: false,

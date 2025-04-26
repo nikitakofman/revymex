@@ -35,6 +35,15 @@ import {
 } from "../atoms/select-store";
 import { useAtomValue } from "jotai";
 import { useDragSource } from "../atoms/drag-store";
+import {
+  useIsAdjustingGap,
+  useIsEditingText,
+  useIsMovingCanvas,
+  useIsResizing,
+  useIsRotating,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 
 export const VisualHelpers = ({
   elementRef,
@@ -78,25 +87,21 @@ export const VisualHelpers = ({
   // Track parent's rotation as well (for children to inherit)
   const [cumulativeRotation, setCumulativeRotation] = useState<number>(0);
 
-  const {
-    contentRef,
-    transform,
-    dragState,
-    isResizing,
-    isMovingCanvas,
-    dragDisp,
-    isAdjustingGap,
-    isRotating,
-    nodeState,
-    isEditingText,
-  } = useBuilder();
+  const { contentRef, nodeState } = useBuilder();
 
-  // Use per-node subscriptions for all state
+  // Use atoms for state
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const isResizing = useIsResizing();
+  const isEditingText = useIsEditingText();
+  const transform = useTransform();
   const isHovered = useNodeHovered(node.id);
   const isNodeTempSelected = useNodeTempSelected(node.id);
   const isSelected = useNodeSelected(node.id);
   const getSelectedIds = useGetSelectedIds();
   const dragSource = useDragSource();
+  const isMovingCanvas = useIsMovingCanvas();
+  const isAdjustingGap = useIsAdjustingGap();
+  const isRotating = useIsRotating();
 
   const cumulativeSkew = getCumulativeSkew(node, nodeState);
 
@@ -195,7 +200,6 @@ export const VisualHelpers = ({
     dragSource,
     isMovingCanvas,
     node.id,
-    dragDisp,
     node.style.transform,
   ]);
 
@@ -334,7 +338,7 @@ export const VisualHelpers = ({
             <div
               style={{
                 ...getBorderStyle(
-                  node.isDynamic || dragState.dynamicModeNodeId
+                  node.isDynamic || dynamicModeNodeId
                     ? "var(--accent-secondary)"
                     : "var(--accent)",
                   998
@@ -349,7 +353,7 @@ export const VisualHelpers = ({
             <div
               style={{
                 ...getBorderStyle(
-                  node.isDynamic || dragState.dynamicModeNodeId
+                  node.isDynamic || dynamicModeNodeId
                     ? "var(--accent-secondary)"
                     : "var(--accent)",
                   999
@@ -367,7 +371,7 @@ export const VisualHelpers = ({
               <div
                 style={{
                   ...getBorderStyle(
-                    node.isDynamic || dragState.dynamicModeNodeId
+                    node.isDynamic || dynamicModeNodeId
                       ? "var(--accent-secondary)"
                       : "#3b82f6",
                     1000
@@ -425,8 +429,7 @@ export const VisualHelpers = ({
                     )}
 
                   {/* Gap handles (only if not display:grid) */}
-                  {(!node.isDynamic ||
-                    dragState.dynamicModeNodeId === node.id) &&
+                  {(!node.isDynamic || dynamicModeNodeId === node.id) &&
                     localComputedStyle?.display !== "grid" && (
                       <GapHandles
                         node={node}
@@ -436,7 +439,7 @@ export const VisualHelpers = ({
                     )}
 
                   {/* Connection handle */}
-                  {dragState.dynamicModeNodeId !== null && (
+                  {dynamicModeNodeId !== null && (
                     <ConnectionHandle node={node} transform={transform} />
                   )}
                   <AddVariantsUI node={node} transform={transform} />
@@ -468,7 +471,7 @@ export const VisualHelpers = ({
               position: "absolute",
               inset: 0,
               border:
-                node.isDynamic || dragState.dynamicModeNodeId
+                node.isDynamic || dynamicModeNodeId
                   ? `${2 / transform.scale}px solid var(--accent-secondary)`
                   : `${2 / transform.scale}px solid #3b82f6`,
               boxSizing: "border-box",

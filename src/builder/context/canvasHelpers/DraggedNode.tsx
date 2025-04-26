@@ -19,6 +19,7 @@ import {
   useIsOverCanvas,
   useNodeDimensions,
 } from "../atoms/drag-store";
+import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 
 interface Transform {
   x: number;
@@ -64,12 +65,14 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   transform,
   offset,
 }) => {
-  const { dragState, nodeState, containerRef } = useBuilder();
+  const { nodeState, containerRef } = useBuilder();
 
+  // Use atoms for state
+  const dynamicModeNodeId = useDynamicModeNodeId();
   const additionalDraggedNodes = useAdditionalDraggedNodes();
   const dragSource = useDragSource();
-
   const isOverCanvas = useIsOverCanvas();
+
   const initialDimensionsRef = useRef<{ width: number; height: number } | null>(
     null
   );
@@ -77,13 +80,11 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   const nodeDimensions = useNodeDimensions();
 
   // figure out which nodes to show
-  const activeFilter = dragState.dynamicModeNodeId
-    ? "dynamicMode"
-    : "outOfViewport";
+  const activeFilter = dynamicModeNodeId ? "dynamicMode" : "outOfViewport";
   const filteredNodes = getFilteredNodes(
     nodeState.nodes,
     activeFilter,
-    dragState.dynamicModeNodeId
+    dynamicModeNodeId
   );
 
   const snapGrid = useSnapGrid(filteredNodes);
@@ -218,7 +219,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   let snapResult: SnapResult | null = null;
 
   // Step 2: compute prospective snaps
-  if (snapGrid && (isOverCanvas || dragState.dynamicModeNodeId)) {
+  if (snapGrid && (isOverCanvas || dynamicModeNodeId)) {
     snapResult = snapGrid.findNearestSnaps(snapPoints, 10, node.id);
 
     // apply alignment snap

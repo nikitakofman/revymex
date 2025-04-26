@@ -2,24 +2,29 @@ import { useEffect, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useNodeActions } from "./useNodeActions";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
-import { useGetIsDragging } from "../atoms/drag-store";
+import {
+  dragOps,
+  useDuplicatedFromAlt,
+  useGetIsDragging,
+} from "../atoms/drag-store";
+import {
+  canvasOps,
+  useGetIsEditingText,
+  useGetIsMoveCanvasMode,
+  useIsMoveCanvasMode,
+} from "../atoms/canvas-interaction-store";
 
 export const useKeyboardDrag = ({ isEnabled = true }) => {
-  const {
-    dragState,
-    dragDisp,
-    nodeState,
-    nodeDisp,
-    isMoveCanvasMode,
-    setIsMoveCanvasMode,
-    setNodeStyle,
-    isEditingText,
-  } = useBuilder();
+  const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
 
   const currentSelectedIds = useGetSelectedIds();
+  const getIsMoveCanvasMode = useGetIsMoveCanvasMode();
+  const isMoveCanvasMode = useIsMoveCanvasMode();
+  const getIsEditingText = useGetIsEditingText();
+  const duplicatedFromAlt = useDuplicatedFromAlt();
 
   const { clearSelection, setSelectedIds } = selectOps;
 
@@ -58,6 +63,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const isDragging = getIsDragging();
+      const isEditingText = getIsEditingText();
       if (isEditingText || document.activeElement?.isContentEditable) {
         return;
       }
@@ -78,7 +84,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
       if (e.code === "Space" && !e.repeat) {
         e.preventDefault(); // Prevent default scrolling
         isSpacePressedRef.current = true;
-        setIsMoveCanvasMode(true);
+        canvasOps.setIsMoveCanvasMode(true);
       }
 
       const selectedIds = currentSelectedIds();
@@ -161,6 +167,8 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      const isMoveCanvasMode = getIsMoveCanvasMode();
+
       if (e.key === "Alt") {
         isAltPressedRef.current = false;
         // Reset the duplication handled flag
@@ -175,7 +183,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
 
         // Check if the move mode wasn't activated by clicking the button
         // We can infer this if the mode was activated by space key
-        setIsMoveCanvasMode(false);
+        canvasOps.setIsMoveCanvasMode(false);
       }
     };
 
@@ -189,11 +197,11 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
   }, [
     getIsDragging,
     nodeState.nodes,
-    isMoveCanvasMode,
-    setIsMoveCanvasMode,
-    isEditingText,
+    getIsMoveCanvasMode,
+    canvasOps.setIsMoveCanvasMode,
+    getIsEditingText,
     isEnabled,
-    dragDisp,
+
     nodeDisp,
     handleCopy,
     handlePaste,
@@ -214,14 +222,14 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
     } else {
       // Reset the flag when drag ends
       altDuplicationHandledRef.current = false;
-      dragDisp.setDuplicatedFromAlt(false);
+      dragOps.setDuplicatedFromAlt(false);
     }
-  }, [getIsDragging, handleDuplicate, dragDisp]);
+  }, [getIsDragging, handleDuplicate]);
 
   return {
     isAltPressed: isAltPressedRef.current,
     isSpacePressed: isSpacePressedRef.current,
-    isDuplicating: dragState.duplicatedFromAlt,
+    isDuplicating: duplicatedFromAlt,
     isMoveCanvasMode,
   };
 };

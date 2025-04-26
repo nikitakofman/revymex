@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import Button from "@/components/ui/button";
 import { useBuilder } from "@/builder/context/builderState";
+import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
 
 /**
  * Helper function to safely create a CSS background image value
@@ -22,7 +23,6 @@ export const ImageSearchModal = ({
   const [query, setQuery] = useState("minimal");
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const { isEditingText, setIsEditingText } = useBuilder();
 
   const fetchImages = async (searchQuery = "minimal") => {
     if (loading) return;
@@ -69,8 +69,8 @@ export const ImageSearchModal = ({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onBlur={(e) => setIsEditingText(false)}
-          onSelect={(e) => setIsEditingText(true)}
+          onBlur={(e) => canvasOps.setIsEditingText(false)}
+          onSelect={(e) => canvasOps.setIsEditingText(true)}
           placeholder="Search images..."
           className="flex-1 px-3 py-1.5 bg-[var(--bg-default)] border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />
@@ -139,7 +139,6 @@ export const VideoSearchModal = ({
   const [query, setQuery] = useState("minimal");
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
-  const { isEditingText, setIsEditingText } = useBuilder();
 
   const fetchVideos = async (searchQuery = "minimal") => {
     if (loading) return;
@@ -179,8 +178,8 @@ export const VideoSearchModal = ({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onBlur={(e) => setIsEditingText(false)}
-          onSelect={(e) => setIsEditingText(true)}
+          onBlur={(e) => canvasOps.setIsEditingText(false)}
+          onSelect={(e) => canvasOps.setIsEditingText(true)}
           placeholder="Search videos..."
           className="flex-1 px-3 py-1.5 bg-[var(--bg-default)] border border-[var(--border-default)] rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
         />

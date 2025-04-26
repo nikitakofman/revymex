@@ -7,7 +7,7 @@ import { ToolbarSwitch } from "../_components/ToolbarSwitch";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ShadowToolPopup = () => {
-  const { dragState, setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilder();
   const [x, setX] = useState(0);
   const [y, setY] = useState(4);
   const [blur, setBlur] = useState(8);

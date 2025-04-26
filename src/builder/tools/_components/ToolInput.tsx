@@ -16,6 +16,7 @@ import {
   useGetSelectedIds,
   useSelectedIds,
 } from "@/builder/context/atoms/select-store";
+import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -148,16 +149,8 @@ export function ToolInput({
   sliderStep = 1,
   ...props
 }: ToolInputProps) {
-  const {
-    setNodeStyle,
-    dragState,
-    nodeState,
-    startRecording,
-    stopRecording,
-    isEditingText,
-    setIsEditingText,
-    setIsDraggingChevrons,
-  } = useBuilder();
+  const { setNodeStyle, nodeState, startRecording, stopRecording } =
+    useBuilder();
   const [localValue, setLocalValue] = useState<string | number>(
     value || customValue || "0"
   );
@@ -885,7 +878,7 @@ export function ToolInput({
     e.preventDefault();
     e.stopPropagation();
 
-    setIsDraggingChevrons(true);
+    canvasOps.setIsDraggingChevrons(true);
 
     const sessionId = startRecording();
 
@@ -925,7 +918,7 @@ export function ToolInput({
       e.preventDefault();
       e.stopPropagation();
 
-      setIsDraggingChevrons(false);
+      canvasOps.setIsDraggingChevrons(false);
 
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -947,7 +940,7 @@ export function ToolInput({
   };
 
   const handleBlur = () => {
-    setIsEditingText(false);
+    canvasOps.setIsEditingText(false);
     setIsFocused(false);
   };
 
@@ -958,7 +951,7 @@ export function ToolInput({
 
   useEffect(() => {
     return () => {
-      setIsEditingText(false);
+      canvasOps.setIsEditingText(false);
     };
   }, []);
 
@@ -1011,7 +1004,7 @@ export function ToolInput({
               {...props}
               type={localValue === "auto" ? "text" : "number"} // Change to text input for "auto"
               value={localValue}
-              onSelect={() => setIsEditingText(true)}
+              onSelect={() => canvasOps.setIsEditingText(true)}
               onChange={handleInputChange}
               onFocus={(e) => {
                 e.stopPropagation();

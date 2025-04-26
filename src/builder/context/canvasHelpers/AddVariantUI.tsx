@@ -8,14 +8,23 @@ import {
   useGetSelectedIds,
   selectOps,
 } from "../atoms/select-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
+import {
+  useDynamicModeNodeId,
+  useActiveViewportInDynamicMode,
+} from "../atoms/dynamic-store";
 
 interface AddVariantsUIProps {
   node: Node;
-  transform: { x: number; y: number; scale: number };
 }
 
 export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
-  const { dragState, nodeDisp, nodeState, dragDisp, transform } = useBuilder();
+  const { nodeDisp, nodeState } = useBuilder();
+
+  // Use atoms for state
+  const transform = useTransform();
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
 
   // Use node-specific selection check and imperative getter
   const isNodeSelected = useNodeSelected(node.id);
@@ -34,12 +43,10 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   // Find the topmost parent node in the dynamic family
   const topmostParent = React.useMemo(() => {
     // If not in dynamic mode, return the current node
-    if (!dragState.dynamicModeNodeId) return node;
+    if (!dynamicModeNodeId) return node;
 
     // Get the dynamic family ID
-    const familyNode = nodeState.nodes.find(
-      (n) => n.id === dragState.dynamicModeNodeId
-    );
+    const familyNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
     const familyId = familyNode?.dynamicFamilyId;
     if (!familyId) return node;
 
@@ -82,7 +89,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
 
     // If no ancestor found, use current node
     return node;
-  }, [node, nodeState.nodes, dragState.dynamicModeNodeId]);
+  }, [node, nodeState.nodes, dynamicModeNodeId]);
 
   // Function to get element bounding rects for all visible nodes
   const getAllNodeRects = () => {
@@ -91,7 +98,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
       // Filter for nodes that would be visible in the current viewport
       if (
         n.dynamicViewportId &&
-        n.dynamicViewportId !== dragState.activeViewportInDynamicMode
+        n.dynamicViewportId !== activeViewportInDynamicMode
       ) {
         return false;
       }
@@ -349,10 +356,8 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
     if (!topmostParent) return;
 
     // Ensure the node has a dynamicFamilyId
-    if (!topmostParent.dynamicFamilyId && dragState.dynamicModeNodeId) {
-      const mainNode = nodeState.nodes.find(
-        (n) => n.id === dragState.dynamicModeNodeId
-      );
+    if (!topmostParent.dynamicFamilyId && dynamicModeNodeId) {
+      const mainNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
       const familyId = mainNode?.dynamicFamilyId || nanoid();
 
       nodeDisp.updateNode(topmostParent.id, { dynamicFamilyId: familyId });
@@ -376,7 +381,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
 
   // Check if this node should show the variant button
   const shouldShowVariantButton = useCallback((): boolean => {
-    if (!dragState.dynamicModeNodeId) return false;
+    if (!dynamicModeNodeId) return false;
 
     // Don't show if no position is available
     if (!isPositionAvailable) return false;
@@ -394,7 +399,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
     // For all other nodes (children), don't show the button
     return false;
   }, [
-    dragState.dynamicModeNodeId,
+    dynamicModeNodeId,
     isPositionAvailable,
     node.dynamicFamilyId,
     node.id,

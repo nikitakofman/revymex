@@ -15,7 +15,7 @@ import {
 } from "@/builder/context/atoms/select-store";
 
 export const StylesTool = () => {
-  const { nodeState, dragState, setNodeStyle } = useBuilder();
+  const { nodeState, setNodeStyle } = useBuilder();
 
   // Replace subscription with imperative getter
   const selectedIds = useSelectedIds();

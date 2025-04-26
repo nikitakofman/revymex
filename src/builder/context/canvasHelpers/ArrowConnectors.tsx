@@ -2,10 +2,21 @@ import React, { useCallback, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
+import {
+  useDynamicModeNodeId,
+  useActiveViewportInDynamicMode,
+} from "../atoms/dynamic-store";
 
 export const ArrowConnectors = () => {
-  const { nodeState, dragState, contentRef, transform } = useBuilder();
-  // Replace subscription with imperative getter
+  const { nodeState, contentRef } = useBuilder();
+
+  // Use atoms for state
+  const transform = useTransform();
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
+
+  // Imperative getters for use in callbacks
   const getSelectedIds = useGetSelectedIds();
 
   const getAdjustedPosition = useCallback(
@@ -26,27 +37,21 @@ export const ArrowConnectors = () => {
 
   // Find the current active viewport ID
   const activeViewportId = useMemo(() => {
-    if (!dragState.dynamicModeNodeId) return null;
+    if (!dynamicModeNodeId) return null;
 
     // Check the explicit active viewport first
-    if (dragState.activeViewportInDynamicMode) {
-      return dragState.activeViewportInDynamicMode;
+    if (activeViewportInDynamicMode) {
+      return activeViewportInDynamicMode;
     }
 
     // Otherwise, try to determine from the dynamic mode node
-    const dynamicNode = nodeState.nodes.find(
-      (n) => n.id === dragState.dynamicModeNodeId
-    );
+    const dynamicNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
     if (dynamicNode?.dynamicViewportId) {
       return dynamicNode.dynamicViewportId;
     }
 
     return null;
-  }, [
-    dragState.dynamicModeNodeId,
-    dragState.activeViewportInDynamicMode,
-    nodeState.nodes,
-  ]);
+  }, [dynamicModeNodeId, activeViewportInDynamicMode, nodeState.nodes]);
 
   // Get all nodes in the current active viewport
   const nodesInActiveViewport = useMemo(() => {
@@ -166,7 +171,7 @@ export const ArrowConnectors = () => {
   }, [relevantConnections]);
 
   // Exit early if not in dynamic mode or content ref is not available
-  if (!dragState.dynamicModeNodeId || !contentRef.current) {
+  if (!dynamicModeNodeId || !contentRef.current) {
     return null;
   }
 
@@ -285,8 +290,6 @@ export const ArrowConnectors = () => {
         return "#9966FE";
     }
   };
-
-  // Debugging info
 
   return (
     <div className="absolute inset-0 pointer-events-none z-50">

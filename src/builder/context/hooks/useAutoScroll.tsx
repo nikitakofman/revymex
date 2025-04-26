@@ -1,5 +1,6 @@
 import { useRef, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
+import { canvasOps } from "../atoms/canvas-interaction-store";
 
 export const VERTICAL_EDGE_SIZE = 50; // Top and bottom edges
 export const LEFT_EDGE_SIZE = 309; // Left edge
@@ -20,7 +21,6 @@ interface ScrollState {
 }
 
 export const useAutoScroll = () => {
-  const { setTransform } = useBuilder();
   const scrollAnimationRef = useRef<number | null>(null);
   const currentScrollState = useRef<ScrollState | null>(null);
 
@@ -103,11 +103,12 @@ export const useAutoScroll = () => {
           left !== 0 || right !== 0 || up !== 0 || down !== 0;
 
         if (shouldScroll) {
-          setTransform((prev) => ({
-            ...prev,
-            x: prev.x + left + right,
-            y: prev.y + up + down,
-          }));
+          const currentTransform = canvasOps.getState().transform;
+          canvasOps.setTransform({
+            ...currentTransform,
+            x: currentTransform.x + left + right,
+            y: currentTransform.y + up + down,
+          });
           scrollAnimationRef.current = requestAnimationFrame(scroll);
         } else {
           stopAutoScroll();
@@ -118,7 +119,7 @@ export const useAutoScroll = () => {
         scrollAnimationRef.current = requestAnimationFrame(scroll);
       }
     },
-    [setTransform, calculateScrollDirections, stopAutoScroll]
+    [calculateScrollDirections, stopAutoScroll]
   );
 
   const updateScrollPosition = useCallback(

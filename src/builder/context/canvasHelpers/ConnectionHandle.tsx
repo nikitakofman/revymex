@@ -8,12 +8,18 @@ import {
   useGetSelectedIds,
   selectOps,
 } from "../atoms/select-store";
+import { useDynamicModeNodeId } from "../atoms/dynamic-store";
+import { modalOps, useConnectionTypeModal } from "../atoms/modal-store";
 
 export const ConnectionHandle: React.FC<{
   node: Node;
   transform: { x: number; y: number; scale: number };
 }> = ({ node, transform }) => {
-  const { dragState, dragDisp, nodeState, contentRef } = useBuilder();
+  const { nodeState, contentRef } = useBuilder();
+
+  // Use atoms for state
+  const dynamicModeNodeId = useDynamicModeNodeId();
+  const connectionTypeModal = useConnectionTypeModal();
 
   // Replace global selection array subscription with node-specific selection and imperative getter
   const isNodeSelected = useNodeSelected(node.id);
@@ -78,7 +84,7 @@ export const ConnectionHandle: React.FC<{
       }
 
       // If this is the main dynamic node or has no parent, it's already the top
-      if (nodeId === dragState.dynamicModeNodeId || !targetNode.parentId) {
+      if (nodeId === dynamicModeNodeId || !targetNode.parentId) {
         return nodeId;
       }
 
@@ -95,7 +101,7 @@ export const ConnectionHandle: React.FC<{
         if (!parentNode || parentNode.isViewport) break;
 
         // If parent has the same dynamic parent ID, it's part of the same system
-        if (parentNode.dynamicParentId === dragState.dynamicModeNodeId) {
+        if (parentNode.dynamicParentId === dynamicModeNodeId) {
           currentId = parentNode.id;
           currentNode = parentNode;
         } else {
@@ -106,7 +112,7 @@ export const ConnectionHandle: React.FC<{
 
       return currentId;
     },
-    [nodeState.nodes, dragState.dynamicModeNodeId]
+    [nodeState.nodes, dynamicModeNodeId]
   );
 
   // Get all ancestor IDs of a node
@@ -175,14 +181,12 @@ export const ConnectionHandle: React.FC<{
   // Checks if the node should display the connection handle
   const shouldShowHandle = useCallback(() => {
     // Original checks - these still work for desktop
-    if (node.id === dragState.dynamicModeNodeId) return true;
-    if (node.dynamicParentId === dragState.dynamicModeNodeId) return true;
+    if (node.id === dynamicModeNodeId) return true;
+    if (node.dynamicParentId === dynamicModeNodeId) return true;
 
     // NEW: Check for responsive counterparts in dynamic mode
-    if (dragState.dynamicModeNodeId) {
-      const mainNode = nodeState.nodes.find(
-        (n) => n.id === dragState.dynamicModeNodeId
-      );
+    if (dynamicModeNodeId) {
+      const mainNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
 
       // If this is a base responsive counterpart
       if (
@@ -214,20 +218,20 @@ export const ConnectionHandle: React.FC<{
       return true;
 
     return false;
-  }, [node, dragState.dynamicModeNodeId, nodeState.nodes]);
+  }, [node, dynamicModeNodeId, nodeState.nodes]);
 
   // Ensure the source node stays selected when showing connection modal
   useEffect(() => {
     // If we have a connection modal showing and the current node is the source
     if (
-      dragState.connectionTypeModal.show &&
-      dragState.connectionTypeModal.sourceId === node.id &&
+      connectionTypeModal.show &&
+      connectionTypeModal.sourceId === node.id &&
       !isNodeSelected
     ) {
       // Re-select this node to ensure it stays selected
       selectOps.selectNode(node.id);
     }
-  }, [dragState.connectionTypeModal, node.id, isNodeSelected, dragDisp]);
+  }, [connectionTypeModal, node.id, isNodeSelected]);
 
   // Helper function to check if a node has a dynamicFamilyId
   const hasDynamicFamilyId = useCallback(
@@ -346,8 +350,8 @@ export const ConnectionHandle: React.FC<{
           selectOps.selectNode(node.id);
         }
 
-        // Show the connection type modal without resetting existing connections
-        dragDisp.showConnectionTypeModal(node.id, currentHoverTarget.id, {
+        // Show the connection type modal using our new dynamic-store
+        modalOps.showConnectionTypeModal(node.id, currentHoverTarget.id, {
           x: upEvent.clientX,
           y: upEvent.clientY,
         });
@@ -396,8 +400,8 @@ export const ConnectionHandle: React.FC<{
                 selectOps.selectNode(node.id);
               }
 
-              // Show the connection type modal without resetting existing connections
-              dragDisp.showConnectionTypeModal(node.id, topmostParentId, {
+              // Show the connection type modal using our new dynamic-store
+              modalOps.showConnectionTypeModal(node.id, topmostParentId, {
                 x: upEvent.clientX,
                 y: upEvent.clientY,
               });
@@ -456,7 +460,7 @@ export const ConnectionHandle: React.FC<{
       </div>
 
       {/* Connection Line Portal */}
-      {(isDragging || dragState.connectionTypeModal.show) &&
+      {(isDragging || connectionTypeModal.show) &&
         startPoint &&
         endPoint &&
         createPortal(

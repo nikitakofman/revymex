@@ -18,9 +18,10 @@ import {
   useLastMousePosition,
 } from "../context/atoms/drag-store";
 import { getDragPosition } from "../context/utils";
+import { useTransform } from "../context/atoms/canvas-interaction-store";
 
 export const PositionTool = () => {
-  const { nodeState, transform } = useBuilder();
+  const { nodeState } = useBuilder();
   const [realTimePosition, setRealTimePosition] = useState({ x: 0, y: 0 });
 
   // Get isDragging from the drag store
@@ -31,6 +32,7 @@ export const PositionTool = () => {
   const dragPositions = useDragPositions();
   const dragPosition = useDragPositions();
   const lastMousePosition = useLastMousePosition();
+  const transform = useTransform();
 
   // Replace subscription with imperative getter
   const selectedIds = useSelectedIds();

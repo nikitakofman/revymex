@@ -13,6 +13,14 @@ import { Sun, Moon, PlayCircle, Copy } from "lucide-react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPortal } from "react-dom";
 import { useGetSelectedIds } from "../context/atoms/select-store";
+import {
+  canvasOps,
+  useTransform,
+} from "../context/atoms/canvas-interaction-store";
+import {
+  dynamicOps,
+  useDynamicModeNodeId,
+} from "../context/atoms/dynamic-store";
 
 interface Operation {
   method: string;
@@ -138,16 +146,10 @@ const NodeDispOperations: React.FC<{
 };
 
 export const ViewportDevTools: React.FC = () => {
-  const {
-    transform,
-    setTransform,
-    nodeState,
-    nodeDisp,
-    dragState,
-    dragDisp,
-    operations,
-    clearOperations,
-  } = useBuilder();
+  const { nodeState, nodeDisp, operations, clearOperations } = useBuilder();
+
+  const transform = useTransform();
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Replace subscription with imperative getter
   const getSelectedIds = useGetSelectedIds();
@@ -203,7 +205,12 @@ export const ViewportDevTools: React.FC = () => {
   if (!mounted) return null;
 
   const handleResetView = () => {
-    setTransform({ x: 0, y: 0, scale: 1 });
+    const currentTransform = canvasOps.getState().transform;
+    canvasOps.setTransform({
+      ...currentTransform,
+      x: 0,
+      y: 0,
+    });
   };
 
   const handleToggleTree = () => {
@@ -266,12 +273,12 @@ export const ViewportDevTools: React.FC = () => {
   return createPortal(
     <>
       <div className="fixed resize bottom-14 scale-75 right-[190px] flex gap-2 p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
-        {dragState.dynamicModeNodeId && (
+        {dynamicModeNodeId && (
           <button
             className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
             onClick={() => {
               nodeDisp.resetDynamicNodePositions();
-              dragDisp.setDynamicModeNodeId(null);
+              dynamicOps.setDynamicModeNodeId(null);
               nodeDisp.syncViewports();
             }}
           >
@@ -293,7 +300,7 @@ export const ViewportDevTools: React.FC = () => {
             type="number"
             value={Math.round(transform.scale * 100)}
             onChange={(e) =>
-              setTransform({
+              canvasOps.setTransform({
                 ...transform,
                 scale: Number(e.target.value) / 100,
               })
@@ -305,7 +312,10 @@ export const ViewportDevTools: React.FC = () => {
             type="number"
             value={Math.round(transform.x)}
             onChange={(e) =>
-              setTransform({ ...transform, x: Number(e.target.value) })
+              canvasOps.setTransform({
+                ...transform,
+                x: Number(e.target.value),
+              })
             }
             className="w-16 px-1 bg-[var(--control-bg-hover)] rounded-sm"
           />
@@ -314,7 +324,10 @@ export const ViewportDevTools: React.FC = () => {
             type="number"
             value={Math.round(transform.y)}
             onChange={(e) =>
-              setTransform({ ...transform, y: Number(e.target.value) })
+              canvasOps.setTransform({
+                ...transform,
+                y: Number(e.target.value),
+              })
             }
             className="w-16 px-1 bg-[var(--control-bg-hover)] rounded-sm"
           />
@@ -418,7 +431,7 @@ export const ViewportDevTools: React.FC = () => {
                 }`}
                 onClick={() => setActiveTab("drag")}
               >
-                DragState
+                drag state
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
@@ -448,7 +461,7 @@ export const ViewportDevTools: React.FC = () => {
 
               {activeTab === "drag" && (
                 <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
-                  {JSON.stringify(dragState, null, 2)}
+                  ss
                 </pre>
               )}
 

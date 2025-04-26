@@ -14,6 +14,8 @@ import {
 } from "../utils";
 import { useBuilder } from "../builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { useTransform } from "../atoms/canvas-interaction-store";
+import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 
 interface GroupBounds {
   top: number;
@@ -64,13 +66,17 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   isGroupSelection,
   targetRef,
 }) => {
-  const { dragState, transform, nodeState } = useBuilder();
+  const { nodeState } = useBuilder();
+
+  const transform = useTransform();
+
   const { scale } = transform;
 
   const [isInteractive, setIsInteractive] = useState(false);
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Add useEffect to delay handle interactivity
   useEffect(() => {
@@ -349,7 +355,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                       height: `${handleSize}px`,
                       transform: "translate(-50%, -50%)",
                       border: `${1 / scale}px solid ${
-                        node.isDynamic || dragState.dynamicModeNodeId
+                        node.isDynamic || dynamicModeNodeId
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
                       }`,
@@ -375,7 +381,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                       width: `${handleSize}px`,
                       height: `${handleSize}px`,
                       border: `${1 / scale}px solid ${
-                        node.isDynamic || dragState.dynamicModeNodeId
+                        node.isDynamic || dynamicModeNodeId
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
                       }`,
@@ -412,7 +418,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                   width: `${handleSize}px`,
                   height: `${handleSize}px`,
                   border: `${1 / scale}px solid ${
-                    node.isDynamic || dragState.dynamicModeNodeId
+                    node.isDynamic || dynamicModeNodeId
                       ? "var(--accent-secondary)"
                       : "var(--accent)"
                   }`,
@@ -446,7 +452,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
                     border: `${1 / scale}px solid ${
-                      node.isDynamic || dragState.dynamicModeNodeId
+                      node.isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
                     }`,
@@ -485,7 +491,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
                     border: `${1 / scale}px solid ${
-                      node.isDynamic || dragState.dynamicModeNodeId
+                      node.isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
                     }`,
@@ -520,7 +526,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
                     border: `${1 / scale}px solid ${
-                      node.isDynamic || dragState.dynamicModeNodeId
+                      node.isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
                     }`,
