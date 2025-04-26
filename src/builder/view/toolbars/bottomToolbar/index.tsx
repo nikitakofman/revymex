@@ -21,6 +21,7 @@ import {
   useIsTextModeActive,
 } from "@/builder/context/atoms/canvas-interaction-store";
 import { useCursorManager } from "@/builder/context/hooks/useCursorManager";
+import { useKeyboardDrag } from "@/builder/context/hooks/useKeyboardDrag";
 
 const BottomToolbar = () => {
   // Use subscription hooks for all state that affects rendering
@@ -30,6 +31,7 @@ const BottomToolbar = () => {
   const isTextModeActive = useIsTextModeActive();
 
   useCursorManager();
+  useKeyboardDrag();
 
   // Handle Frame and Text mode toggles
   const handleFrameClick = () => {

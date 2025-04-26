@@ -1,27 +1,21 @@
 import { useCallback, RefObject } from "react";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { Transform } from "@/builder/types";
+import { useBuilder } from "@/builder/context/builderState";
 import { selectOps } from "../atoms/select-store";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
 
 interface UseImageDropProps {
   containerRef: RefObject<HTMLDivElement>;
-  transform: Transform;
-  nodeDisp: {
-    addNode: (
-      node: Node,
-      parentId: string | null,
-      index: number | null,
-      inViewport: boolean
-    ) => void;
-  };
 }
 
-export function useImageDrop({
-  containerRef,
-  transform,
-  nodeDisp,
-}: UseImageDropProps) {
+export function useImageDrop({ containerRef }: UseImageDropProps) {
+  // Use the imperative getter instead of subscription
+  const getTransform = useGetTransform();
+
+  // Get nodeDisp directly from builder context
+  const { nodeDisp } = useBuilder();
+
   const { setSelectedIds } = selectOps;
 
   const createImageNode = useCallback(
@@ -34,6 +28,9 @@ export function useImageDrop({
     ) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
+
+      // Get transform only when needed
+      const transform = getTransform();
 
       // Convert screen coordinates to canvas coordinates
       const canvasX = (clientX - rect.left - transform.x) / transform.scale;
@@ -69,7 +66,7 @@ export function useImageDrop({
       nodeDisp.addNode(newNode, null, null, false);
       setSelectedIds([newNode.id]);
     },
-    [containerRef, transform, nodeDisp]
+    [containerRef, getTransform, nodeDisp, setSelectedIds]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {

@@ -2,7 +2,10 @@ import React, { useCallback, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
-import { useTransform } from "../atoms/canvas-interaction-store";
+import {
+  useTransform,
+  useIsMovingCanvas,
+} from "../atoms/canvas-interaction-store";
 import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
@@ -15,10 +18,12 @@ export const ArrowConnectors = () => {
   const transform = useTransform();
   const dynamicModeNodeId = useDynamicModeNodeId();
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
+  const isMovingCanvas = useIsMovingCanvas();
 
   // Imperative getters for use in callbacks
   const getSelectedIds = useGetSelectedIds();
 
+  // We need to move these hooks before any early returns
   const getAdjustedPosition = useCallback(
     (rect: DOMRect, containerRect: DOMRect) => {
       return {
@@ -170,12 +175,26 @@ export const ArrowConnectors = () => {
     return Array.from(pairMap.values());
   }, [relevantConnections]);
 
-  // Exit early if not in dynamic mode or content ref is not available
-  if (!dynamicModeNodeId || !contentRef.current) {
+  // Early return after all hooks are defined
+  if (isMovingCanvas || !dynamicModeNodeId || !contentRef.current) {
     return null;
   }
 
   const containerRect = contentRef.current.getBoundingClientRect();
+
+  // Function to get color for a connection type
+  const getConnectionColor = (type) => {
+    switch (type) {
+      case "click":
+        return "#9966FE";
+      case "hover":
+        return "#6096FF";
+      case "mouseLeave":
+        return "#FF66AC";
+      default:
+        return "#9966FE";
+    }
+  };
 
   const getConnectionPoints = (
     sourceRect: DOMRect,
@@ -275,20 +294,6 @@ export const ArrowConnectors = () => {
       sourceCenter,
       targetCenter,
     };
-  };
-
-  // Function to get color for a connection type
-  const getConnectionColor = (type) => {
-    switch (type) {
-      case "click":
-        return "#9966FE";
-      case "hover":
-        return "#6096FF";
-      case "mouseLeave":
-        return "#FF66AC";
-      default:
-        return "#9966FE";
-    }
   };
 
   return (

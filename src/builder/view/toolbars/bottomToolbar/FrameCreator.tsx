@@ -37,6 +37,8 @@ export const FrameCreator: React.FC = () => {
   const transform = useTransform();
   const isFrameModeActive = useIsFrameModeActive();
 
+  console.log("framecreator");
+
   // Use getter hooks for event handlers
   const getIsResizing = useGetIsResizing();
   const getIsAdjustingGap = useGetIsAdjustingGap();

@@ -6,10 +6,7 @@ import { findParentViewport } from "../utils";
 import {
   _internalHoverNodeIdAtom,
   hoverOps,
-  hoverStore,
-  isNodeHoveredAtom,
   useGetHoveredNodeId,
-  useHoveredNodeId,
 } from "../atoms/hover-store";
 import {
   _internalSelectNodeIdAtom,
@@ -31,6 +28,8 @@ import { dynamicOps } from "../atoms/dynamic-store";
 export const useConnect = () => {
   // Use the basic useBuilder hook without global subscriptions
   const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
+
+  console.log(`USE CONNECT RE RENDERING`);
 
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -539,7 +538,7 @@ export const useConnect = () => {
     [
       handleDragStart,
       nodeDisp,
-      getMovingCanvas,
+
       getIsFrameModeActive,
       getIsMoveCanvasMode,
       getIsTextModeActive,

@@ -6,6 +6,7 @@ import React, {
   useEffect,
   useRef,
   cloneElement,
+  useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { Node } from "../../reducer/nodeDispatcher";
@@ -18,19 +19,10 @@ import {
   useDragSource,
   useIsOverCanvas,
   useNodeDimensions,
+  useGetIsDragging,
 } from "../atoms/drag-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
-
-interface Transform {
-  x: number;
-  y: number;
-  scale: number;
-}
-
-interface Offset {
-  mouseX: number;
-  mouseY: number;
-}
+import { useTransform } from "../atoms/canvas-interaction-store";
 
 export interface VirtualReference {
   getBoundingClientRect: () => {
@@ -53,19 +45,19 @@ interface ContentProps {
 interface DraggedNodeProps {
   node: Node;
   content: ReactElement<ContentProps>;
-  virtualReference: VirtualReference | null;
-  transform: Transform;
-  offset: Offset;
+  offset: { mouseX: number; mouseY: number };
 }
 
-const DraggedNode: React.FC<DraggedNodeProps> = ({
-  node,
-  content,
-  virtualReference,
-  transform,
-  offset,
-}) => {
+const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
   const { nodeState, containerRef } = useBuilder();
+
+  // Get transform directly from atoms
+  const transform = useTransform();
+
+  // Virtual reference state - moved from RenderNodes
+  const [virtualReference, setVirtualReference] =
+    useState<VirtualReference | null>(null);
+  const getIsDragging = useGetIsDragging();
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();
@@ -79,6 +71,32 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
 
   const nodeDimensions = useNodeDimensions();
 
+  // Set up mouse move listener for virtual reference - BEFORE any conditional returns
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const isDragging = getIsDragging();
+      // Only update virtualReference when dragging
+      if (isDragging) {
+        setVirtualReference({
+          getBoundingClientRect() {
+            return {
+              top: e.clientY,
+              left: e.clientX,
+              bottom: e.clientY,
+              right: e.clientX,
+              width: 0,
+              height: 0,
+            };
+          },
+        });
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, [getIsDragging]);
+
   // figure out which nodes to show
   const activeFilter = dynamicModeNodeId ? "dynamicMode" : "outOfViewport";
   const filteredNodes = getFilteredNodes(
@@ -91,20 +109,54 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
 
   // Keep track of the last used SnapResult so we don't re‐dispatch identical guides
   const lastSnapRef = useRef<SnapResult | null>(null);
+  const finalSnapResultRef = useRef<SnapResult | null>(null);
+
+  // All useEffect hooks MUST BE BEFORE any conditional returns
+
+  // Effect to update snap guides - BEFORE conditional returns
+  useEffect(() => {
+    const currentFinalSnapResult = finalSnapResultRef.current;
+    if (!currentFinalSnapResult) {
+      visualOps.clearSnapGuides();
+      lastSnapRef.current = null;
+      return;
+    }
+
+    const { snapGuides } = currentFinalSnapResult;
+    // compare
+    const oldString = JSON.stringify(lastSnapRef.current);
+    const newString = JSON.stringify(currentFinalSnapResult);
+    if (oldString !== newString) {
+      lastSnapRef.current = currentFinalSnapResult;
+      if (snapGuides.length) {
+        visualOps.setSnapGuides(snapGuides);
+      } else {
+        visualOps.clearSnapGuides();
+      }
+    }
+  }, [finalSnapResultRef.current]);
+
+  // keep original node width/height while dragging - BEFORE conditional returns
+  useEffect(() => {
+    if ((node.parentId || node.inViewport) && initialDimensionsRef.current) {
+      const el = document.querySelector(
+        `[data-node-id="${node.id}"]`
+      ) as HTMLElement;
+      if (el) {
+        el.style.width = `${initialDimensionsRef.current.width}px`;
+        el.style.height = `${initialDimensionsRef.current.height}px`;
+      }
+    }
+  }, [node.id, node.inViewport, node.parentId]);
+
+  // If no virtual reference, we can't position the dragged node
+  if (!virtualReference || !containerRef.current) return null;
 
   // bounding rect of the node in window coords
-  const baseRect = virtualReference?.getBoundingClientRect() || {
-    left: 0,
-    top: 0,
-    width: 0,
-    height: 0,
-  };
+  const baseRect = virtualReference.getBoundingClientRect();
 
   // container bounding rect in window coords
-  const containerRect = containerRef.current?.getBoundingClientRect() || {
-    left: 0,
-    top: 0,
-  };
+  const containerRect = containerRef.current.getBoundingClientRect();
 
   // store initial dimensions
   const dims = nodeDimensions[node.id];
@@ -298,39 +350,8 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   // Decide which result to dispatch (the stable one if we have it)
   const finalSnapResult = stableSnapResult || snapResult;
 
-  // Step 3: dispatch the final guides
-  useEffect(() => {
-    if (!finalSnapResult) {
-      visualOps.clearSnapGuides();
-      lastSnapRef.current = null;
-      return;
-    }
-    const { snapGuides } = finalSnapResult;
-    // compare
-    const oldString = JSON.stringify(lastSnapRef.current);
-    const newString = JSON.stringify(finalSnapResult);
-    if (oldString !== newString) {
-      lastSnapRef.current = finalSnapResult;
-      if (snapGuides.length) {
-        visualOps.setSnapGuides(snapGuides);
-      } else {
-        visualOps.clearSnapGuides();
-      }
-    }
-  }, [finalSnapResult]);
-
-  // keep original node width/height while dragging
-  useEffect(() => {
-    if ((node.parentId || node.inViewport) && initialDimensionsRef.current) {
-      const el = document.querySelector(
-        `[data-node-id="${node.id}"]`
-      ) as HTMLElement;
-      if (el) {
-        el.style.width = `${initialDimensionsRef.current.width}px`;
-        el.style.height = `${initialDimensionsRef.current.height}px`;
-      }
-    }
-  }, [node.id, node.inViewport, node.parentId]);
+  // Store in ref for the effect to use
+  finalSnapResultRef.current = finalSnapResult;
 
   return createPortal(
     <div

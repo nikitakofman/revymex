@@ -44,9 +44,34 @@ export const SelectionBox: React.FC = () => {
   const getDragSource = useGetDragSource();
   const [box, setBox] = useState<SelectionBoxState | null>(null);
 
+  // Store nodes in a ref to avoid re-computation
+  const nodesRef = useRef(nodeState.nodes);
+
+  // Update nodes ref only when needed
+  useEffect(() => {
+    nodesRef.current = nodeState.nodes;
+  }, [nodeState.nodes]);
+
   // Note: this should be below all hook calls
   const shouldRender =
     !isDrawingMode && !isMoveCanvasMode && !isDragging && !isMiddleMouseDown;
+
+  // Cache node elements to avoid repeated DOM queries
+  const nodeElementsRef = useRef(new Map());
+
+  // Clear cache when nodes change
+  useEffect(() => {
+    nodeElementsRef.current.clear();
+  }, [nodeState.nodes]);
+
+  // Get node element with caching
+  const getNodeElement = useCallback((nodeId) => {
+    if (!nodeElementsRef.current.has(nodeId)) {
+      const element = document.querySelector(`[data-node-id="${nodeId}"]`);
+      nodeElementsRef.current.set(nodeId, element);
+    }
+    return nodeElementsRef.current.get(nodeId);
+  }, []);
 
   const updateSelection = useCallback(
     (selectionRect: DOMRect) => {
@@ -68,22 +93,19 @@ export const SelectionBox: React.FC = () => {
           transform.scale,
       };
 
-      const selectableElements = nodeState.nodes
-        .filter((node) => !node.isViewport && !node.isLocked) // Filter out locked nodes
-        .map((node) => {
-          const element = document.querySelector(`[data-node-id="${node.id}"]`);
-          return { node, element };
-        })
-        .filter(
-          (
-            item
-          ): item is {
-            node: (typeof nodeState.nodes)[0];
-            element: HTMLElement;
-          } => item.element !== null
-        );
+      // Use the cached nodes from ref instead of nodeState.nodes directly
+      const selectableNodes = nodesRef.current.filter(
+        (node) => !node.isViewport && !node.isLocked
+      );
 
-      const selectedNodes = selectableElements.filter(({ element }) => {
+      // Use a Set for faster lookups
+      const selectedIds = new Set<string | number>();
+
+      // Only do DOM work for nodes that could be in the selection box
+      for (const node of selectableNodes) {
+        const element = getNodeElement(node.id);
+        if (!element) continue;
+
         const rect = element.getBoundingClientRect();
         const elementInCanvas = {
           left:
@@ -95,19 +117,41 @@ export const SelectionBox: React.FC = () => {
             (rect.bottom - containerRect.top - transform.y) / transform.scale,
         };
 
-        return !(
-          elementInCanvas.left > selectionInCanvas.right ||
-          elementInCanvas.right < selectionInCanvas.left ||
-          elementInCanvas.top > selectionInCanvas.bottom ||
-          elementInCanvas.bottom < selectionInCanvas.top
-        );
-      });
+        // Check if element intersects with selection box
+        if (
+          !(
+            elementInCanvas.left > selectionInCanvas.right ||
+            elementInCanvas.right < selectionInCanvas.left ||
+            elementInCanvas.top > selectionInCanvas.bottom ||
+            elementInCanvas.bottom < selectionInCanvas.top
+          )
+        ) {
+          selectedIds.add(node.id);
+        }
+      }
 
-      const nodeIds = selectedNodes.map(({ node }) => node.id);
+      // Convert Set to Array
+      const nodeIds = Array.from(selectedIds);
       selectOps.setTempSelectedIds(nodeIds);
       return nodeIds;
     },
-    [containerRef, transform, nodeState]
+    [containerRef, transform, getNodeElement]
+  );
+
+  // Use throttling for selection updates
+  const lastUpdateTimeRef = useRef(0);
+  const throttledUpdateSelection = useCallback(
+    (selectionRect: DOMRect) => {
+      const now = performance.now();
+      if (now - lastUpdateTimeRef.current < 30) {
+        // Throttle to ~30ms (about 30fps)
+        return;
+      }
+
+      lastUpdateTimeRef.current = now;
+      updateSelection(selectionRect);
+    },
+    [updateSelection]
   );
 
   useEffect(() => {
@@ -129,7 +173,7 @@ export const SelectionBox: React.FC = () => {
       // Get the frame element if it exists
       const frameEl = target.closest('[data-node-type="frame"]');
       const node = frameEl
-        ? nodeState.nodes.find(
+        ? nodesRef.current.find(
             (n) => n.id === frameEl.getAttribute("data-node-id")
           )
         : null;
@@ -138,13 +182,12 @@ export const SelectionBox: React.FC = () => {
       const clickedNode = target.closest("[data-node-id]");
       if (clickedNode) {
         const nodeId = clickedNode.getAttribute("data-node-id");
-        const clickedNodeData = nodeState.nodes.find((n) => n.id === nodeId);
+        const clickedNodeData = nodesRef.current.find((n) => n.id === nodeId);
         // If it's not a viewport and not the canvas, return
         if (!clickedNodeData?.isViewport) return;
       }
 
       // Only proceed if target is canvas or a viewport frame
-      // Remove the header check since we want to handle viewport clicks
       if (target !== canvas && !node?.isViewport) return;
 
       canvasOps.setIsSelectionBoxActive(true);
@@ -171,12 +214,17 @@ export const SelectionBox: React.FC = () => {
       const newX = e.clientX - rect.left;
       const newY = e.clientY - rect.top;
 
-      setBox((prev) => ({
-        ...prev!,
-        currentX: newX,
-        currentY: newY,
-      }));
+      // Update box state
+      setBox((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          currentX: newX,
+          currentY: newY,
+        };
+      });
 
+      // Calculate selection rectangle
       const selectionRect = new DOMRect(
         Math.min(box.startX, newX) + rect.left,
         Math.min(box.startY, newY) + rect.top,
@@ -184,7 +232,8 @@ export const SelectionBox: React.FC = () => {
         Math.abs(newY - box.startY)
       );
 
-      updateSelection(selectionRect);
+      // Use throttled selection update
+      throttledUpdateSelection(selectionRect);
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -236,16 +285,15 @@ export const SelectionBox: React.FC = () => {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [
-    shouldRender, // Add this to dependency array
+    shouldRender,
     containerRef,
     box?.isSelecting,
-    updateSelection,
+    throttledUpdateSelection,
     box?.startX,
     box?.startY,
     getTempIds,
     getIsDragging,
     getDragSource,
-    nodeState.nodes,
   ]);
 
   // Only render the box if all conditions are met

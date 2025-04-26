@@ -1,12 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useBuilder } from "../context/builderState";
 import { Node } from "../reducer/nodeDispatcher";
 import { Frame } from "./elements/FrameElement";
 import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
-import DraggedNode, {
-  VirtualReference,
-} from "../context/canvasHelpers/DraggedNode";
+import DraggedNode from "../context/canvasHelpers/DraggedNode";
 import { getFilteredNodes } from "../context/utils";
 import { VideoElement } from "./elements/VideoElement";
 import {
@@ -14,11 +12,11 @@ import {
   useGetDraggedNode,
   useGetIsDragging,
 } from "../context/atoms/drag-store";
-import { useTransform } from "../context/atoms/canvas-interaction-store";
 import {
   useActiveViewportInDynamicMode,
   useDynamicModeNodeId,
 } from "../context/atoms/dynamic-store";
+import { canvasOps } from "../context/atoms/canvas-interaction-store";
 
 interface RenderNodesProps {
   filter: "inViewport" | "outOfViewport" | "dynamicMode";
@@ -32,37 +30,9 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   const dynamicModeNodeId = useDynamicModeNodeId();
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
 
-  const transform = useTransform();
-
-  const [virtualReference, setVirtualReference] =
-    useState<VirtualReference | null>(null);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const isDragging = getIsDragging();
-      // Only update virtualReference when dragging
-      if (isDragging) {
-        setVirtualReference({
-          getBoundingClientRect() {
-            return {
-              top: e.clientY,
-              left: e.clientX,
-              bottom: e.clientY,
-              right: e.clientX,
-              width: 0,
-              height: 0,
-            };
-          },
-        });
-      }
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-    };
-  }, [getIsDragging]);
-
   const activeViewportId = activeViewportInDynamicMode;
+
+  console.log(`RENDER NDOES  RE RENDERING`);
 
   // Find the active viewport node to get its width
   const activeViewport = activeViewportId
@@ -122,9 +92,6 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
               backgroundColor: "transparent",
               height: "auto",
               minHeight: "100px",
-              // Inherit position from the node but make relative for proper child positioning
-              // left: node.position?.x || 0,
-              // top: node.position?.y || 0,
               transform: node.style.transform,
               pointerEvents: "none", // Allow clicks to pass through to the actual node
             }}
@@ -301,8 +268,6 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
             key={`dragged-${node.id}`}
             node={node}
             content={content}
-            virtualReference={virtualReference}
-            transform={transform}
             offset={draggedNode!.offset}
           />
           {isDragging &&
@@ -311,8 +276,6 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
                 key={`dragged-${info.node.id}`}
                 node={info.node}
                 content={renderNode(info.node, true)}
-                virtualReference={virtualReference}
-                transform={transform}
                 offset={info.offset}
               />
             ))}

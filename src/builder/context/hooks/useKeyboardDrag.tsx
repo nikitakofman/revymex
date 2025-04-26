@@ -14,7 +14,7 @@ import {
   useIsMoveCanvasMode,
 } from "../atoms/canvas-interaction-store";
 
-export const useKeyboardDrag = ({ isEnabled = true }) => {
+export const useKeyboardDrag = () => {
   const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
@@ -59,14 +59,16 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
       return;
     }
 
-    if (!isEnabled) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isDragging = getIsDragging();
+      // Check if editing text using the imperative getter
       const isEditingText = getIsEditingText();
+
+      // Skip all keyboard shortcuts if editing text
       if (isEditingText || document.activeElement?.isContentEditable) {
         return;
       }
+
+      const isDragging = getIsDragging();
 
       // Handle Alt key for duplication
       if (e.key === "Alt") {
@@ -200,14 +202,15 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
     getIsMoveCanvasMode,
     canvasOps.setIsMoveCanvasMode,
     getIsEditingText,
-    isEnabled,
-
     nodeDisp,
     handleCopy,
     handlePaste,
     handleDelete,
     handleDuplicate,
     setNodeStyle,
+    currentSelectedIds,
+    clearSelection,
+    setSelectedIds,
   ]);
 
   // Handle drag start while Alt is pressed

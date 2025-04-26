@@ -15,6 +15,7 @@ import {
   useIsDragging,
 } from "../atoms/drag-store";
 import {
+  useGetTransform,
   useIsMiddleMouseDown,
   useTransform,
 } from "../atoms/canvas-interaction-store";
@@ -30,7 +31,7 @@ export const useDragStart = () => {
     selectedIdsRef,
   } = useBuilder();
 
-  const transform = useTransform();
+  const getTransform = useGetTransform();
 
   const currentSelectedIds = useGetSelectedIds();
   const isMiddleMouseDown = useIsMiddleMouseDown();
@@ -54,6 +55,7 @@ export const useDragStart = () => {
 
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
     const recordingSessionId = getRecordingSessionId();
+    const transform = getTransform();
     // Check if the click is on a resize handle or its parent resize handle container
     if (recordingSessionId && !isDragging) {
       console.warn(

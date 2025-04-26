@@ -1,4 +1,3 @@
-import { DragState } from "./dragDispatcher";
 import { Node } from "./nodeDispatcher";
 
 const VIEWPORT_GAP = 160;
@@ -186,82 +185,4 @@ export const nodeInitialState: NodeState = {
     },
   ],
   selectedNodeIds: null,
-};
-
-export const dragInitialState: DragState = {
-  isDragging: false,
-  draggedItem: null,
-  draggedNode: null,
-  dropInfo: {
-    targetId: null,
-    position: null,
-  },
-  selectedIds: [],
-  originalParentId: null,
-  placeholderId: null,
-  originalIndex: null,
-  lineIndicator: {
-    show: false,
-    x: 0,
-    y: 0,
-    width: 0,
-    height: 0,
-  },
-  dragSource: null,
-  snapGuides: [],
-  styleHelper: {
-    show: false,
-    type: null,
-    position: { x: 0, y: 0 },
-    value: undefined,
-    dimensions: undefined,
-  },
-  dynamicModeNodeId: null,
-  contextMenu: null,
-  gripHandleDirection: null,
-  hoverNodeId: null,
-  dragPositions: {
-    x: 0,
-    y: 0,
-  },
-  isOverCanvas: false,
-  recordingSessionId: null,
-  originalWidthHeight: { width: 0, height: 0, isFillMode: false },
-  isSelectionBoxActive: false,
-  tempSelectedIds: [],
-  nodeDimensions: {},
-  duplicatedFromAlt: false,
-  placeholderInfo: null,
-  lastMouseX: 0,
-  lastMouseY: 0,
-  dynamicState: "normal",
-  connectionTypeModal: {
-    show: false,
-    position: { x: 0, y: 0 },
-    sourceId: null,
-    targetId: null,
-  },
-  viewportModal: {
-    show: false,
-    position: {
-      x: 0,
-      y: 0,
-    },
-  },
-  editViewportModal: {
-    show: false,
-    viewportId: null,
-    position: {
-      x: 0,
-      y: 0,
-    },
-  },
-  viewportContextMenu: {
-    show: false,
-    viewportId: null,
-    position: {
-      x: 0,
-      y: 0,
-    },
-  },
 };

@@ -21,9 +21,7 @@ import LeftMenu from "../toolbars/leftToolbar/leftMenu";
 import TextCreator from "../toolbars/bottomToolbar/TextCreator";
 import "react-tooltip/dist/react-tooltip.css";
 import BottomToolbar from "../toolbars/bottomToolbar";
-import { useCursorManager } from "../../context/hooks/useCursorManager";
 import LoadingScreen from "./loading-screen";
-import { useMoveCanvas } from "@/builder/context/hooks/useMoveCanvas";
 import { DynamicToolbar } from "../toolbars/dynamicToolbar";
 import ConnectionTypeModal from "@/builder/context/canvasHelpers/ConnectionTypeModal";
 import IframePreview from "../preview/iframePreview";
@@ -35,40 +33,31 @@ import {
   useIsPreviewOpen,
   interfaceOps,
 } from "@/builder/context/atoms/interface-store";
-import { useIsDragging } from "@/builder/context/atoms/drag-store";
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 import {
   canvasOps,
   useGetIsSelectionBoxActive,
   useIsEditingText,
-  useIsMovingCanvas,
-  useTransform,
 } from "@/builder/context/atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
+import CanvasController from "@/builder/context/canvas-controller";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const eventHandlersAttached = useRef(false);
 
-  const { containerRef, contentRef, nodeDisp, nodeState } = useBuilder();
+  const { containerRef, contentRef, nodeState } = useBuilder();
 
   // Get isPreviewOpen from interface store instead of interfaceState
   const isPreviewOpen = useIsPreviewOpen();
-
-  const transform = useTransform();
-
-  const isMovingCanvas = useIsMovingCanvas();
-
-  const isEditingText = useIsEditingText();
 
   const getIsSelectionBoxActive = useGetIsSelectionBoxActive();
 
   const { clearSelection } = selectOps;
 
-  // useMoveCanvas();
+  console.log(`CANVAS  RE RENDERING`);
 
   // With this approach:
-  useKeyboardDrag({ isEnabled: !isEditingText });
 
   const handleMouseMove = useMouseMove();
   const handleMouseUp = useMouseUp();
@@ -76,8 +65,6 @@ const Canvas = () => {
   // Use our extracted image drop hook
   const { handleDragOver, handleDrop } = useImageDrop({
     containerRef,
-    transform,
-    nodeDisp,
   });
 
   useEffect(() => {
@@ -130,7 +117,7 @@ const Canvas = () => {
       // Force a redraw of the canvas by triggering a window resize event
       window.dispatchEvent(new Event("resize"));
     }
-  }, [isPreviewOpen, canvasOps.setIsMovingCanvas]);
+  }, [isPreviewOpen]);
 
   // Loading state detection based on critical refs and a minimum time
   useEffect(() => {
@@ -159,16 +146,6 @@ const Canvas = () => {
       clearTimeout(minLoadTimer);
     };
   }, [containerRef.current, contentRef.current]);
-
-  // Update transform when switching from preview back to editor
-  useEffect(() => {
-    if (!isPreviewOpen && contentRef.current) {
-      // Ensure the transform is applied to the content
-      contentRef.current.style.willChange = "transform";
-      contentRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
-      contentRef.current.style.transformOrigin = "0 0";
-    }
-  }, [isPreviewOpen, transform, contentRef]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
     const isSelectionBoxActive = getIsSelectionBoxActive();
@@ -208,7 +185,6 @@ const Canvas = () => {
         {isPreviewOpen ? (
           <IframePreview nodes={nodeState.nodes} viewport={1440} />
         ) : (
-          // <PreviewPlay nodes={nodeState.nodes} />
           <>
             <ViewportDevTools />
             <InterfaceToolbar />
@@ -229,20 +205,23 @@ const Canvas = () => {
               onDrop={handleDrop}
               onContextMenu={handleContextMenu}
             >
+              <CanvasController
+                containerRef={containerRef}
+                contentRef={contentRef}
+              />
+
               <SnapGuides />
-              {/* <DebugSnapGrid /> */}
               <StyleUpdateHelper />
               <SelectionBox />
               <FrameCreator />
               <TextCreator />
-              {!isMovingCanvas && <ArrowConnectors />}
+              <ArrowConnectors />
               <div
                 ref={contentRef}
                 className="relative"
                 style={{
                   isolation: "isolate",
                   willChange: "transform",
-                  transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
                   transformOrigin: "0 0",
                 }}
               >

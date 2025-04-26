@@ -39,8 +39,6 @@ export const Frame = ({ children, node }: ElementProps) => {
 
   const getIsDragging = useGetIsDragging();
 
-  const connect = useConnect();
-
   // Replace useTransform with useGetTransform - this is the key change
   const getTransform = useGetTransform();
 
@@ -494,7 +492,7 @@ export const Frame = ({ children, node }: ElementProps) => {
 
   return (
     <ResizableWrapper node={node}>
-      <div {...connect(node)} className={isHovered ? "hover-highlight" : ""}>
+      <div className={isHovered ? "hover-highlight" : ""}>
         {/* Background media wrapper */}
         {(node.style.backgroundImage || node.style.backgroundVideo) && (
           <div
