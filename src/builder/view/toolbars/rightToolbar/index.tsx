@@ -12,7 +12,10 @@ import { FillTool } from "@/builder/tools/FillTool";
 import Button from "@/components/ui/button";
 import StylesTool from "@/builder/tools/StylesTool";
 import InteractionsTool from "@/builder/tools/InteractionsTool";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -34,24 +37,19 @@ const ElementToolbar = () => {
   const { dragState, nodeState, setNodeStyle } = useBuilder();
 
   // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
-
-  // Get the selected IDs at render time
-  const currentSelectedIds = getSelectedIds();
+  const selectedIds = useSelectedIds();
 
   // Memoize the selected elements to prevent unnecessary calculations
   const selectedElements = useMemo(() => {
-    return nodeState.nodes.filter((node) =>
-      currentSelectedIds.includes(node.id)
-    );
-  }, [nodeState.nodes, currentSelectedIds]);
+    return nodeState.nodes.filter((node) => selectedIds.includes(node.id));
+  }, [nodeState.nodes, selectedIds]);
 
   // Check if the primary selected element is hidden
   const isPrimaryElementHidden = () => {
-    if (currentSelectedIds.length === 0) return false;
+    if (selectedIds.length === 0) return false;
 
     const primaryElement = nodeState.nodes.find(
-      (node) => node.id === currentSelectedIds[0]
+      (node) => node.id === selectedIds[0]
     );
 
     return primaryElement?.style?.display === "none";
@@ -60,7 +58,7 @@ const ElementToolbar = () => {
   const isHidden = isPrimaryElementHidden();
   const toolTypes = getToolTypes(selectedElements);
 
-  if (currentSelectedIds.length === 0) {
+  if (selectedIds.length === 0) {
     return (
       <div className="w-64 fixed pt-3 right-toolbar right-0 z-20 h-screen overflow-auto bg-[var(--bg-toolbar)]" />
     );

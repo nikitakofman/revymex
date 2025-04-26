@@ -4,10 +4,15 @@ import { useBuilder } from "../builderState";
 import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
 import { useDragStart } from "../dnd/useDragStart";
 import { selectOps } from "../atoms/select-store";
+import { useIsDragging } from "../atoms/drag-store";
+import { contextMenuOps } from "../atoms/context-menu-store";
 
 const NameDisplay = ({ node }: { node: Node }) => {
   const { nodeState, dragState, dragDisp, transform } = useBuilder();
   const handleDragStart = useDragStart();
+
+  // Use the isDragging from the atom store
+  const isDraggingFromStore = useIsDragging();
 
   const { setSelectedIds } = selectOps;
 
@@ -25,7 +30,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
 
   // Early returns for nodes we don't want to display names for
   if (node.isViewport) return null;
-  if (dragState.isDragging) return null;
+  if (isDraggingFromStore) return null; // Changed this line only
 
   // In normal mode (not dynamic mode), don't show names for nodes in viewports
   if (!dragState.dynamicModeNodeId) {
@@ -145,7 +150,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
       }}
       onMouseDown={handleMouseDown}
       onContextMenu={(e) =>
-        dragDisp.setContextMenu(e.clientX, e.clientY, node.id, true)
+        contextMenuOps.setContextMenu(e.clientX, e.clientY, node.id, true)
       }
     >
       {/* Show Crown icon for base dynamic nodes */}

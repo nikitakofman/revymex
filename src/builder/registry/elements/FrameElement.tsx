@@ -23,6 +23,13 @@ import {
   selectOps,
 } from "@/builder/context/atoms/select-store";
 import { useNodeHovered, hoverOps } from "@/builder/context/atoms/hover-store";
+import {
+  dragOps,
+  useDropInfo,
+  useGetDragPositions,
+  useGetIsDragging,
+} from "@/builder/context/atoms/drag-store";
+import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 
 export const Frame = ({ children, node }: ElementProps) => {
   console.log(`Frame re-rendering: ${node.id}`, new Date().getTime());
@@ -30,7 +37,6 @@ export const Frame = ({ children, node }: ElementProps) => {
   const connect = useConnect();
 
   const {
-    dragState,
     nodeDisp,
     transform,
     dragDisp,
@@ -39,12 +45,16 @@ export const Frame = ({ children, node }: ElementProps) => {
     contentRef,
   } = useBuilder();
 
+  const getIsDragging = useGetIsDragging();
+
   // Use per-node subscription for hover and selection state
   const isSelected = useNodeSelected(node.id);
   const isHovered = useNodeHovered(node.id);
+  const dropInfo = useDropInfo();
 
   // Use imperative getter instead of subscription for selectedIds
   const getSelectedIds = useGetSelectedIds();
+  const getDragPositions = useGetDragPositions();
 
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartedRef = useRef(false);
@@ -52,8 +62,7 @@ export const Frame = ({ children, node }: ElementProps) => {
   const lastPositionRef = useRef({ x: 0, y: 0 });
 
   const isDropTarget =
-    dragState.dropInfo?.targetId === node.id &&
-    dragState.dropInfo?.position === "inside";
+    dropInfo?.targetId === node.id && dropInfo?.position === "inside";
 
   const [isInteractiveAid, setIsInteractiveAid] = useState(false);
 
@@ -211,8 +220,8 @@ export const Frame = ({ children, node }: ElementProps) => {
           }
 
           // Reset drag state
-          dragDisp.setIsDragging(false);
-          dragDisp.resetDragState();
+          dragOps.setIsDragging(false);
+          dragOps.resetDragState();
         }
 
         // Get current selected IDs before ensuring viewport stays selected
@@ -244,6 +253,7 @@ export const Frame = ({ children, node }: ElementProps) => {
 
       // Set up an interval to track the position during drag
       dragPositionInterval.current = setInterval(() => {
+        const dragPositions = getDragPositions();
         // Check for the dragged element
         const draggedEl = document.querySelector(
           `[data-node-dragged="${node.id}"]`
@@ -260,12 +270,9 @@ export const Frame = ({ children, node }: ElementProps) => {
 
           // Store the position
           lastPositionRef.current = { x: elX, y: elY };
-        } else if (
-          dragState.dragPositions.x !== 0 ||
-          dragState.dragPositions.y !== 0
-        ) {
+        } else if (dragPositions.x !== 0 || dragPositions.y !== 0) {
           // Fallback to drag positions from state
-          lastPositionRef.current = { ...dragState.dragPositions };
+          lastPositionRef.current = { ...dragPositions };
         }
       }, 50); // Poll every 50ms during drag
     };
@@ -277,6 +284,8 @@ export const Frame = ({ children, node }: ElementProps) => {
         dragPositionInterval.current = null;
       }
     };
+
+    const isDragging = getIsDragging();
 
     return (
       <ResizableWrapper node={node}>
@@ -305,7 +314,7 @@ export const Frame = ({ children, node }: ElementProps) => {
         >
           {/* Viewport Header rendered in a portal but stays properly positioned */}
           {contentRef.current &&
-            !dragState.isDragging &&
+            !isDragging &&
             node.position &&
             createPortal(
               <div
@@ -370,7 +379,12 @@ export const Frame = ({ children, node }: ElementProps) => {
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  dragDisp.setContextMenu(e.clientX, e.clientY, node.id, true);
+                  contextMenuOps.setContextMenu(
+                    e.clientX,
+                    e.clientY,
+                    node.id,
+                    true
+                  );
                 }}
               >
                 <div className="flex pointer-events-none items-center justify-between w-full">
@@ -395,7 +409,7 @@ export const Frame = ({ children, node }: ElementProps) => {
                           e.stopPropagation();
                           const buttonRect =
                             e.currentTarget.getBoundingClientRect();
-                          dragDisp.showViewportContextMenu(node.id, {
+                          contextMenuOps.showViewportContextMenu(node.id, {
                             x: buttonRect.right,
                             y: buttonRect.bottom,
                           });

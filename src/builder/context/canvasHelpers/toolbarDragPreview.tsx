@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useIsDragging,
+  useDragSource,
+  useDraggedItem,
+} from "@/builder/context/atoms/drag-store";
 
 export const ToolbarDragPreview = () => {
-  const { dragState } = useBuilder();
+  // Use the subscription hooks since this is for rendering decisions
+  const isDragging = useIsDragging();
+  const dragSource = useDragSource();
+  const draggedItem = useDraggedItem();
+
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -13,16 +21,16 @@ export const ToolbarDragPreview = () => {
       });
     };
 
-    if (dragState.isDragging && dragState.dragSource === "toolbar") {
+    if (isDragging && dragSource === "toolbar") {
       window.addEventListener("mousemove", handleMouseMove);
     }
 
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
     };
-  }, [dragState.isDragging, dragState.dragSource]);
+  }, [isDragging, dragSource]);
 
-  if (!dragState.isDragging || dragState.dragSource !== "toolbar") {
+  if (!isDragging || dragSource !== "toolbar") {
     return null;
   }
 
@@ -37,7 +45,7 @@ export const ToolbarDragPreview = () => {
     zIndex: 9999,
   };
 
-  switch (dragState.draggedItem) {
+  switch (draggedItem) {
     case "frame":
       previewStyle.backgroundColor = "rgba(128, 128, 128, 0.7)";
       break;
@@ -53,7 +61,7 @@ export const ToolbarDragPreview = () => {
 
   return (
     <div className="element-box" style={previewStyle}>
-      {dragState.draggedItem}
+      {draggedItem}
     </div>
   );
 };

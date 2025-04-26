@@ -21,6 +21,7 @@ import { Plugin, PluginKey } from "prosemirror-state";
 import TextMenu from "./TextMenu";
 import { findParentViewport } from "@/builder/context/utils";
 import { useNodeSelected } from "@/builder/context/atoms/select-store";
+import { useGetIsDragging } from "@/builder/context/atoms/drag-store";
 
 // Add this extension to your list of extensions in TextElement.jsx
 
@@ -363,6 +364,7 @@ const TextElement = ({ node }: ElementProps) => {
   const [lineHeight, setLineHeight] = useState("normal");
   const [letterSpacing, setLetterSpacing] = useState("normal");
 
+  const getIsDragging = useGetIsDragging();
   const connect = useConnect();
   const {
     setNodeStyle,
@@ -1197,13 +1199,14 @@ const TextElement = ({ node }: ElementProps) => {
   }, [handleClickOutside]);
 
   const shouldShowMenu = useCallback(() => {
+    const isDragging = getIsDragging();
     const isTextNode = node.type === "text";
     return (
       isNodeSelected &&
       isTextNode &&
       !isMovingCanvas &&
       !isResizing &&
-      !dragState.isDragging &&
+      !isDragging &&
       (hasSelection || isEditing)
     );
   }, [
@@ -1211,7 +1214,7 @@ const TextElement = ({ node }: ElementProps) => {
     node.type,
     isMovingCanvas,
     isResizing,
-    dragState.isDragging,
+    getIsDragging,
     hasSelection,
     isEditing,
   ]);

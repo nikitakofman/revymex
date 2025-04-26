@@ -3,12 +3,15 @@ import { ToolInput } from "../_components/ToolInput";
 import { ColorPicker } from "../_components/ColorPicker";
 import { ChevronLeft } from "lucide-react";
 import { useBuilder } from "@/builder/context/builderState";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
 
 export const FilterToolPopup = ({ selectedNode, onClose }) => {
-  const { dragState, setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilder();
 
-  const currentSelectedIds = useGetSelectedIds();
+  const selectedIds = useSelectedIds();
 
   // Filter states
   const [blur, setBlur] = useState(0);
@@ -26,7 +29,6 @@ export const FilterToolPopup = ({ selectedNode, onClose }) => {
 
   // Parse filter string on component mount
   useEffect(() => {
-    const selectedIds = currentSelectedIds();
     if (!selectedIds.length) return;
 
     // Get the selected node's style
@@ -85,7 +87,7 @@ export const FilterToolPopup = ({ selectedNode, onClose }) => {
     if (sepiaMatch) {
       setSepia(parseInt(sepiaMatch[1], 10));
     }
-  }, [currentSelectedIds]);
+  }, [selectedIds]);
 
   // Apply filters
   const applyFilters = () => {

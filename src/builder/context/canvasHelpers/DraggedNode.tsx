@@ -13,6 +13,12 @@ import { useBuilder } from "../builderState";
 import { useSnapGrid, SnapResult } from "./SnapGrid";
 import { getFilteredNodes, isAbsoluteInFrame, parseRotation } from "../utils";
 import { visualOps } from "@/builder/context/atoms/visual-store";
+import {
+  useAdditionalDraggedNodes,
+  useDragSource,
+  useIsOverCanvas,
+  useNodeDimensions,
+} from "../atoms/drag-store";
 
 interface Transform {
   x: number;
@@ -59,9 +65,16 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   offset,
 }) => {
   const { dragState, nodeState, containerRef } = useBuilder();
+
+  const additionalDraggedNodes = useAdditionalDraggedNodes();
+  const dragSource = useDragSource();
+
+  const isOverCanvas = useIsOverCanvas();
   const initialDimensionsRef = useRef<{ width: number; height: number } | null>(
     null
   );
+
+  const nodeDimensions = useNodeDimensions();
 
   // figure out which nodes to show
   const activeFilter = dragState.dynamicModeNodeId
@@ -93,7 +106,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   };
 
   // store initial dimensions
-  const dims = dragState.nodeDimensions[node.id];
+  const dims = nodeDimensions[node.id];
   if (!initialDimensionsRef.current && dims?.finalWidth && dims?.finalHeight) {
     initialDimensionsRef.current = {
       width: parseFloat(dims.finalWidth),
@@ -118,7 +131,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   const offsetY = (effectiveHeight - nodeHeight) / 2;
 
   // is this an additional (multi) dragged node?
-  const isAdditionalDraggedNode = dragState.additionalDraggedNodes?.some(
+  const isAdditionalDraggedNode = additionalDraggedNodes?.some(
     (info) => info.node.id === node.id
   );
 
@@ -126,7 +139,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   let rawLeft: number;
   let rawTop: number;
 
-  if (dragState.dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)) {
+  if (dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)) {
     // For absolute-in-frame, position directly based on mouse position
     // No additional transformations, just the raw mouse position minus the grabbed point
     const mouseX = baseRect.left;
@@ -167,7 +180,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   let finalTop = rawTop + offsetY * transform.scale;
 
   // handle "grip handle" in flex, etc.
-  if (dragState.dragSource === "gripHandle") {
+  if (dragSource === "gripHandle") {
     const parentNode = nodeState.nodes.find((n) => n.id === node.parentId);
     if (parentNode) {
       const parentEl = document.querySelector(
@@ -205,7 +218,7 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
   let snapResult: SnapResult | null = null;
 
   // Step 2: compute prospective snaps
-  if (snapGrid && (dragState.isOverCanvas || dragState.dynamicModeNodeId)) {
+  if (snapGrid && (isOverCanvas || dragState.dynamicModeNodeId)) {
     snapResult = snapGrid.findNearestSnaps(snapPoints, 10, node.id);
 
     // apply alignment snap
@@ -342,13 +355,11 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({
           transformOrigin: "top left",
           pointerEvents: "none",
           left:
-            dragState.dragSource === "absolute-in-frame" ||
-            isAbsoluteInFrame(node)
+            dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)
               ? "0px" // Force to zero instead of undefined
               : undefined,
           top:
-            dragState.dragSource === "absolute-in-frame" ||
-            isAbsoluteInFrame(node)
+            dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)
               ? "0px" // Force to zero instead of undefined
               : undefined,
           width: `${nodeWidth}px`,

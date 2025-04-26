@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { useBuilder } from "@/builder/context/builderState";
-import { debounce } from "lodash";
-import { useGetSelectedIds } from "../atoms/select-store";
+import { debounce, get } from "lodash";
+import { useSelectedIds } from "../atoms/select-store";
+import { useIsDragging, useDragPositions } from "../atoms/drag-store";
 
 // Types and Interfaces
 interface StyleValue {
@@ -177,14 +178,16 @@ export function useComputedStyle({
   defaultUnit = "px",
   isColor = false,
 }: UseComputedStyleProps): StyleValue {
-  const { dragState, nodeState } = useBuilder();
+  const { nodeState } = useBuilder();
   const [styleValue, setStyleValue] = useState<StyleValue>(() => ({
     value: defaultValue,
     unit: defaultUnit,
   }));
 
-  // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
+  // Use subscriptions instead of imperative getters
+  const selectedIds = useSelectedIds();
+  const isDragging = useIsDragging();
+  const dragPositions = useDragPositions();
 
   const observerRef = useRef<MutationObserver | null>(null);
   const elementsRef = useRef<HTMLElement[]>([]);
@@ -197,9 +200,6 @@ export function useComputedStyle({
     isUpdatingRef.current = true;
 
     try {
-      // Get the current selected IDs only when computing styles
-      const selectedIds = getSelectedIds();
-
       const elements = selectedIds
         .map(
           (id) =>
@@ -251,7 +251,7 @@ export function useComputedStyle({
       isUpdatingRef.current = false;
     }
   }, [
-    getSelectedIds,
+    selectedIds,
     property,
     defaultValue,
     defaultUnit,
@@ -267,31 +267,13 @@ export function useComputedStyle({
     [updateComputedStyle]
   );
 
-  // Setup a listener for selection changes
+  // Run the update whenever selectedIds changes
   useEffect(() => {
-    // Initial update on mount
+    // Clear the style cache when selection changes
+    styleCache.clear();
+    // Update computed style
     updateComputedStyle();
-
-    // Set up a MutationObserver on document.body to detect DOM changes
-    // This avoids subscribing directly to selection changes
-    const selectionChangeObserver = new MutationObserver(() => {
-      // Clear the style cache when selection might have changed
-      styleCache.clear();
-      // Update computed style
-      updateComputedStyle();
-    });
-
-    // Observe changes to data-selected attribute on any element
-    selectionChangeObserver.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["data-selected"],
-      subtree: true,
-    });
-
-    return () => {
-      selectionChangeObserver.disconnect();
-    };
-  }, [updateComputedStyle]);
+  }, [selectedIds, updateComputedStyle]);
 
   // Setup observers and handle cleanup
   useEffect(() => {
@@ -322,19 +304,14 @@ export function useComputedStyle({
     }
 
     return cleanup;
-  }, [debouncedUpdate]);
+  }, [debouncedUpdate, selectedIds]);
 
   // Handle drag state updates
   useEffect(() => {
-    if (dragState.isDragging) {
+    if (isDragging) {
       debouncedUpdate();
     }
-  }, [
-    dragState.isDragging,
-    dragState.dragPositions.x,
-    dragState.dragPositions.y,
-    debouncedUpdate,
-  ]);
+  }, [isDragging, dragPositions, debouncedUpdate]);
 
   return styleValue;
 }

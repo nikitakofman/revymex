@@ -1,10 +1,11 @@
 import { createPortal } from "react-dom";
 import { useBuilder } from "../builderState";
+import { useGetLineIndicator, useLineIndicator } from "../atoms/visual-store";
 
 export const LineIndicator = () => {
-  const { dragState } = useBuilder();
+  const lineIndicator = useLineIndicator();
 
-  const { show, x, y, width, height } = dragState.lineIndicator;
+  const { show, x, y, width, height } = lineIndicator;
   if (!show) return null;
 
   const isVertical = parseFloat(String(height)) > parseFloat(String(width));

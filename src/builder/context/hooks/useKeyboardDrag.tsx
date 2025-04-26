@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { useNodeActions } from "./useNodeActions";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
+import { useGetIsDragging } from "../atoms/drag-store";
 
 export const useKeyboardDrag = ({ isEnabled = true }) => {
   const {
@@ -21,6 +22,8 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
   const currentSelectedIds = useGetSelectedIds();
 
   const { clearSelection, setSelectedIds } = selectOps;
+
+  const getIsDragging = useGetIsDragging();
 
   const isAltPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
@@ -54,6 +57,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
     if (!isEnabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isDragging = getIsDragging();
       if (isEditingText || document.activeElement?.isContentEditable) {
         return;
       }
@@ -64,7 +68,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
         isAltPressedRef.current = true;
 
         // Only duplicate immediately if we're already dragging
-        if (dragState.isDragging && !altDuplicationHandledRef.current) {
+        if (isDragging && !altDuplicationHandledRef.current) {
           handleDuplicate();
           altDuplicationHandledRef.current = true;
         }
@@ -183,7 +187,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [
-    dragState.isDragging,
+    getIsDragging,
     nodeState.nodes,
     isMoveCanvasMode,
     setIsMoveCanvasMode,
@@ -200,7 +204,9 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
 
   // Handle drag start while Alt is pressed
   useEffect(() => {
-    if (dragState.isDragging) {
+    const isDragging = getIsDragging();
+
+    if (isDragging) {
       if (isAltPressedRef.current && !altDuplicationHandledRef.current) {
         handleDuplicate();
         altDuplicationHandledRef.current = true;
@@ -210,7 +216,7 @@ export const useKeyboardDrag = ({ isEnabled = true }) => {
       altDuplicationHandledRef.current = false;
       dragDisp.setDuplicatedFromAlt(false);
     }
-  }, [dragState.isDragging, handleDuplicate, dragDisp]);
+  }, [getIsDragging, handleDuplicate, dragDisp]);
 
   return {
     isAltPressed: isAltPressedRef.current,

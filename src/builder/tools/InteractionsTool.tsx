@@ -4,13 +4,15 @@ import { useBuilder } from "@/builder/context/builderState";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { ToolPopupTrigger } from "./_components/ToolbarPopupTrigger";
 import { Zap, ChevronRight, X, Plus } from "lucide-react";
-import { useGetSelectedIds } from "../context/atoms/select-store";
+import { useSelectedIds } from "../context/atoms/select-store";
 
 export const InteractionsTool = () => {
   const { nodeState, dragState } = useBuilder();
 
   // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
+
+  const selectedIds = useSelectedIds();
+
   const [selectedNode, setSelectedNode] = useState(null);
   const [connectionCount, setConnectionCount] = useState(0);
   const [isDynamicRelated, setIsDynamicRelated] = useState(false);
@@ -21,7 +23,6 @@ export const InteractionsTool = () => {
   // Update the selected node when selection changes
   useEffect(() => {
     // Get the current selection
-    const selectedIds = getSelectedIds();
     if (selectedIds.length === 0) {
       setSelectedNode(null);
       setIsDynamicRelated(false);
@@ -42,13 +43,12 @@ export const InteractionsTool = () => {
         node.dynamicParentId ||
         (node.dynamicConnections && node.dynamicConnections.length > 0));
     setIsDynamicRelated(isDynamic);
-  }, [nodeState.nodes, getSelectedIds]);
+  }, [nodeState.nodes, selectedIds]);
 
   // Set up an observer for selection changes
   useEffect(() => {
     const selectionObserver = new MutationObserver(() => {
       // When selection changes, re-run our node finding logic
-      const selectedIds = getSelectedIds();
       if (selectedIds.length === 0) {
         setSelectedNode(null);
         setIsDynamicRelated(false);
@@ -81,7 +81,7 @@ export const InteractionsTool = () => {
     return () => {
       selectionObserver.disconnect();
     };
-  }, [nodeState.nodes, getSelectedIds]);
+  }, [nodeState.nodes, selectedIds]);
 
   const handleTriggerPopup = useCallback((triggerElement, e) => {
     e.stopPropagation();

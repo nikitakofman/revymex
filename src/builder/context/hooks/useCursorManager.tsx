@@ -1,6 +1,7 @@
 // hooks/useCursorManager.ts
 import { useEffect, useState } from "react";
 import { useBuilder } from "@/builder/context/builderState";
+import { useGetIsDragging } from "../atoms/drag-store";
 
 // Define preventSelectStyle as a constant
 const preventSelectStyle = {
@@ -23,8 +24,11 @@ export const useCursorManager = () => {
     isRotating,
   } = useBuilder();
 
+  const getIsDragging = useGetIsDragging();
+
   // Set up the cursor and selection styles based on current modes
   useEffect(() => {
+    const isDragging = getIsDragging();
     // Mouse move handler to check if we're over toolbars
     const handleMouseMove = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -68,7 +72,7 @@ export const useCursorManager = () => {
       // Set grab cursor when in move canvas mode
       document.body.style.cursor = isMovingCanvas ? "grabbing" : "grab";
       Object.assign(document.body.style, preventSelectStyle);
-    } else if (dragState.isDragging) {
+    } else if (isDragging) {
       document.body.style.cursor = "move";
       Object.assign(document.body.style, preventSelectStyle);
     } else {
@@ -99,7 +103,7 @@ export const useCursorManager = () => {
     isMovingCanvas,
     isResizing,
     isRotating,
-    dragState.isDragging,
+    getIsDragging,
   ]);
 
   // Handle keyboard shortcuts for drawing modes

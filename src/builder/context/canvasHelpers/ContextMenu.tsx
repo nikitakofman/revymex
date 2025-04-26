@@ -18,6 +18,10 @@ import {
 } from "lucide-react";
 import { useNodeActions } from "../hooks/useNodeActions";
 import { useGetSelectedIds } from "../atoms/select-store";
+import {
+  useNodeContextMenu,
+  contextMenuOps,
+} from "../atoms/context-menu-store";
 
 const Separator = () => (
   <div className="h-[1px] bg-[var(--border-light)] mx-2 my-1" />
@@ -64,8 +68,7 @@ const MenuItemComponent = ({
 };
 
 export const ContextMenu = () => {
-  const { dragState, dragDisp, nodeState, nodeDisp, setNodeStyle } =
-    useBuilder();
+  const { dragDisp, nodeState, nodeDisp, setNodeStyle } = useBuilder();
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
   const isWindows = navigator.platform.includes("Win");
@@ -77,12 +80,15 @@ export const ContextMenu = () => {
     visibility: "hidden" as "hidden" | "visible",
   });
 
-  // Replace subscription with imperative getter
+  // Use the subscription hook since we need to re-render when context menu changes
+  const nodeContextMenu = useNodeContextMenu();
+
+  // Imperative getter for selected IDs (used in event handlers)
   const getSelectedIds = useGetSelectedIds();
 
   // Using useLayoutEffect to position the menu before browser paint
   useLayoutEffect(() => {
-    if (!dragState.contextMenu || !menuRef.current) {
+    if (!nodeContextMenu || !menuRef.current) {
       setMenuStyle((prev) => ({ ...prev, visibility: "hidden", opacity: 0 }));
       return;
     }
@@ -97,11 +103,11 @@ export const ContextMenu = () => {
 
     // Use requestAnimationFrame to calculate position after menu is rendered but before paint
     requestAnimationFrame(() => {
-      if (!dragState.contextMenu || !menuRef.current) return;
+      if (!nodeContextMenu || !menuRef.current) return;
 
       // Initial position based on click
-      let left = dragState.contextMenu.x;
-      let top = dragState.contextMenu.y;
+      let left = nodeContextMenu.x;
+      let top = nodeContextMenu.y;
 
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
@@ -133,20 +139,20 @@ export const ContextMenu = () => {
         visibility: "visible",
       });
     });
-  }, [dragState.contextMenu]);
+  }, [nodeContextMenu]);
 
   // Check if menu is triggered from canvas
-  const isCanvasMenu = dragState.contextMenu?.nodeId === null;
+  const isCanvasMenu = nodeContextMenu?.nodeId === null;
 
   // Check if something is copied and can be pasted
   const canPaste = true; // Replace with your actual clipboard check logic
 
-  const isViewportHeaderMenu = dragState.contextMenu?.isViewportHeader;
+  const isViewportHeaderMenu = nodeContextMenu?.isViewportHeader;
 
   const getMenuItems = useCallback(() => {
     if (isViewportHeaderMenu) {
       const node = nodeState.nodes.find(
-        (n) => n.id === dragState.contextMenu?.nodeId
+        (n) => n.id === nodeContextMenu?.nodeId
       );
 
       return [
@@ -155,10 +161,10 @@ export const ContextMenu = () => {
           icon: Plus,
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
             dragDisp.showViewportModal({
-              x: dragState.contextMenu?.x,
-              y: dragState.contextMenu?.y,
+              x: nodeContextMenu?.x,
+              y: nodeContextMenu?.y,
             });
           },
         },
@@ -167,10 +173,10 @@ export const ContextMenu = () => {
           icon: Settings,
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
-            dragDisp.hideContextMenu();
-            dragDisp.showEditViewportModal(dragState.contextMenu?.nodeId, {
-              x: dragState.contextMenu?.x,
-              y: dragState.contextMenu?.y,
+            contextMenuOps.hideContextMenu();
+            dragDisp.showEditViewportModal(nodeContextMenu?.nodeId, {
+              x: nodeContextMenu?.x,
+              y: nodeContextMenu?.y,
             });
           },
         },
@@ -180,7 +186,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             nodeDisp.toggleNodeLock([node.id]);
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
           },
         },
         {
@@ -189,7 +195,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             handleDelete();
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
           },
         },
       ];
@@ -204,8 +210,8 @@ export const ContextMenu = () => {
           windowsShortcut: "Ctrl+V",
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
-            handlePaste(dragState.contextMenu?.x, dragState.contextMenu?.y);
-            dragDisp.hideContextMenu();
+            handlePaste(nodeContextMenu?.x, nodeContextMenu?.y);
+            contextMenuOps.hideContextMenu();
           },
           disabled: !canPaste,
         },
@@ -217,7 +223,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             // Handle select all
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
           },
         },
         Separator,
@@ -227,7 +233,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             // Handle add frame at coordinates
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
           },
         },
         {
@@ -236,7 +242,7 @@ export const ContextMenu = () => {
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
             // Handle add text at coordinates
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
           },
         },
       ];
@@ -246,9 +252,7 @@ export const ContextMenu = () => {
     const menuItems = [];
 
     // Get the right-clicked node
-    const node = nodeState.nodes.find(
-      (n) => n.id === dragState.contextMenu?.nodeId
-    );
+    const node = nodeState.nodes.find((n) => n.id === nodeContextMenu?.nodeId);
 
     // Add "Make Dynamic" option only for frame nodes
     if (node) {
@@ -260,7 +264,7 @@ export const ContextMenu = () => {
             e.stopPropagation();
             nodeDisp.updateNode(node.id, { isDynamic: true });
             nodeDisp.updateNodeDynamicStatus(node.id);
-            dragDisp.hideContextMenu();
+            contextMenuOps.hideContextMenu();
           },
         },
         Separator
@@ -281,7 +285,7 @@ export const ContextMenu = () => {
           e.stopPropagation();
           handleCopy();
           handleDelete();
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       {
@@ -292,7 +296,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           handleCopy();
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       {
@@ -303,7 +307,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           handlePaste();
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
         disabled: !canPaste,
       },
@@ -315,7 +319,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           handleDuplicate(true);
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       Separator,
@@ -327,7 +331,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           // Handle bring forward
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       {
@@ -338,7 +342,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           // Handle send backward
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       {
@@ -349,7 +353,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           // Handle bring to front
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       {
@@ -360,7 +364,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           // Handle send to back
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       Separator,
@@ -376,10 +380,10 @@ export const ContextMenu = () => {
           const nodesToLock =
             currentSelectedIds.length > 0
               ? currentSelectedIds
-              : [dragState.contextMenu?.nodeId].filter(Boolean);
+              : [nodeContextMenu?.nodeId].filter(Boolean);
 
           nodeDisp.toggleNodeLock(nodesToLock);
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       },
       {
@@ -390,7 +394,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           // Handle hide
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
           setNodeStyle(
             {
               display: "none",
@@ -408,7 +412,7 @@ export const ContextMenu = () => {
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
           handleDelete();
-          dragDisp.hideContextMenu();
+          contextMenuOps.hideContextMenu();
         },
       }
     );
@@ -418,7 +422,7 @@ export const ContextMenu = () => {
     isViewportHeaderMenu,
     isCanvasMenu,
     nodeState.nodes,
-    dragState.contextMenu,
+    nodeContextMenu,
     handleDelete,
     handleCopy,
     handlePaste,
@@ -429,7 +433,8 @@ export const ContextMenu = () => {
     getSelectedIds,
   ]);
 
-  if (!dragState.contextMenu) return null;
+  // Don't render anything if there's no context menu
+  if (!nodeContextMenu?.show) return null;
 
   const menuItems = getMenuItems();
 
@@ -437,7 +442,7 @@ export const ContextMenu = () => {
     <>
       <div
         className="fixed inset-0 bg-transparent z-[999]"
-        onClick={() => dragDisp.hideContextMenu()}
+        onClick={() => contextMenuOps.hideContextMenu()}
         onContextMenu={(e) => e.preventDefault()}
       />
       <div

@@ -12,6 +12,7 @@ import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
 import { useDragStart } from "../dnd/useDragStart";
 import { hasSkewTransform } from "../utils";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
+import { dragOps } from "../atoms/drag-store";
 
 export const GripHandles = ({
   node,
@@ -81,7 +82,7 @@ export const GripHandles = ({
       handleDragStart(e, undefined, nodeToMove);
 
       requestAnimationFrame(() => {
-        dragDisp.setPartialDragState({
+        dragOps.setPartialDragState({
           dragSource: "gripHandle",
           gripHandleDirection: isColumn ? "vertical" : "horizontal",
         });

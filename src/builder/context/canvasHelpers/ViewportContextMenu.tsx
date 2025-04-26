@@ -2,9 +2,13 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBuilder } from "@/builder/context/builderState";
 import { Plus, Edit, Eye, AlignHorizontalJustifyCenter } from "lucide-react";
+import {
+  useViewportContextMenu,
+  contextMenuOps,
+} from "../atoms/context-menu-store";
 
 const ViewportContextMenu = () => {
-  const { dragState, dragDisp, nodeDisp } = useBuilder();
+  const { dragDisp, nodeDisp } = useBuilder();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState({
     left: 0,
@@ -13,9 +17,12 @@ const ViewportContextMenu = () => {
     visibility: "hidden" as "hidden" | "visible",
   });
 
+  // Use the subscription hook since we need to re-render when context menu changes
+  const viewportContextMenu = useViewportContextMenu();
+
   // Using useLayoutEffect to position the menu before browser paint
   useLayoutEffect(() => {
-    if (!dragState.viewportContextMenu || !menuRef.current) {
+    if (!viewportContextMenu || !menuRef.current || !viewportContextMenu.show) {
       setMenuStyle((prev) => ({ ...prev, visibility: "hidden", opacity: 0 }));
       return;
     }
@@ -30,11 +37,12 @@ const ViewportContextMenu = () => {
 
     // Use requestAnimationFrame to calculate position after menu is rendered but before paint
     requestAnimationFrame(() => {
-      if (!dragState.viewportContextMenu || !menuRef.current) return;
+      if (!viewportContextMenu || !menuRef.current || !viewportContextMenu.show)
+        return;
 
       // Initial position based on click
-      let left = dragState.viewportContextMenu.position.x;
-      let top = dragState.viewportContextMenu.position.y;
+      let left = viewportContextMenu.position.x;
+      let top = viewportContextMenu.position.y;
 
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
@@ -66,9 +74,9 @@ const ViewportContextMenu = () => {
         visibility: "visible",
       });
     });
-  }, [dragState.viewportContextMenu]);
+  }, [viewportContextMenu]);
 
-  if (!dragState.viewportContextMenu?.show) return null;
+  if (!viewportContextMenu?.show) return null;
 
   const menuItems = [
     {
@@ -76,10 +84,10 @@ const ViewportContextMenu = () => {
       icon: Plus,
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
-        dragDisp.hideViewportContextMenu();
+        contextMenuOps.hideViewportContextMenu();
         dragDisp.showViewportModal({
-          x: dragState.viewportContextMenu.position.x,
-          y: dragState.viewportContextMenu.position.y,
+          x: viewportContextMenu.position.x,
+          y: viewportContextMenu.position.y,
         });
       },
     },
@@ -88,14 +96,11 @@ const ViewportContextMenu = () => {
       icon: Edit,
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
-        dragDisp.hideViewportContextMenu();
-        dragDisp.showEditViewportModal(
-          dragState.viewportContextMenu.viewportId,
-          {
-            x: dragState.viewportContextMenu.position.x,
-            y: dragState.viewportContextMenu.position.y,
-          }
-        );
+        contextMenuOps.hideViewportContextMenu();
+        dragDisp.showEditViewportModal(viewportContextMenu.viewportId, {
+          x: viewportContextMenu.position.x,
+          y: viewportContextMenu.position.y,
+        });
       },
     },
     {
@@ -104,7 +109,7 @@ const ViewportContextMenu = () => {
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
         nodeDisp.alignViewports();
-        dragDisp.hideViewportContextMenu();
+        contextMenuOps.hideViewportContextMenu();
       },
     },
   ];
@@ -113,7 +118,7 @@ const ViewportContextMenu = () => {
     <>
       <div
         className="fixed inset-0 bg-transparent z-[999]"
-        onClick={() => dragDisp.hideViewportContextMenu()}
+        onClick={() => contextMenuOps.hideViewportContextMenu()}
         onContextMenu={(e) => e.preventDefault()}
       />
       <div

@@ -4,6 +4,7 @@ import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
 import Image from "next/image";
 import React from "react";
+import { useDropInfo } from "@/builder/context/atoms/drag-store";
 
 interface ExtendedElementProps extends ElementProps {
   className?: string;
@@ -15,10 +16,10 @@ export const ImageElement = ({
 }: ExtendedElementProps) => {
   const connect = useConnect();
   const { dragState } = useBuilder();
+  const dropInfo = useDropInfo();
 
   const isDropTarget =
-    dragState.dropInfo?.targetId === node.id &&
-    dragState.dropInfo?.position === "inside";
+    dropInfo?.targetId === node.id && dropInfo?.position === "inside";
 
   return (
     <ResizableWrapper node={node}>

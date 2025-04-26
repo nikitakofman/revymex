@@ -4,12 +4,15 @@ import React from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { SnapLine } from "@/builder/context/canvasHelpers/SnapGrid";
 import { useSnapGuides } from "@/builder/context/atoms/visual-store";
+import { useIsDragging } from "../atoms/drag-store";
 
 const SnapGuides: React.FC = () => {
   const { transform, dragState } = useBuilder();
   const snapGuides = useSnapGuides();
 
-  if (!dragState.isDragging || !snapGuides?.length) return null;
+  const isDragging = useIsDragging();
+
+  if (!isDragging || !snapGuides?.length) return null;
 
   return (
     <div className="absolute inset-0 pointer-events-none">

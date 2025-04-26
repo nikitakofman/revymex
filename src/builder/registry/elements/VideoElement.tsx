@@ -3,14 +3,15 @@ import { ResizableWrapper } from "@/builder/context/resizable";
 import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
 import React, { useEffect } from "react";
+import { useDropInfo } from "@/builder/context/atoms/drag-store";
 
 export const VideoElement = ({ node }: ElementProps) => {
   const connect = useConnect();
   const { dragState } = useBuilder();
+  const dropInfo = useDropInfo();
 
   const isDropTarget =
-    dragState.dropInfo?.targetId === node.id &&
-    dragState.dropInfo?.position === "inside";
+    dropInfo?.targetId === node.id && dropInfo?.position === "inside";
 
   return (
     <ResizableWrapper node={node}>

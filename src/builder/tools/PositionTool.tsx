@@ -5,20 +5,41 @@ import { ToolSelect } from "./_components/ToolSelect";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import PlaceholderToolInput from "./_components/ToolInputPlaceholder";
 import { useEffect, useState } from "react";
-import { useGetSelectedIds } from "../context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "../context/atoms/select-store";
+import {
+  useIsDragging,
+  useDraggedNode,
+  useDragSource,
+  useGetDragPositions,
+  useDragPositions,
+  useLastMousePosition,
+} from "../context/atoms/drag-store";
+import { getDragPosition } from "../context/utils";
 
 export const PositionTool = () => {
-  const { dragState, nodeState, transform } = useBuilder();
+  const { nodeState, transform } = useBuilder();
   const [realTimePosition, setRealTimePosition] = useState({ x: 0, y: 0 });
 
+  // Get isDragging from the drag store
+  const isDraggingFromStore = useIsDragging();
+  // Get draggedNode from the drag store
+  const draggedNode = useDraggedNode();
+  const dragSource = useDragSource();
+  const dragPositions = useDragPositions();
+  const dragPosition = useDragPositions();
+  const lastMousePosition = useLastMousePosition();
+
   // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
+  const selectedIds = useSelectedIds();
+
   const [viewportNode, setViewportNode] = useState(false);
 
   // Update viewportNode state when needed
   useEffect(() => {
     // Get the current selection
-    const selectedIds = getSelectedIds();
     if (selectedIds.length === 0) {
       setViewportNode(false);
       return;
@@ -30,7 +51,7 @@ export const PositionTool = () => {
       ?.id.includes("viewport");
 
     setViewportNode(!!isViewport);
-  }, [nodeState.nodes, getSelectedIds]);
+  }, [nodeState.nodes, selectedIds]);
 
   const positionStyle = useComputedStyle({
     property: "position",
@@ -50,7 +71,7 @@ export const PositionTool = () => {
     : (positionStyle.value as string);
   const showCoordinates = position === "absolute" || position === "fixed";
 
-  const isDragging = dragState.dragPositions && dragState.isDragging;
+  const isDragging = dragPosition && isDraggingFromStore;
 
   // Helper to check if node is absolutely positioned within a frame
   const isAbsoluteInFrame = (nodeId: string) => {
@@ -59,28 +80,29 @@ export const PositionTool = () => {
     return node?.isAbsoluteInFrame === true && node?.parentId !== null;
   };
 
-  // Check if the currently dragged node is an absolute-in-frame node
+  // Updated to use draggedNode from the store
   const isDraggingAbsoluteInFrame =
     isDragging &&
-    dragState.draggedNode &&
-    (dragState.dragSource === "absolute-in-frame" ||
-      isAbsoluteInFrame(dragState.draggedNode.node.id));
+    draggedNode &&
+    (dragSource === "absolute-in-frame" ||
+      isAbsoluteInFrame(draggedNode.node.id));
 
   // Update real-time position when drag state changes
   useEffect(() => {
-    if (isDragging && dragState.draggedNode) {
-      const node = dragState.draggedNode.node;
+    // Updated to use draggedNode from the store
+    if (isDragging && draggedNode) {
+      const node = draggedNode.node;
 
       if (isDraggingAbsoluteInFrame) {
         // For absolute-in-frame nodes, calculate position based on mouse position and offset
         if (
-          dragState.lastMouseX !== undefined &&
-          dragState.lastMouseY !== undefined
+          lastMousePosition.x !== undefined &&
+          lastMousePosition.y !== undefined
         ) {
           // Get the mouse position
-          const mouseX = dragState.lastMouseX;
-          const mouseY = dragState.lastMouseY;
-          const offset = dragState.draggedNode.offset;
+          const mouseX = lastMousePosition.x;
+          const mouseY = lastMousePosition.y;
+          const offset = draggedNode.offset;
 
           // Find the parent frame element to get its position
           const parentNode = nodeState.nodes.find(
@@ -107,17 +129,16 @@ export const PositionTool = () => {
         }
       } else {
         setRealTimePosition({
-          x: Math.round(dragState.dragPositions.x),
-          y: Math.round(dragState.dragPositions.y),
+          x: Math.round(dragPositions.x),
+          y: Math.round(dragPositions.y),
         });
       }
     }
   }, [
     isDragging,
-    dragState.dragPositions,
-    dragState.lastMouseX,
-    dragState.lastMouseY,
-    dragState.draggedNode,
+    dragPositions,
+    lastMousePosition,
+    draggedNode,
     isDraggingAbsoluteInFrame,
     nodeState.nodes,
     transform.scale,

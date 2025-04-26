@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { ToolbarSection } from "../_components/ToolbarAtoms";
 import { useBuilder } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
@@ -13,22 +13,24 @@ import {
   getNodeVideoSource,
   getNextImageSource,
 } from "../utils";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import { useSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const FillTool = () => {
-  const { nodeState, dragState } = useBuilder();
+  const { nodeState } = useBuilder();
 
-  // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
-  const [selectedNode, setSelectedNode] = useState(null);
+  // Use subscription-based hook
+  const selectedIds = useSelectedIds();
+
+  // Memoize the selected node to prevent unnecessary calculations
+  const selectedNode = useMemo(() => {
+    if (selectedIds.length === 0) return null;
+    return nodeState.nodes.find((n) => n.id === selectedIds[0]) || null;
+  }, [nodeState.nodes, selectedIds]);
 
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const previewRef = useRef(null);
   const [actualImageSrc, setActualImageSrc] = useState(null);
-
-  // Force a re-render when node styles change
-  const [forceUpdate, setForceUpdate] = useState(0);
 
   // Style computations
   const background = useComputedStyle({
@@ -57,72 +59,29 @@ export const FillTool = () => {
     parseValue: false,
   });
 
-  // Update the selected node when selection changes
+  // Directly query the DOM to get the actual image source when the node changes
   useEffect(() => {
-    // Get the current selected IDs
-    const selectedIds = getSelectedIds();
-    if (selectedIds.length === 0) {
-      setSelectedNode(null);
-      return;
-    }
-
-    const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
-    setSelectedNode(node);
-  }, [nodeState.nodes, getSelectedIds]);
-
-  // Set up an observer for selection changes
-  useEffect(() => {
-    const selectionObserver = new MutationObserver(() => {
-      // When selection changes, re-run our node finding logic
-      const selectedIds = getSelectedIds();
-      if (selectedIds.length === 0) {
-        setSelectedNode(null);
-        return;
-      }
-
-      const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
-      setSelectedNode(node);
-    });
-
-    // Observe changes to data-selected attribute
-    selectionObserver.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["data-selected"],
-      subtree: true,
-    });
-
-    return () => {
-      selectionObserver.disconnect();
-    };
-  }, [nodeState.nodes, getSelectedIds]);
-
-  // Force re-render on style changes
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (selectedNode) {
-        setForceUpdate((prev) => prev + 1);
-      }
-    }, 100); // Check every 100ms for style changes
-
-    return () => clearInterval(interval);
-  }, [selectedNode]);
-
-  // Directly query the DOM to get the actual image source
-  useEffect(() => {
-    if (selectedNode) {
-      const nodeId = selectedNode.id;
-      const element = document.querySelector(`[data-node-id="${nodeId}"]`);
-
-      if (element && selectedNode.type === "image") {
+    if (selectedNode && selectedNode.type === "image") {
+      const element = document.querySelector(
+        `[data-node-id="${selectedNode.id}"]`
+      );
+      if (element) {
         const nextImageSrc = getNextImageSource(element);
         if (nextImageSrc) {
           setActualImageSrc(nextImageSrc);
         }
-      } else {
-        setActualImageSrc(null);
       }
+    } else {
+      setActualImageSrc(null);
     }
-  }, [selectedNode, forceUpdate]);
+  }, [
+    selectedNode,
+    background,
+    backgroundColor,
+    backgroundImage,
+    backgroundVideo,
+    src,
+  ]);
 
   // Get direct node styles for more reliable tracking
   const getDirectNodeStyle = () => {

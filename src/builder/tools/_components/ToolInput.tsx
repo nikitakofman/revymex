@@ -12,7 +12,10 @@ import { Slider } from "@/components/ui/slider";
 import { ToolSelect } from "./ToolSelect";
 import { Label } from "./ToolbarAtoms";
 import { convertToNewUnit } from "@/builder/context/utils";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -162,7 +165,9 @@ export function ToolInput({
   const [isMixed, setIsMixed] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
-  const currentSelectedIds = useGetSelectedIds();
+  // const selectedIds = useGetSelectedIds();
+
+  const selectedIds = useSelectedIds();
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -190,20 +195,17 @@ export function ToolInput({
   const sessionIdRef = useRef<string | null>(null);
 
   const hasParent = useCallback(() => {
-    const selectedIds = currentSelectedIds();
     if (!selectedIds.length) return false;
     const selectedNode = nodeState.nodes.find(
       (node) => node.id === selectedIds[0]
     );
     return !!selectedNode?.parentId;
-  }, [currentSelectedIds, nodeState.nodes]);
+  }, [selectedIds, nodeState.nodes]);
 
   const isTextFontSize =
     props.name === "fontSize" || (isCustomMode && label === "Size");
 
   const unitOptions = useMemo(() => {
-    const selectedIds = currentSelectedIds();
-
     const selectedNode = nodeState.nodes.find((n) => n.id === selectedIds[0]);
     // Check if the selected node has any children
     const hasChildren = () => {
@@ -247,17 +249,9 @@ export function ToolInput({
         disabled: selectedNode?.type !== "text" ? !hasChildren() : false,
       },
     ];
-  }, [
-    isTextFontSize,
-    hasParent,
-    props.name,
-    currentSelectedIds,
-    nodeState.nodes,
-  ]);
+  }, [isTextFontSize, hasParent, props.name, selectedIds, nodeState.nodes]);
 
   const getComputedStyleValue = useCallback(() => {
-    const selectedIds = currentSelectedIds();
-
     if (isCustomMode) return null;
     if (!selectedIds.length) return null;
 
@@ -393,7 +387,7 @@ export function ToolInput({
 
     return firstValue;
   }, [
-    currentSelectedIds,
+    selectedIds,
     props.name,
     label,
     isGridInput,
@@ -457,7 +451,7 @@ export function ToolInput({
       }
     }
   }, [
-    currentSelectedIds,
+    selectedIds,
     nodeState.nodes,
     isCustomMode,
     getComputedStyleValue,
@@ -483,8 +477,6 @@ export function ToolInput({
 
   // Special handling for box-shadow updates
   const updateBoxShadow = (newValue) => {
-    const selectedIds = currentSelectedIds();
-
     if (!selectedIds.length) return;
 
     // Get the current box-shadow
@@ -565,8 +557,6 @@ export function ToolInput({
         true
       );
     } else if (localUnit === "fill") {
-      const selectedIds = currentSelectedIds();
-
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
@@ -610,7 +600,6 @@ export function ToolInput({
     if (isMixed && !isCustomMode) return;
 
     forceCleanupDrag();
-    const selectedIds = currentSelectedIds();
 
     const elements = selectedIds
       .map(
@@ -778,8 +767,6 @@ export function ToolInput({
     }
 
     if (localUnit === "fill") {
-      const selectedIds = currentSelectedIds();
-
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
@@ -829,8 +816,6 @@ export function ToolInput({
         true
       );
     } else if (localUnit === "fill") {
-      const selectedIds = currentSelectedIds();
-
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
@@ -879,8 +864,6 @@ export function ToolInput({
         true
       );
     } else if (localUnit === "fill") {
-      const selectedIds = currentSelectedIds();
-
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;

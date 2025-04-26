@@ -26,6 +26,7 @@ import {
   InterfaceState,
 } from "../reducer/interfaceDispatcher";
 import { useGetSelectedIds } from "./atoms/select-store";
+import { useGetIsDragging } from "./atoms/drag-store";
 
 export interface LineIndicatorState {
   show: boolean;
@@ -195,14 +196,12 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const currentSelectedIds = useGetSelectedIds();
 
+  const getIsDragging = useGetIsDragging();
+
   const [dragState, setDragState] = useState(dragInitialState);
   const [interfaceState, setInterfaceState] = useState(interfaceInitialState);
   const [isFrameModeActive, setIsFrameModeActive] = useState(false);
   const [isTextModeActive, setIsTextModeActive] = useState(false);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const elementRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState({ x: 480, y: 200, scale: 0.3 });
   const [isMovingCanvas, setIsMovingCanvas] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -213,14 +212,19 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const [isAdjustingBorderRadius, setIsAdjustingBorderRadius] = useState(false);
   const [isFontSizeHandleActive, setIsFontSizeHandleActive] = useState(false);
   const [isDraggingChevrons, setIsDraggingChevrons] = useState(false);
+  const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
+  const [isMiddleMouseDown, setIsMiddleMouseDown] = useState(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const elementRef = useRef<HTMLDivElement>(null);
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
   const dragDimensionsRef = useRef<DragDimensions>({});
   const selectedIdsRef = useRef(null);
   const popupRef = useRef(null);
   const wheelHandlerAttached = useRef(false);
   const draggingOverCanvasRef = useRef(false);
   const hasLeftViewportRef = useRef(false);
-
-  const [isMoveCanvasMode, setIsMoveCanvasMode] = useState(false);
 
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -289,9 +293,6 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       }, 5),
     []
   );
-
-  const [isMiddleMouseDown, setIsMiddleMouseDown] = useState(false);
-  const lastMousePosRef = useRef({ x: 0, y: 0 });
 
   // Add these event handlers near your existing wheel handler
   const handleMouseDown = useCallback((e) => {
@@ -506,12 +507,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   }, [transform, isMovingCanvas, isMiddleMouseDown]);
 
   useEffect(() => {
-    if (dragState.isDragging) {
+    const isDragging = getIsDragging();
+
+    if (isDragging) {
       document.body.style.userSelect = "none";
     } else {
       document.body.style.userSelect = "";
     }
-  }, [dragState.isDragging]);
+  }, [getIsDragging]);
 
   const setNodeStyle = useCallback(
     (

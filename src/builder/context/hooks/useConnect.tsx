@@ -15,6 +15,8 @@ import {
   useGetSelectedIds,
 } from "../atoms/select-store";
 import { interfaceOps } from "../atoms/interface-store";
+import { useGetDragSource } from "../atoms/drag-store";
+import { contextMenuOps } from "../atoms/context-menu-store";
 
 export const useConnect = () => {
   // Use the basic useBuilder hook without global subscriptions
@@ -39,6 +41,8 @@ export const useConnect = () => {
   const { setHoverNodeId } = hoverOps;
   const { selectNode, addToSelection, clearSelection, setSelectNodeId } =
     selectOps;
+
+  const getDragSource = useGetDragSource();
 
   const isNearEdge = (
     e: React.MouseEvent,
@@ -391,16 +395,18 @@ export const useConnect = () => {
         }
         // Otherwise keep current selection
 
-        dragDisp.setContextMenu(e.clientX, e.clientY, targetNodeId as string);
+        contextMenuOps.setContextMenu(
+          e.clientX,
+          e.clientY,
+          targetNodeId as string
+        );
       };
 
       // Optimized hover handling for dynamic nodes and their children
       const handleMouseOver = (e: React.MouseEvent) => {
-        if (
-          e.target === e.currentTarget &&
-          !dragState.dragSource &&
-          !isMovingCanvas
-        ) {
+        const dragSource = getDragSource();
+
+        if (e.target === e.currentTarget && !dragSource && !isMovingCanvas) {
           // Get the viewport ID for this node
           const nodeViewportId = getNodeViewportId(node);
 

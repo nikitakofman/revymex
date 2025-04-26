@@ -9,6 +9,11 @@ import DraggedNode, {
 } from "../context/canvasHelpers/DraggedNode";
 import { getFilteredNodes } from "../context/utils";
 import { VideoElement } from "./elements/VideoElement";
+import {
+  useGetAdditionalDraggedNodes,
+  useGetDraggedNode,
+  useGetIsDragging,
+} from "../context/atoms/drag-store";
 
 interface RenderNodesProps {
   filter: "inViewport" | "outOfViewport" | "dynamicMode";
@@ -16,14 +21,18 @@ interface RenderNodesProps {
 
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   const { nodeState, dragState, transform } = useBuilder();
+  const getIsDragging = useGetIsDragging();
+  const getDraggedNode = useGetDraggedNode();
+  const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
 
   const [virtualReference, setVirtualReference] =
     useState<VirtualReference | null>(null);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
+      const isDragging = getIsDragging();
       // Only update virtualReference when dragging
-      if (dragState.isDragging) {
+      if (isDragging) {
         setVirtualReference({
           getBoundingClientRect() {
             return {
@@ -42,7 +51,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
     };
-  }, [dragState.isDragging]);
+  }, [getIsDragging]);
 
   // Get the active viewport ID from dragState
   const activeViewportId = dragState.activeViewportInDynamicMode;
@@ -124,10 +133,14 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
   };
 
   const renderNode = (node: Node, isDraggedVersion = false) => {
+    const isDragging = getIsDragging();
+    const draggedNode = getDraggedNode();
+    const additionalDraggedNodes = getAdditionalDraggedNodes();
+
     // Skip rendering non-dragged versions of additional dragged nodes
     if (
       !isDraggedVersion &&
-      dragState.additionalDraggedNodes?.some((info) => info.node.id === node.id)
+      additionalDraggedNodes?.some((info) => info.node.id === node.id)
     ) {
       return null;
     }
@@ -157,8 +170,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
       return null;
     }
 
-    const isDragged =
-      dragState.isDragging && dragState.draggedNode?.node.id === node.id;
+    const isDragged = isDragging && draggedNode?.node.id === node.id;
 
     // Add shared-id attribute for DOM consistency across variants
     const sharedIdAttr = node.sharedId
@@ -274,6 +286,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
     })();
 
     if (isDragged) {
+      const isDragging = getIsDragging();
       return (
         <>
           <DraggedNode
@@ -282,10 +295,10 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
             content={content}
             virtualReference={virtualReference}
             transform={transform}
-            offset={dragState.draggedNode!.offset}
+            offset={draggedNode!.offset}
           />
-          {dragState.isDragging &&
-            dragState.additionalDraggedNodes?.map((info) => (
+          {isDragging &&
+            additionalDraggedNodes?.map((info) => (
               <DraggedNode
                 key={`dragged-${info.node.id}`}
                 node={info.node}

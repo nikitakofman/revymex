@@ -34,6 +34,7 @@ import {
   selectStore,
   useGetSelectedIds,
 } from "@/builder/context/atoms/select-store";
+import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;
@@ -191,7 +192,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
 
     // Then show the context menu
-    dragDisp.setContextMenu(e.clientX, e.clientY, node.id);
+    contextMenuOps.setContextMenu(e.clientX, e.clientY, node.id);
   };
 
   // ----- Drag and Drop Handlers -----

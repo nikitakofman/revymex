@@ -34,6 +34,7 @@ import {
   useNodeTempSelected,
 } from "../atoms/select-store";
 import { useAtomValue } from "jotai";
+import { useDragSource } from "../atoms/drag-store";
 
 export const VisualHelpers = ({
   elementRef,
@@ -95,6 +96,7 @@ export const VisualHelpers = ({
   const isNodeTempSelected = useNodeTempSelected(node.id);
   const isSelected = useNodeSelected(node.id);
   const getSelectedIds = useGetSelectedIds();
+  const dragSource = useDragSource();
 
   const cumulativeSkew = getCumulativeSkew(node, nodeState);
 
@@ -102,7 +104,7 @@ export const VisualHelpers = ({
 
   // Whether we can show selection or hover
   const isInteractive =
-    !isResizing && !isAdjustingGap && !isRotating && !dragState.dragSource;
+    !isResizing && !isAdjustingGap && !isRotating && !dragSource;
   const showHelpers = !isMovingCanvas && isInteractive;
 
   // Use the derived atoms for specific selection state
@@ -190,7 +192,7 @@ export const VisualHelpers = ({
     contentRef,
     transform.scale,
     isSelected,
-    dragState.dragSource,
+    dragSource,
     isMovingCanvas,
     node.id,
     dragDisp,

@@ -9,13 +9,16 @@ import { FilterToolPopup } from "./FilterToolPopup";
 import { ToolInput } from "../_components/ToolInput";
 import { ToolPopupTrigger } from "../_components/ToolbarPopupTrigger";
 import ToolbarButton from "../_components/ToolbarButton";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useselectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
 
 export const StylesTool = () => {
   const { nodeState, dragState, setNodeStyle } = useBuilder();
 
   // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
+  const selectedIds = useSelectedIds();
   const [selectedNode, setSelectedNode] = useState(null);
 
   const [activeTool, setActiveTool] = useState(null);
@@ -25,7 +28,6 @@ export const StylesTool = () => {
   // Update the selected node when needed
   useEffect(() => {
     // Get the current selected IDs
-    const selectedIds = getSelectedIds();
     if (selectedIds.length === 0) {
       setSelectedNode(null);
       return;
@@ -40,13 +42,12 @@ export const StylesTool = () => {
     } else {
       setOpacityValue(1); // Default opacity
     }
-  }, [nodeState.nodes, getSelectedIds]);
+  }, [nodeState.nodes, selectedIds]);
 
   // Set up an observer for selection changes
   useEffect(() => {
     const selectionObserver = new MutationObserver(() => {
       // When selection changes, re-run our node finding logic
-      const selectedIds = getSelectedIds();
       if (selectedIds.length === 0) {
         setSelectedNode(null);
         return;
@@ -73,7 +74,7 @@ export const StylesTool = () => {
     return () => {
       selectionObserver.disconnect();
     };
-  }, [nodeState.nodes, getSelectedIds]);
+  }, [nodeState.nodes, selectedIds]);
 
   if (!selectedNode) return null;
 

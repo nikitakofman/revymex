@@ -8,6 +8,7 @@ import {
 import { nanoid } from "nanoid";
 import { createPlaceholder } from "./createPlaceholder";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
+import { dragOps, useIsDragging } from "../atoms/drag-store";
 
 export const useDragStart = () => {
   const {
@@ -37,16 +38,18 @@ export const useDragStart = () => {
     return null;
   };
 
+  const isDragging = useIsDragging();
+
   if (isMiddleMouseDown) return null;
 
   return (e: React.MouseEvent, fromToolbarType?: string, node?: Node) => {
     // Check if the click is on a resize handle or its parent resize handle container
-    if (dragState.recordingSessionId && !dragState.isDragging) {
+    if (dragState.recordingSessionId && !isDragging) {
       console.warn(
         "Inconsistent state detected: recordingSessionId exists but not dragging. Resetting state."
       );
       stopRecording(dragState.recordingSessionId);
-      dragDisp.resetDragState();
+      dragOps.resetDragState();
       // Clean up any dangling placeholders
       const placeholders = nodeState.nodes.filter(
         (n) => n.type === "placeholder"
@@ -120,7 +123,7 @@ export const useDragStart = () => {
     }
 
     e.preventDefault();
-    dragDisp.setIsDragging(true);
+    dragOps.setIsDragging(true);
 
     const sessionId = startRecording();
     dragDisp.setRecordingSessionId(sessionId);
@@ -140,15 +143,15 @@ export const useDragStart = () => {
         parentId: null,
       };
 
-      dragDisp.setDraggedNode(newNode, {
+      dragOps.setDraggedNode(newNode, {
         x: e.clientX,
         y: e.clientY,
         mouseX: 0,
         mouseY: 0,
       });
-      dragDisp.setIsDragging(true);
-      dragDisp.setDraggedItem(fromToolbarType);
-      dragDisp.setDragSource("toolbar");
+      dragOps.setIsDragging(true);
+      dragOps.setDraggedItem(fromToolbarType);
+      dragOps.setDragSource("toolbar");
       return;
     }
 
@@ -189,7 +192,7 @@ export const useDragStart = () => {
 
     // NEW: Check if node is absolutely positioned in a frame
     if (isAbsoluteInFrame(node)) {
-      dragDisp.setDragSource("absolute-in-frame"); // New drag source type
+      dragOps.setDragSource("absolute-in-frame"); // New drag source type
 
       const element = document.querySelector(`[data-node-id="${node.id}"]`);
       if (!element) return;
@@ -204,15 +207,15 @@ export const useDragStart = () => {
       const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
 
       // Set up dragging
-      dragDisp.setDraggedNode(node, {
+      dragOps.setDraggedNode(node, {
         x: currentLeft,
         y: currentTop,
         mouseX: mouseOffsetX,
         mouseY: mouseOffsetY,
       });
 
-      dragDisp.setIsDragging(true);
-      dragDisp.setDraggedItem(null);
+      dragOps.setIsDragging(true);
+      dragOps.setDraggedItem(null);
 
       // Handle multiple selection for absolute positioned elements
       if (selectedIds.length > 1) {
@@ -248,7 +251,7 @@ export const useDragStart = () => {
           })
           .filter(Boolean) as Array<{ node: Node; offset: any }>;
 
-        dragDisp.setAdditionalDraggedNodes(additional);
+        dragOps.setAdditionalDraggedNodes(additional);
       }
 
       return;
@@ -268,7 +271,7 @@ export const useDragStart = () => {
     const contentRect = contentRef.current.getBoundingClientRect();
 
     if (node.inViewport) {
-      dragDisp.setDragSource("viewport");
+      dragOps.setDragSource("viewport");
       const oldIndex = findIndexWithinParent(
         nodeState.nodes,
         node.id,
@@ -306,7 +309,7 @@ export const useDragStart = () => {
         finalHeight,
       };
 
-      dragDisp.setNodeDimensions(node.id, mainDimensions);
+      dragOps.setNodeDimensions(node.id, mainDimensions);
 
       const placeholderInfo = {
         mainPlaceholderId: mainPlaceholder.id,
@@ -336,7 +339,7 @@ export const useDragStart = () => {
       const mouseOffsetX = (e.clientX - elementRect.left) / transform.scale;
       const mouseOffsetY = (e.clientY - elementRect.top) / transform.scale;
 
-      dragDisp.setDraggedNode(node, {
+      dragOps.setDraggedNode(node, {
         x:
           (elementRect.left - contentRect.left - transform.x) / transform.scale,
         y: (elementRect.top - contentRect.top - transform.y) / transform.scale,
@@ -366,7 +369,7 @@ export const useDragStart = () => {
               setNodeStyle,
             });
 
-            dragDisp.setNodeDimensions(otherNode.id, {
+            dragOps.setNodeDimensions(otherNode.id, {
               width: el.style.width,
               height: el.style.height,
               isFillMode: el.style.flex === "1 0 0px",
@@ -424,11 +427,11 @@ export const useDragStart = () => {
           })
           .filter(Boolean) as Array<{ node: Node; offset: any }>;
 
-        dragDisp.setPlaceholderInfo(placeholderInfo);
-        dragDisp.setAdditionalDraggedNodes(additional);
+        dragOps.setPlaceholderInfo(placeholderInfo);
+        dragOps.setAdditionalDraggedNodes(additional);
       }
     } else {
-      dragDisp.setDragSource("canvas");
+      dragOps.setDragSource("canvas");
 
       // Get the element
       const element = document.querySelector(
@@ -457,7 +460,7 @@ export const useDragStart = () => {
       const isFillMode = element.style.flex === "1 0 0px";
 
       // Save the dimensions for reference during drag
-      dragDisp.setNodeDimensions(node.id, {
+      dragOps.setNodeDimensions(node.id, {
         width: element.style.width,
         height: element.style.height,
         isFillMode: isFillMode,
@@ -476,9 +479,9 @@ export const useDragStart = () => {
       );
 
       // Set up dragging
-      dragDisp.setIsDragging(true);
+      dragOps.setIsDragging(true);
 
-      dragDisp.setDraggedNode(node, {
+      dragOps.setDraggedNode(node, {
         x: currentLeft,
         y: currentTop,
         mouseX: mouseOffsetX,
@@ -510,7 +513,7 @@ export const useDragStart = () => {
             });
 
             // Save dimensions for reference during drag
-            dragDisp.setNodeDimensions(otherNode.id, {
+            dragOps.setNodeDimensions(otherNode.id, {
               width: el.style.width,
               height: el.style.height,
               isFillMode: el.style.flex === "1 0 0px",
@@ -549,10 +552,10 @@ export const useDragStart = () => {
           })
           .filter(Boolean) as Array<{ node: Node; offset: any }>;
 
-        dragDisp.setAdditionalDraggedNodes(additional);
+        dragOps.setAdditionalDraggedNodes(additional);
       }
     }
 
-    dragDisp.setDraggedItem(null);
+    dragOps.setDraggedItem(null);
   };
 };

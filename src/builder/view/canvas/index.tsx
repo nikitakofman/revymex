@@ -37,6 +37,8 @@ import {
   useIsPreviewOpen,
   interfaceOps,
 } from "@/builder/context/atoms/interface-store";
+import { useIsDragging } from "@/builder/context/atoms/drag-store";
+import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -62,6 +64,8 @@ const Canvas = () => {
 
   // Get isPreviewOpen from interface store instead of interfaceState
   const isPreviewOpen = useIsPreviewOpen();
+
+  const isDragging = useIsDragging();
 
   const { clearSelection } = selectOps;
 
@@ -191,7 +195,7 @@ const Canvas = () => {
 
     // Only show context menu if clicking directly on canvas or content
     if (e.target === containerRef.current || e.target === contentRef.current) {
-      dragDisp.setContextMenu(e.clientX, e.clientY, null);
+      contextMenuOps.setContextMenu(e.clientX, e.clientY, null);
     }
   };
 
@@ -235,9 +239,7 @@ const Canvas = () => {
               <SnapGuides />
               {/* <DebugSnapGrid /> */}
               <StyleUpdateHelper />
-              {!isDrawingMode && !isMoveMode && !dragState.isDragging && (
-                <SelectionBox />
-              )}
+              {!isDrawingMode && !isMoveMode && !isDragging && <SelectionBox />}
               {isAnyResize && <FrameCreator />}
               {isAnyResize && <TextCreator />}
               {!isMovingCanvas && <ArrowConnectors />}

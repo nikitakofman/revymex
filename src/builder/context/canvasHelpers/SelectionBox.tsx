@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { interfaceOps } from "../atoms/interface-store";
 import { selectOps } from "../atoms/select-store";
+import { useGetDragSource, useGetIsDragging } from "../atoms/drag-store";
 
 interface SelectionBoxState {
   startX: number;
@@ -21,6 +22,9 @@ export const SelectionBox: React.FC = () => {
     interfaceDisp,
     isMiddleMouseDown,
   } = useBuilder();
+
+  const getIsDragging = useGetIsDragging();
+  const getDragSource = useGetDragSource();
   const [box, setBox] = useState<SelectionBoxState | null>(null);
 
   const updateSelection = useCallback(
@@ -92,8 +96,11 @@ export const SelectionBox: React.FC = () => {
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
+      const isDragging = getIsDragging();
+      const dragSource = getDragSource();
+
       // Don't start selection if we're already dragging something
-      if (dragState.isDragging || dragState.dragSource) return;
+      if (isDragging || dragSource) return;
 
       // Get the frame element if it exists
       const frameEl = target.closest('[data-node-type="frame"]');
@@ -131,8 +138,10 @@ export const SelectionBox: React.FC = () => {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      const isDragging = getIsDragging();
+
       // If we're not selecting or dragging something, don't do anything
-      if (!box?.isSelecting || dragState.isDragging) return;
+      if (!box?.isSelecting || isDragging) return;
 
       const rect = canvas.getBoundingClientRect();
       const newX = e.clientX - rect.left;
@@ -208,8 +217,8 @@ export const SelectionBox: React.FC = () => {
     box?.startX,
     box?.startY,
     dragState.tempSelectedIds,
-    dragState.isDragging,
-    dragState.dragSource,
+    getIsDragging,
+    getDragSource,
     nodeState.nodes,
   ]);
 

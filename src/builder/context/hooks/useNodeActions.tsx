@@ -4,12 +4,23 @@ import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
 import { findIndexWithinParent } from "../utils";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
+import {
+  dragOps,
+  useGetAdditionalDraggedNodes,
+  useGetDraggedNode,
+  useGetIsDragging,
+  useGetNodeDimensions,
+} from "../atoms/drag-store";
 
 export const useNodeActions = () => {
   const { dragState, nodeState, dragDisp, nodeDisp, transform, containerRef } =
     useBuilder();
 
   const currentSelectedIds = useGetSelectedIds();
+  const getIsDragging = useGetIsDragging();
+  const getDraggedNode = useGetDraggedNode();
+  const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
+  const getNodeDimensions = useGetNodeDimensions();
 
   const { clearSelection, addToSelection, selectNode } = selectOps;
 
@@ -69,9 +80,11 @@ export const useNodeActions = () => {
 
   // Copy dimensions helper
   const copyDimensions = (originalNode: Node, clonedNode: Node) => {
-    const originalDimensions = dragState.nodeDimensions[originalNode.id];
+    const nodeDimensions = getNodeDimensions();
+
+    const originalDimensions = nodeDimensions[originalNode.id];
     if (originalDimensions) {
-      dragDisp.setNodeDimensions(clonedNode.id, {
+      dragOps.setNodeDimensions(clonedNode.id, {
         ...originalDimensions,
         width: originalDimensions.finalWidth,
         height: originalDimensions.finalHeight,
@@ -222,6 +235,9 @@ export const useNodeActions = () => {
 
   // Updated handleDuplicate function that handles dynamic mode
   const handleDuplicate = (fromContextMenu = false) => {
+    const isDragging = getIsDragging();
+
+    const draggedNode = getDraggedNode();
     try {
       // When duplicating from context menu, use selected nodes
       // When duplicating from drag, use dragged nodes
@@ -234,11 +250,14 @@ export const useNodeActions = () => {
           .map((id) => nodeState.nodes.find((n) => n.id === id))
           .filter((n): n is Node => n !== undefined);
       } else {
-        if (!dragState.isDragging || !dragState.draggedNode) return;
-        nodesToDuplicate = [dragState.draggedNode.node];
-        if (dragState.additionalDraggedNodes) {
+        if (!isDragging || !draggedNode) return;
+        nodesToDuplicate = [draggedNode.node];
+
+        const additionalDraggedNodes = getAdditionalDraggedNodes();
+
+        if (additionalDraggedNodes) {
           nodesToDuplicate.push(
-            ...dragState.additionalDraggedNodes.map((info) => info.node)
+            ...additionalDraggedNodes.map((info) => info.node)
           );
         }
       }
@@ -274,9 +293,11 @@ export const useNodeActions = () => {
         const isTopLevelDynamicNode =
           topmostParent && topmostParent.id === mainNode.id;
 
+        const currentNodeDimensions = getNodeDimensions();
+
         if (isTopLevelDynamicNode) {
           // We're duplicating a top-level dynamic node, use duplicateDynamicElement
-          const nodeDimensions = dragState.nodeDimensions[topmostParent.id];
+          const nodeDimensions = currentNodeDimensions[topmostParent.id];
           const nodeWidth =
             nodeDimensions?.width ||
             parseFloat(topmostParent.style.width as string) ||
@@ -898,8 +919,10 @@ export const useNodeActions = () => {
         firstDuplicateId = rootClone.id;
       }
 
+      const nodeDimensions = getNodeDimensions();
+
       // Get the original node's dimensions
-      const dimensions = dragState.nodeDimensions[node.id];
+      const dimensions = nodeDimensions[node.id];
       const nodeWidth = dimensions?.width || 0;
 
       // Position the clone to the right of the original
@@ -984,9 +1007,11 @@ export const useNodeActions = () => {
       top: `${mainY}px`,
     };
 
+    const additionalDraggedNodes = getAdditionalDraggedNodes();
+
     // Handle additional selected nodes
-    if (dragState.additionalDraggedNodes?.length) {
-      dragState.additionalDraggedNodes.forEach((info) => {
+    if (additionalDraggedNodes?.length) {
+      additionalDraggedNodes.forEach((info) => {
         const additionalNode = info.node;
         const { rootClone: additionalClone, allClones: additionalAllClones } =
           cloneNode(additionalNode, nodeState.nodes);
