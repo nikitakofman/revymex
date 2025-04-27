@@ -55,7 +55,7 @@ const Canvas = () => {
 
   const { clearSelection } = selectOps;
 
-  console.log(`CANVAS  RE RENDERING`);
+  console.log(`Canvas re redndering`, new Date().getTime());
 
   // With this approach:
 

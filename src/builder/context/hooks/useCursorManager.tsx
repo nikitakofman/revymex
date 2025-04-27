@@ -27,24 +27,14 @@ export const useCursorManager = () => {
   const prevCursorStyleRef = useRef("");
   const prevSelectStyleRef = useRef({});
 
+  console.log(`Cursor Manager re-rendering`, new Date().getTime());
+
   // Imperative getters for use in effects and event handlers
   const getIsDragging = useGetIsDragging();
   const getMovingCanvas = useGetIsMovingCanvas();
   const getIsMoveCanvasMode = useGetIsMoveCanvasMode();
-  const getIsRotating = useGetIsRotating();
   const getIsFrameModeActive = useGetIsFrameModeActive();
   const getIsTextModeActive = useGetIsTextModeActive();
-  const getIsResizing = useGetIsResizing();
-
-  // Subscription hooks for values returned from the hook
-  // Only subscribe to what we need for the return value
-  const isMoveCanvasMode = useIsMoveCanvasMode();
-  const isFrameModeActive = useIsFrameModeActive();
-  const isTextModeActive = useIsTextModeActive();
-  const isDragging = useIsDragging();
-
-  // Calculate drawing mode outside of render to avoid dependencies
-  const isDrawingMode = isFrameModeActive || isTextModeActive;
 
   // Set up the cursor and selection styles based on current modes
   useEffect(() => {

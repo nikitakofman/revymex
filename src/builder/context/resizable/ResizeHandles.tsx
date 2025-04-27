@@ -14,7 +14,10 @@ import {
 } from "../utils";
 import { useBuilder } from "../builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
-import { useTransform } from "../atoms/canvas-interaction-store";
+import {
+  useGetTransform,
+  useTransform,
+} from "../atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 
 interface GroupBounds {
@@ -34,7 +37,7 @@ interface ResizeHandlesProps {
   groupBounds?: GroupBounds | null;
   isGroupSelection?: boolean;
   /**
-   * A ref to the actual DOM element that may have skew/scale transforms.
+   * A ref to the actual DOM element that may have skew/getTransform().scale transforms.
    */
   targetRef?: React.RefObject<HTMLElement>;
   /**
@@ -68,11 +71,11 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
 }) => {
   const { nodeState } = useBuilder();
 
-  const transform = useTransform();
-
-  const { scale } = transform;
+  const getTransform = useGetTransform();
 
   const [isInteractive, setIsInteractive] = useState(false);
+
+  console.log(`Resize Handles re-rendering ${node.id}`, new Date().getTime());
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();
@@ -174,7 +177,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   }, [
     targetRef,
     isGroupSelection,
-    transform,
+    getTransform,
     node,
     nodeState,
     // Including these dependencies ensures we recalculate when any transform changes
@@ -206,6 +209,8 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   // GROUP SELECTION RENDERING (unchanged)
   // ────────────────────────────────
   if (isGroupSelection && groupBounds) {
+    const scale = getTransform().scale;
+
     const getGroupBorderStyles = (
       direction: Direction
     ): React.CSSProperties => {
@@ -322,7 +327,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     })`,
   });
 
-  const handleSize = 8 / scale;
+  const handleSize = 8 / getTransform().scale;
 
   return (
     <>
@@ -354,7 +359,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                       width: `${handleSize}px`,
                       height: `${handleSize}px`,
                       transform: "translate(-50%, -50%)",
-                      border: `${1 / scale}px solid ${
+                      border: `${1 / getTransform().scale}px solid ${
                         node.isDynamic || dynamicModeNodeId
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
@@ -380,7 +385,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                       zIndex: 1000,
                       width: `${handleSize}px`,
                       height: `${handleSize}px`,
-                      border: `${1 / scale}px solid ${
+                      border: `${1 / getTransform().scale}px solid ${
                         node.isDynamic || dynamicModeNodeId
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
@@ -417,7 +422,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                   transform: "translate(-50%, -50%)",
                   width: `${handleSize}px`,
                   height: `${handleSize}px`,
-                  border: `${1 / scale}px solid ${
+                  border: `${1 / getTransform().scale}px solid ${
                     node.isDynamic || dynamicModeNodeId
                       ? "var(--accent-secondary)"
                       : "var(--accent)"
@@ -451,7 +456,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                         : "translate(-50%, 50%)",
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
-                    border: `${1 / scale}px solid ${
+                    border: `${1 / getTransform().scale}px solid ${
                       node.isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
@@ -490,7 +495,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     transform: "translate(-50%, -50%)",
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
-                    border: `${1 / scale}px solid ${
+                    border: `${1 / getTransform().scale}px solid ${
                       node.isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
@@ -525,7 +530,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                         : "translate(50%, -50%)",
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
-                    border: `${1 / scale}px solid ${
+                    border: `${1 / getTransform().scale}px solid ${
                       node.isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
@@ -557,7 +562,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
             width: `${handleSize}px`,
             height: `${handleSize}px`,
             transform: "translate(-50%, 50%)",
-            border: `${1 / scale}px solid var(--accent)`,
+            border: `${1 / getTransform().scale}px solid var(--accent)`,
             cursor: "ns-resize",
             zIndex: 1000,
             pointerEvents: "all",
@@ -595,7 +600,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
               return null;
             }
 
-            const borderSize = 4 / scale;
+            const borderSize = 4 / getTransform().scale;
 
             // Create standard edges that will be properly transformed by the parent container
             return (
@@ -672,7 +677,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
               return null;
             }
 
-            const borderSize = 4 / scale;
+            const borderSize = 4 / getTransform().scale;
 
             return (
               isInteractive && (

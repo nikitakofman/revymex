@@ -61,18 +61,6 @@ export const Frame = ({ children, node }: ElementProps) => {
   const isDropTarget =
     dropInfo?.targetId === node.id && dropInfo?.position === "inside";
 
-  const [isInteractiveAid, setIsInteractiveAid] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsInteractiveAid(true);
-    }, 1000);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
-
   const handleDragStart = useDragStart();
 
   if (node.isViewport) {

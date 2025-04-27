@@ -14,6 +14,7 @@ import {
   useGetIsFrameModeActive,
   useGetIsResizing,
   useGetIsRotating,
+  useGetTransform,
   useIsFrameModeActive,
   useTransform,
 } from "@/builder/context/atoms/canvas-interaction-store";
@@ -34,7 +35,7 @@ export const FrameCreator: React.FC = () => {
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
 
   // Use subscription hook for rendering decisions
-  const transform = useTransform();
+
   const isFrameModeActive = useIsFrameModeActive();
 
   console.log("framecreator");
@@ -47,6 +48,7 @@ export const FrameCreator: React.FC = () => {
   const getIsFrameModeActive = useGetIsFrameModeActive();
   const getDynamicModeNodeId = useGetDynamicModeNodeId();
   const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
+  const getTransform = useGetTransform();
 
   // Check if we can enable frame creation mode
   const canCreateFrame = () => {
@@ -115,6 +117,8 @@ export const FrameCreator: React.FC = () => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!box?.isDrawing) return;
 
+      const transform = getTransform();
+
       const rect = canvas.getBoundingClientRect();
       const newX = e.clientX - rect.left;
       const newY = e.clientY - rect.top;
@@ -143,6 +147,8 @@ export const FrameCreator: React.FC = () => {
 
     const handleMouseUp = (e: MouseEvent) => {
       if (!box?.isDrawing) return;
+
+      const transform = getTransform();
 
       const dynamicModeNodeId = getDynamicModeNodeId();
       const activeViewportInDynamicMode = getActiveViewportInDynamicMode();
@@ -735,10 +741,10 @@ export const FrameCreator: React.FC = () => {
   }, [
     containerRef,
     box?.isDrawing,
-    transform,
     nodeDisp,
     nodeState.nodes,
 
+    getTransform,
     getIsResizing,
     getIsRotating,
     getIsAdjustingGap,

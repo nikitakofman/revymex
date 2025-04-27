@@ -32,6 +32,8 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   const { setNodeStyle, startRecording, stopRecording, nodeState } =
     useBuilder();
 
+  console.log("rotate handle re rendering for", node.id);
+
   const transform = useTransform();
 
   const currentSelectedIds = useGetSelectedIds();

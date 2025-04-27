@@ -3,7 +3,7 @@ import React, { useRef, useEffect, useCallback } from "react";
 import { useIsPreviewOpen } from "@/builder/context/atoms/interface-store";
 import {
   canvasOps,
-  useTransform,
+  useGetTransform, // Changed to useGetTransform
   useIsMovingCanvas,
   useIsMiddleMouseDown,
 } from "@/builder/context/atoms/canvas-interaction-store";
@@ -20,11 +20,21 @@ const createTransformManager = () => {
   let currentTransform = { x: 480, y: 200, scale: 0.3 };
   let isControlling = false;
   let contentElement: HTMLElement | null = null;
+  let rafId: number | null = null;
 
   const applyTransform = () => {
     if (!contentElement) return;
 
     contentElement.style.transform = `translate3d(${currentTransform.x}px, ${currentTransform.y}px, 0) scale(${currentTransform.scale})`;
+  };
+
+  const scheduleFlush = () => {
+    if (rafId != null) return;
+
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      applyTransform(); // Single write, 60-fps max
+    });
   };
 
   return {
@@ -34,7 +44,7 @@ const createTransformManager = () => {
     ) => {
       contentElement = element;
       currentTransform = { ...initialTransform };
-      applyTransform();
+      scheduleFlush();
     },
 
     startControlling: () => {
@@ -43,6 +53,11 @@ const createTransformManager = () => {
 
     stopControlling: () => {
       isControlling = false;
+      // Cancel any pending updates
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
     },
 
     isControlling: () => isControlling,
@@ -54,8 +69,11 @@ const createTransformManager = () => {
       y: number;
       scale: number;
     }) => {
-      currentTransform = { ...newTransform };
-      applyTransform();
+      // Only update if not controlling (prevents overwriting during drag)
+      if (!isControlling) {
+        currentTransform = { ...newTransform };
+        scheduleFlush();
+      }
     },
 
     updateFromDOM: () => {
@@ -80,13 +98,19 @@ const createTransformManager = () => {
     applyTransform,
 
     pan: (deltaX: number, deltaY: number) => {
+      // Early return if not controlling
+      if (!isControlling) return currentTransform;
+
       currentTransform.x += deltaX;
       currentTransform.y += deltaY;
-      applyTransform();
+      scheduleFlush();
       return currentTransform;
     },
 
     zoom: (mouseX: number, mouseY: number, scaleDelta: number) => {
+      // Early return if not controlling
+      if (!isControlling) return currentTransform;
+
       // Constrain scale between 0.1 and 4
       const newScale = Math.min(
         Math.max(0.1, currentTransform.scale + scaleDelta),
@@ -102,7 +126,7 @@ const createTransformManager = () => {
       currentTransform.y = mouseY - pointY * newScale;
       currentTransform.scale = newScale;
 
-      applyTransform();
+      scheduleFlush();
       return currentTransform;
     },
   };
@@ -115,8 +139,10 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
   containerRef,
   contentRef,
 }) => {
-  // State from atoms
-  const transform = useTransform();
+  console.log(`Canvas Controller re-rendering`, new Date().getTime());
+
+  // Use getter instead of subscription
+  const getTransform = useGetTransform();
   const isMovingCanvas = useIsMovingCanvas();
   const isMiddleMouseDown = useIsMiddleMouseDown();
   const isPreviewOpen = useIsPreviewOpen();
@@ -126,20 +152,31 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
   const moveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const wheelHandlerAttached = useRef(false);
   const hasMoved = useRef(false);
+  const isInitializedRef = useRef(false);
 
   // Initialize transform manager with content element and initial transform
+  // Run only once on mount
   useEffect(() => {
-    if (contentRef.current) {
+    if (contentRef.current && !isInitializedRef.current) {
+      const transform = getTransform();
       transformManager.initialize(contentRef.current, transform);
+      isInitializedRef.current = true;
     }
-  }, [contentRef, transform.x, transform.y, transform.scale]);
+  }, [contentRef, getTransform]);
 
-  // Middle mouse button panning
-  const handleMouseDown = useCallback(
-    (e: MouseEvent) => {
+  // Pointer events for smoother interaction
+  const handlePointerDown = useCallback(
+    (e: PointerEvent) => {
       // Check if it's the middle mouse button (button === 1)
       if (e.button === 1) {
         e.preventDefault();
+
+        // Capture pointer for smoother tracking
+        const container = containerRef.current;
+        if (container) {
+          container.setPointerCapture(e.pointerId);
+        }
+
         canvasOps.setIsMiddleMouseDown(true);
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
         hasMoved.current = false;
@@ -158,8 +195,8 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
     [containerRef]
   );
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
+  const handlePointerMove = useCallback(
+    (e: PointerEvent) => {
       if (isMiddleMouseDown && containerRef.current && !isPreviewOpen) {
         e.preventDefault();
 
@@ -188,29 +225,37 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
     [isMiddleMouseDown, containerRef, isPreviewOpen]
   );
 
-  const handleMouseUp = useCallback(
-    (e: MouseEvent) => {
+  const handlePointerUp = useCallback(
+    (e: PointerEvent) => {
       if (e.button === 1 || isMiddleMouseDown) {
         e.preventDefault();
         canvasOps.setIsMiddleMouseDown(false);
 
         if (containerRef.current) {
           containerRef.current.style.cursor = "";
+          // Release pointer capture
+          try {
+            containerRef.current.releasePointerCapture(e.pointerId);
+          } catch (err) {
+            // Ignore errors if pointer id is invalid
+          }
         }
 
-        // TEST: Skip updating the atom store
-        // if (hasMoved.current) {
-        //   const finalTransform = transformManager.getCurrentTransform();
-        //   setTimeout(() => {
-        //     canvasOps.setTransform(finalTransform);
-        //   }, 0);
-        // }
+        // Stop accepting more deltas first
+        transformManager.stopControlling();
 
-        // Reset isMovingCanvas with a slight delay
-        setTimeout(() => {
+        if (hasMoved.current) {
+          // Use requestAnimationFrame to ensure we're reading the final state
+          requestAnimationFrame(() => {
+            const finalTransform = transformManager.getCurrentTransform();
+            canvasOps.setTransform(finalTransform);
+
+            // Reset isMovingCanvas after the transform has been committed
+            canvasOps.setIsMovingCanvas(false);
+          });
+        } else {
           canvasOps.setIsMovingCanvas(false);
-          transformManager.stopControlling();
-        }, 100);
+        }
 
         if (moveTimerRef.current) {
           clearTimeout(moveTimerRef.current);
@@ -257,15 +302,17 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
       }
 
       moveTimerRef.current = setTimeout(() => {
-        // TEST: Skip updating the atom store
-        // const finalTransform = transformManager.getCurrentTransform();
-        // canvasOps.setTransform(finalTransform);
+        // Stop accepting more deltas
+        transformManager.stopControlling();
 
-        // Reset isMovingCanvas with a slight delay
-        setTimeout(() => {
+        // Commit the transform in the next animation frame
+        requestAnimationFrame(() => {
+          const finalTransform = transformManager.getCurrentTransform();
+          canvasOps.setTransform(finalTransform);
+
+          // Reset isMovingCanvas after the transform has been committed
           canvasOps.setIsMovingCanvas(false);
-          transformManager.stopControlling();
-        }, 100);
+        });
       }, 150);
     },
     [containerRef, isPreviewOpen]
@@ -279,9 +326,10 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
       !isMiddleMouseDown &&
       contentRef.current
     ) {
+      const transform = getTransform();
       transformManager.updateTransform(transform);
     }
-  }, [transform, contentRef, isMovingCanvas, isMiddleMouseDown]);
+  }, [getTransform, contentRef, isMovingCanvas, isMiddleMouseDown]);
 
   // Attach/detach event listeners
   const attachEventListeners = useCallback(() => {
@@ -291,19 +339,19 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
     // Use passive: false to prevent default browser behavior
     container.addEventListener("wheel", handleWheel, { passive: false });
 
-    // Attach middle mouse handlers
-    container.addEventListener("mousedown", handleMouseDown);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("mouseleave", handleMouseUp);
+    // Use pointer events for smoother interaction
+    container.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
 
     wheelHandlerAttached.current = true;
   }, [
     containerRef,
     handleWheel,
-    handleMouseDown,
-    handleMouseMove,
-    handleMouseUp,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
   ]);
 
   const detachEventListeners = useCallback(() => {
@@ -313,19 +361,19 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
     // Detach wheel handler
     container.removeEventListener("wheel", handleWheel);
 
-    // Detach middle mouse handlers
-    container.removeEventListener("mousedown", handleMouseDown);
-    window.removeEventListener("mousemove", handleMouseMove);
-    window.removeEventListener("mouseup", handleMouseUp);
-    window.removeEventListener("mouseleave", handleMouseUp);
+    // Detach pointer handlers
+    container.removeEventListener("pointerdown", handlePointerDown);
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerUp);
 
     wheelHandlerAttached.current = false;
   }, [
     containerRef,
     handleWheel,
-    handleMouseDown,
-    handleMouseMove,
-    handleMouseUp,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
   ]);
 
   // Attach/detach event listeners based on preview state

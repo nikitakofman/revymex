@@ -10,6 +10,7 @@ import {
 import { visualOps } from "../atoms/visual-store";
 import {
   canvasOps,
+  useGetTransform,
   useIsDraggingChevrons,
   useIsEditingText,
   useIsFontSizeHandleActive,
@@ -17,7 +18,6 @@ import {
   useIsMoveCanvasMode,
   useIsResizing,
   useIsTextMenuOpen,
-  useTransform,
 } from "../atoms/canvas-interaction-store";
 
 /**
@@ -104,7 +104,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 }) => {
   const { setNodeStyle, startRecording, stopRecording } = useBuilder();
 
-  const transform = useTransform();
+  console.log(`Resizable Wrapper re-rendering`, new Date().getTime());
+
+  const getTransform = useGetTransform();
   const isMiddleMouseDown = useIsMiddleMouseDown();
   const isResizing = useIsResizing();
   const isDraggingChevrons = useIsDraggingChevrons();
@@ -114,8 +116,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
 
-  // Use the node-specific subscription for this node's selection state
-  const isSelected = useNodeSelected(node.id);
   const isMoveCanvasMode = useIsMoveCanvasMode();
 
   // Use the imperative getter for selected IDs - no subscription
@@ -142,6 +142,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       if (isLocked) return;
 
       if (!elementRef.current) return;
+
+      const transform = getTransform();
 
       e.preventDefault();
       e.stopPropagation();
@@ -510,13 +512,12 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
     },
     [
       node,
-      transform.scale,
+      getTransform,
       setNodeStyle,
       startRecording,
       stopRecording,
-      canvasOps.setIsResizing,
       isLocked,
-      getSelectedIds, // Add getSelectedIds as a dependency
+      getSelectedIds,
     ]
   );
 

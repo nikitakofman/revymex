@@ -8,7 +8,7 @@ import {
   useGetSelectedIds,
   selectOps,
 } from "../atoms/select-store";
-import { useTransform } from "../atoms/canvas-interaction-store";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
 import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
@@ -21,8 +21,8 @@ interface AddVariantsUIProps {
 export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   const { nodeDisp, nodeState } = useBuilder();
 
-  // Use atoms for state
-  const transform = useTransform();
+  // Use imperative getter instead of subscription
+  const getTransform = useGetTransform();
   const dynamicModeNodeId = useDynamicModeNodeId();
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
 
@@ -117,6 +117,9 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
 
   // Find best position for button that doesn't overlap with other nodes
   const findBestButtonPosition = (parentRect, buttonWidth, buttonHeight) => {
+    // Get transform only when needed
+    const transform = getTransform();
+
     // Calculate exact offset for spacing (using consistent value regardless of scale)
     const padding = 200; // Increased spacing between element and button
     const scaledPadding = padding * transform.scale;
@@ -295,6 +298,9 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
     if (!topmostParent) return;
 
     const updateButtonPosition = () => {
+      // Get transform only when needed
+      const transform = getTransform();
+
       // Always find the DOM element for the topmost parent - this is key
       const element = document.querySelector(
         `[data-node-id="${topmostParent.id}"]`
@@ -346,7 +352,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
       });
       return () => observer.disconnect();
     }
-  }, [topmostParent?.id, transform.scale, nodeState.nodes]);
+  }, [topmostParent?.id, nodeState.nodes, getTransform]);
 
   // Function to handle adding a variant
   const handleAddVariant = (e: React.MouseEvent) => {
@@ -408,6 +414,9 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   ]);
 
   if (!shouldShowVariantButton() || !topmostParent) return null;
+
+  // Get transform only when rendering the button
+  const transform = getTransform();
 
   return (
     <div

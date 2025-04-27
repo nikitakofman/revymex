@@ -29,6 +29,7 @@ import {
   canvasOps,
   useGetIsMovingCanvas,
   useGetIsResizing,
+  useGetTransform,
   useTransform,
 } from "@/builder/context/atoms/canvas-interaction-store";
 import { dynamicOps } from "@/builder/context/atoms/dynamic-store";
@@ -363,6 +364,9 @@ const TextElement = ({ node }: ElementProps) => {
     y: 0,
     show: false,
   });
+
+  console.log(`Text re-rendering: ${node.id}`, new Date().getTime());
+
   const lastSelectionRef = useRef(null);
   const toolbarInteractionRef = useRef(false);
   const [fontSize, setFontSize] = useState<string>("16");
@@ -379,7 +383,7 @@ const TextElement = ({ node }: ElementProps) => {
   const { setNodeStyle, contentRef, nodeState } = useBuilder();
 
   const isNodeSelected = useNodeSelected(node.id);
-  const transform = useTransform();
+  const getTransform = useGetTransform();
   const getIsMovingCanvas = useGetIsMovingCanvas();
   const getResizing = useGetIsResizing();
   const getDynamicModeNodeId = useGetDynamicModeNodeId();
@@ -1226,6 +1230,8 @@ const TextElement = ({ node }: ElementProps) => {
   ]);
 
   const getToolbarPosition = useCallback(() => {
+    const transform = getTransform();
+
     if (!contentRef.current) return { x: 0, y: 0, show: false };
     const elementNode = document.querySelector(`[data-node-id="${node.id}"]`);
     if (!elementNode) return { x: 0, y: 0, show: false };
@@ -1241,7 +1247,7 @@ const TextElement = ({ node }: ElementProps) => {
       (elementRect.top - 100 - containerRect.top - transform.y) /
       transform.scale;
     return { x: canvasX, y: canvasY - 10, show: true };
-  }, [node.id, transform, contentRef]);
+  }, [node.id, getTransform, contentRef]);
 
   useEffect(() => {
     if (shouldShowMenu()) {

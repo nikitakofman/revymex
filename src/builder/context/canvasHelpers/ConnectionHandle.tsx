@@ -10,12 +10,15 @@ import {
 } from "../atoms/select-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 import { modalOps, useConnectionTypeModal } from "../atoms/modal-store";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
 
 export const ConnectionHandle: React.FC<{
   node: Node;
-  transform: { x: number; y: number; scale: number };
-}> = ({ node, transform }) => {
+}> = ({ node }) => {
   const { nodeState, contentRef } = useBuilder();
+
+  // Get the transform getter directly in the component
+  const getTransform = useGetTransform();
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();
@@ -442,10 +445,10 @@ export const ConnectionHandle: React.FC<{
         ref={cableIconRef}
         className="absolute bg-purple-500 rounded-full cursor-pointer"
         style={{
-          width: `${24 / transform.scale}px`,
-          height: `${24 / transform.scale}px`,
-          border: `${2 / transform.scale}px solid white`,
-          right: `-${11 / transform.scale}px`,
+          width: `${24 / getTransform().scale}px`,
+          height: `${24 / getTransform().scale}px`,
+          border: `${2 / getTransform().scale}px solid white`,
+          right: `-${11 / getTransform().scale}px`,
           top: "50%",
           transform: "translateY(-50%)",
           display: "flex",
@@ -456,7 +459,7 @@ export const ConnectionHandle: React.FC<{
         }}
         onMouseDown={handleMouseDown}
       >
-        <Zap size={12 / transform.scale} />
+        <Zap size={12 / getTransform().scale} />
       </div>
 
       {/* Connection Line Portal */}

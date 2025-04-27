@@ -32,7 +32,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
   const activeViewportId = activeViewportInDynamicMode;
 
-  console.log(`RENDER NDOES  RE RENDERING`);
+  console.log(`Render Nodes re-rendering`, new Date().getTime());
 
   // Find the active viewport node to get its width
   const activeViewport = activeViewportId
