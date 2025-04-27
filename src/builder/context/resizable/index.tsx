@@ -6,6 +6,7 @@ import {
   useNodeSelected,
   useGetSelectedIds,
   selectOps,
+  useNodeTempSelected,
 } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
 import {
@@ -19,6 +20,7 @@ import {
   useIsResizing,
   useIsTextMenuOpen,
 } from "../atoms/canvas-interaction-store";
+import { useNodeHovered } from "../atoms/hover-store";
 
 /**
  * If SHIFT + direct edge, we snap movement to multiples of SHIFT_INCREMENT.
@@ -113,6 +115,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   const isEditingText = useIsEditingText();
   const isTextMenuOpen = useIsTextMenuOpen();
   const isFontSizeHandleActive = useIsFontSizeHandleActive();
+
+  const isSelected = useNodeSelected(node.id);
+  const isHovered = useNodeHovered(node.id);
+  const isNodeTempSelected = useNodeTempSelected(node.id);
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
 
@@ -541,8 +547,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         !isTextMenuOpen &&
         !isFontSizeHandleActive &&
         !isMiddleMouseDown &&
-        !isDraggingChevrons && (
+        !isDraggingChevrons &&
+        (isSelected || isHovered || isNodeTempSelected) && (
           <VisualHelpers
+            key={node.id}
             elementRef={elementRef}
             node={node}
             handleResizeStart={handleResizeStart}

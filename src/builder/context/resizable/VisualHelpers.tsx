@@ -57,10 +57,10 @@ export const VisualHelpers = ({
 }) => {
   // bounding rect in the *canvas* coordinate system
 
-  console.log(
-    `Visual Helpers re-rendering for ${node.id}`,
-    new Date().getTime()
-  );
+  // console.log(
+  //   `Visual Helpers re-rendering for ${node.id}`,
+  //   new Date().getTime()
+  // );
 
   const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const [localComputedStyle, setLocalComputedStyle] =
