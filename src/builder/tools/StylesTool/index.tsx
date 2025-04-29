@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ToolbarSection } from "../_components/ToolbarAtoms";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { BorderToolPopup } from "./BorderToolPopup";
 import { TransformPopup } from "./TransformPopup";
@@ -15,7 +15,7 @@ import {
 } from "@/builder/context/atoms/select-store";
 
 export const StylesTool = () => {
-  const { nodeState, setNodeStyle } = useBuilder();
+  const { nodeState, setNodeStyle } = useBuilderDynamic();
 
   // Replace subscription with imperative getter
   const selectedIds = useSelectedIds();

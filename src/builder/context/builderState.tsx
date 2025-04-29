@@ -31,10 +31,8 @@ export interface Operation {
   options?: any;
 }
 
-interface BuilderContextType {
+interface BuilderDynamicContextType {
   nodeState: NodeState;
-  containerRef: React.RefObject<HTMLDivElement>;
-  contentRef: React.RefObject<HTMLDivElement>;
   setNodeStyle: (
     styles: React.CSSProperties & { src?: string } & { text?: string } & {
       backgroundImage?: string;
@@ -45,7 +43,6 @@ interface BuilderContextType {
     preventCascade?: boolean
   ) => void;
   nodeDisp: NodeDispatcher;
-  elementRef: React.RefObject<HTMLDivElement>;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -54,6 +51,12 @@ interface BuilderContextType {
   clearOperations: () => void;
   startRecording: () => string;
   stopRecording: (sessionId: string) => boolean;
+}
+
+interface BuilderRefsContextType {
+  containerRef: React.RefObject<HTMLDivElement>;
+  contentRef: React.RefObject<HTMLDivElement>;
+  elementRef: React.RefObject<HTMLDivElement>;
   dragDimensionsRef: RefObject<DragDimensions>;
   selectedIdsRef: RefObject<(string | number)[]>;
   popupRef: RefObject<HTMLDivElement | null>;
@@ -70,7 +73,12 @@ interface DragDimensions {
   [nodeId: string]: { width: number; height: number };
 }
 
-const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
+const BuilderDynamicContext = createContext<
+  BuilderDynamicContextType | undefined
+>(undefined);
+const BuilderRefsContext = createContext<BuilderRefsContextType | undefined>(
+  undefined
+);
 
 export function BuilderProvider({ children }: { children: ReactNode }) {
   const {
@@ -185,13 +193,10 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     [nodeDisp, currentSelectedIds, getDynamicModeNodeId, nodeState.nodes]
   );
 
-  const value: BuilderContextType = {
+  const dynamicValue: BuilderDynamicContextType = {
     nodeState,
-    containerRef,
-    contentRef,
     setNodeStyle,
     nodeDisp,
-    elementRef,
     undo,
     redo,
     canUndo,
@@ -200,6 +205,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     clearOperations: useCallback(() => setOperations([]), []),
     startRecording,
     stopRecording,
+  };
+
+  console.log("builder state re rendering");
+
+  const refsValue: BuilderRefsContextType = {
+    containerRef,
+    contentRef,
+    elementRef,
     dragDimensionsRef,
     selectedIdsRef,
     popupRef,
@@ -208,16 +221,46 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <BuilderContext.Provider value={value}>{children}</BuilderContext.Provider>
+    <BuilderRefsContext.Provider value={refsValue}>
+      <BuilderDynamicContext.Provider value={dynamicValue}>
+        {children}
+      </BuilderDynamicContext.Provider>
+    </BuilderRefsContext.Provider>
   );
 }
 
-export function useBuilder() {
-  const context = useContext(BuilderContext);
+export function useBuilderDynamic() {
+  const context = useContext(BuilderDynamicContext);
 
   if (context === undefined) {
-    throw new Error("useBuilder must be used within a BuilderProvider");
+    throw new Error("useBuilderDynamic must be used within a BuilderProvider");
   }
 
   return context;
+}
+
+export function useBuilderRefs() {
+  const context = useContext(BuilderRefsContext);
+
+  if (context === undefined) {
+    throw new Error("useBuilderRefs must be used within a BuilderProvider");
+  }
+
+  return context;
+}
+
+// Keep the original useBuilder for backward compatibility during migration
+export function useBuilder() {
+  const dynamicContext = useContext(BuilderDynamicContext);
+  const refsContext = useContext(BuilderRefsContext);
+
+  if (dynamicContext === undefined || refsContext === undefined) {
+    throw new Error("useBuilder must be used within a BuilderProvider");
+  }
+
+  // Combine both contexts for backward compatibility
+  return {
+    ...dynamicContext,
+    ...refsContext,
+  };
 }

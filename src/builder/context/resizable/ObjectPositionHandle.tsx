@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { useTransform } from "../atoms/canvas-interaction-store";
@@ -23,7 +23,7 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording } = useBuilderDynamic();
 
   const transform = useTransform();
 

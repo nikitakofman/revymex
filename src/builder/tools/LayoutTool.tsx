@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 // Replace these imports with your actual component paths
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 
 import {
@@ -161,7 +161,7 @@ const AlignmentGrid = ({ direction, distribution, alignment, onChange }) => {
 };
 
 export default function LayoutTool() {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
 
   // Track layout mode (Stack/Grid)
   const [layoutMode, setLayoutMode] = useState("flex");

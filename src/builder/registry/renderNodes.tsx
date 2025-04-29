@@ -250,7 +250,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
           const frameComponent = (
             <Frame
               key={node.id}
-              node={{ ...node, style: adjustedStyle }}
+              nodeId={node.id}
               {...sharedIdAttr}
               {...viewportAttr}
             >

@@ -10,7 +10,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { Node } from "../../reducer/nodeDispatcher";
-import { useBuilder } from "../builderState";
+import { useBuilder, useBuilderDynamic, useBuilderRefs } from "../builderState";
 import { useSnapGrid, SnapResult } from "./SnapGrid";
 import { getFilteredNodes, isAbsoluteInFrame, parseRotation } from "../utils";
 import { visualOps } from "@/builder/context/atoms/visual-store";
@@ -49,7 +49,9 @@ interface DraggedNodeProps {
 }
 
 const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
-  const { nodeState, containerRef } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
+
+  const { containerRef } = useBuilderRefs();
 
   // Get transform directly from atoms
   const transform = useTransform();

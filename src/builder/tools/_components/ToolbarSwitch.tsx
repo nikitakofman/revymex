@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Label } from "./ToolbarAtoms";
 import { Check, X } from "lucide-react";
@@ -29,7 +29,7 @@ export function ToolbarSwitch({
   className = "",
   currentValue,
 }: ToolbarSwitchProps) {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [internalValue, setInternalValue] = useState<string | null>(null);
 
   // Only use the computed style if currentValue isn't explicitly provided

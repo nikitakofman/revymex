@@ -7,7 +7,7 @@ import React, {
   useMemo,
   useEffect,
 } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle, Copy } from "lucide-react";
 import { Node } from "@/builder/reducer/nodeDispatcher";
@@ -202,7 +202,8 @@ const NodeDispOperations: React.FC<{
 };
 
 export const ViewportDevTools: React.FC = () => {
-  const { nodeState, nodeDisp, operations, clearOperations } = useBuilder();
+  const { nodeState, nodeDisp, operations, clearOperations } =
+    useBuilderDynamic();
 
   // Get Jotai node state
   const [jotaiNodes, setJotaiNodes] = useState(() => getNodesFromJotai());

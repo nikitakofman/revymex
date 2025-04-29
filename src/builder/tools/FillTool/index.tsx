@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { ToolbarSection } from "../_components/ToolbarAtoms";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Wand2 } from "lucide-react";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
@@ -16,7 +16,7 @@ import {
 import { useSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const FillTool = () => {
-  const { nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
 
   // Use subscription-based hook
   const selectedIds = useSelectedIds();

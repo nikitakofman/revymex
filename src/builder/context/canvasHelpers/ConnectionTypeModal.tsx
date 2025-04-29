@@ -1,14 +1,14 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 import { useGetDynamicModeNodeId } from "../atoms/dynamic-store";
 import { useConnectionTypeModal, modalOps } from "../atoms/modal-store";
 
 const ConnectionTypeModal: React.FC = () => {
-  const { nodeDisp, nodeState } = useBuilder();
+  const { nodeDisp, nodeState } = useBuilderDynamic();
 
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = React.useState(false);

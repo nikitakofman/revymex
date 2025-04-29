@@ -6,7 +6,7 @@ import {
   useMemo,
 } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "../builderState";
+import { useBuilder, useBuilderDynamic, useBuilderRefs } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
 import { useDragStart } from "../dnd/useDragStart";
@@ -23,7 +23,8 @@ export const GripHandles = ({
   node: Node;
   elementRef: RefObject<HTMLDivElement>;
 }) => {
-  const { nodeState, contentRef } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
+  const { contentRef } = useBuilderRefs();
   const handleDragStart = useDragStart();
   const [parentRect, setParentRect] = useState({
     top: 0,

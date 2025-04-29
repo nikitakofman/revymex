@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import {
@@ -30,7 +34,8 @@ interface DrawingBoxState {
 }
 
 export const FrameCreator: React.FC = () => {
-  const { containerRef, nodeDisp, nodeState } = useBuilder();
+  const { nodeDisp, nodeState } = useBuilderDynamic();
+  const { containerRef } = useBuilderRefs();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
 

@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
@@ -30,7 +30,7 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   isGroupSelection = false,
 }) => {
   const { setNodeStyle, startRecording, stopRecording, nodeState } =
-    useBuilder();
+    useBuilderDynamic();
 
   const transform = useTransform();
 

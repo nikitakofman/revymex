@@ -1,6 +1,6 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import React, { useRef, useState } from "react";
-import { useBuilder } from "../builderState";
+import { useBuilder, useBuilderDynamic } from "../builderState";
 import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
 import { useDragStart } from "../dnd/useDragStart";
 import { selectOps } from "../atoms/select-store";
@@ -13,7 +13,7 @@ import {
 } from "../atoms/dynamic-store";
 
 const NameDisplay = ({ node }: { node: Node }) => {
-  const { nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
   const handleDragStart = useDragStart();
 
   // Use atoms for state

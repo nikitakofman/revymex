@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
@@ -36,9 +36,8 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 
     startRecording,
     stopRecording,
-    dragState,
     nodeState,
-  } = useBuilder();
+  } = useBuilderDynamic();
 
   const transform = useTransform();
 

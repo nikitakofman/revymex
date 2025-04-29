@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -150,7 +150,7 @@ export function ToolInput({
   ...props
 }: ToolInputProps) {
   const { setNodeStyle, nodeState, startRecording, stopRecording } =
-    useBuilder();
+    useBuilderDynamic();
   const [localValue, setLocalValue] = useState<string | number>(
     value || customValue || "0"
   );

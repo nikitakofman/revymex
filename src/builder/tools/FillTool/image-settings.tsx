@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolSelect } from "../_components/ToolSelect";
 import { Label } from "../_components/ToolbarAtoms";
 import { Crop, Maximize, MinusCircle } from "lucide-react";
@@ -9,7 +9,7 @@ import ToolbarButton from "../_components/ToolbarButton";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ImageSettingsControl = ({ selectedNode }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [imageProps, setImageProps] = useState({
     objectFit: "cover",
     objectPosition: "center",

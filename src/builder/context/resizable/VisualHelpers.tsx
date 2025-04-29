@@ -1,6 +1,10 @@
 import React, { useState, useLayoutEffect, RefObject, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
 import { ResizeHandles } from "./ResizeHandles";
 import { GapHandles } from "./GapHandles";
@@ -81,7 +85,8 @@ export const VisualHelpers = ({
   // Track parent's rotation as well (for children to inherit)
   const [cumulativeRotation, setCumulativeRotation] = useState<number>(0);
 
-  const { contentRef, nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
+  const { contentRef } = useBuilderRefs();
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();

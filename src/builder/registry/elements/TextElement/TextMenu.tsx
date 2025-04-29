@@ -23,7 +23,7 @@ import React, {
   useState,
 } from "react";
 import { ToolInput } from "../../../tools/_components/ToolInput";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Editor } from "@tiptap/react";
 import { FixedSizeList as List } from "react-window";
 import SimpleColorPicker from "./SimpleColorPicker";
@@ -81,7 +81,7 @@ const TextMenu = ({
 
   node,
 }: TextMenuProps) => {
-  const { nodeState, setNodeStyle } = useBuilder();
+  const { nodeState, setNodeStyle } = useBuilderDynamic();
   const [fonts, setFonts] = useState<Array<{ family: string }>>([]);
   const [showFontPicker, setShowFontPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");

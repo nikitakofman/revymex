@@ -1,7 +1,7 @@
 import { useCallback, RefObject } from "react";
 import { nanoid } from "nanoid";
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { selectOps } from "../atoms/select-store";
 import { useGetTransform } from "../atoms/canvas-interaction-store";
 
@@ -14,7 +14,7 @@ export function useImageDrop({ containerRef }: UseImageDropProps) {
   const getTransform = useGetTransform();
 
   // Get nodeDisp directly from builder context
-  const { nodeDisp } = useBuilder();
+  const { nodeDisp } = useBuilderDynamic();
 
   const { setSelectedIds } = selectOps;
 

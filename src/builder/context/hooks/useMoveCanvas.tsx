@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useBuilder } from "../builderState";
+import { useBuilder, useBuilderRefs } from "../builderState";
 import TransformManager from "@/builder/view/canvas/transform-manager";
 import {
   canvasOps,
@@ -8,7 +8,7 @@ import {
 } from "../atoms/canvas-interaction-store";
 
 export const useMoveCanvas = () => {
-  const { containerRef, contentRef } = useBuilder();
+  const { containerRef, contentRef } = useBuilderRefs();
 
   const isDraggingRef = useRef(false);
   const lastPositionRef = useRef({ x: 0, y: 0 });

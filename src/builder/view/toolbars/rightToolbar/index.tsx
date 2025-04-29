@@ -4,7 +4,7 @@ import { ToolbarDivider } from "@/builder/tools/_components/ToolbarAtoms";
 import DimensionsTool from "@/builder/tools/DimensionsTool";
 import SpacingTool from "@/builder/tools/SpacingTool";
 import { PositionTool } from "@/builder/tools/PositionTool";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { BorderTool } from "@/builder/tools/BorderTool";
 import { TransformTool } from "@/builder/tools/TransformTool";
 import { Node } from "@/builder/reducer/nodeDispatcher";
@@ -17,6 +17,7 @@ import {
   useSelectedIds,
 } from "@/builder/context/atoms/select-store";
 import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
+import SimpleColorPicker from "@/builder/tools/_components/ColorPicker/simple-color";
 
 const getToolTypes = (elements: Node[]) => {
   if (elements.length === 0) return {};
@@ -35,7 +36,7 @@ const getToolTypes = (elements: Node[]) => {
 };
 
 const ElementToolbar = () => {
-  const { nodeState, setNodeStyle } = useBuilder();
+  const { nodeState, setNodeStyle } = useBuilderDynamic();
 
   const dynamicModeNodeId = useDynamicModeNodeId();
 
@@ -118,6 +119,8 @@ const ElementToolbar = () => {
           <ToolbarDivider />
         </>
       )}
+
+      <SimpleColorPicker />
 
       {toolTypes.hasBackgroundTools && (
         <>

@@ -1,13 +1,13 @@
 import React, { useRef, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 import { canvasOps } from "../atoms/canvas-interaction-store";
 import { useEditViewportModal, modalOps } from "../atoms/modal-store";
 
 const EditViewportModal: React.FC = () => {
-  const { nodeState, nodeDisp } = useBuilder();
+  const { nodeState, nodeDisp } = useBuilderDynamic();
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 

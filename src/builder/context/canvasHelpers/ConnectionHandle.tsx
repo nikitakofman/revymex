@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "../builderState";
+import { useBuilder, useBuilderDynamic, useBuilderRefs } from "../builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { Zap } from "lucide-react";
 import {
@@ -15,7 +15,8 @@ import { useGetTransform } from "../atoms/canvas-interaction-store";
 export const ConnectionHandle: React.FC<{
   node: Node;
 }> = ({ node }) => {
-  const { nodeState, contentRef } = useBuilder();
+  const { nodeState } = useBuilderDynamic;
+  const { contentRef } = useBuilderRefs();
 
   // Get the transform getter directly in the component
   const getTransform = useGetTransform();

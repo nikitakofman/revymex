@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { ToolSelect } from "../_components/ToolSelect";
 import { Label } from "../_components/ToolbarAtoms";
@@ -8,7 +8,7 @@ import { ImageCropPopup } from "./image-crop";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const VideoSettingsControl = ({ selectedNode }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [videoProps, setVideoProps] = useState({
     autoplay: false,
     loop: false,

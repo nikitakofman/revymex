@@ -1,4 +1,4 @@
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronDown } from "lucide-react";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Label } from "./ToolbarAtoms";
@@ -24,7 +24,7 @@ export const ToolSelect = ({
   onChange,
   customSelectWidth,
 }: ToolSelectProps) => {
-  const { setNodeStyle, nodeState, nodeDisp } = useBuilder();
+  const { setNodeStyle, nodeState, nodeDisp } = useBuilderDynamic();
 
   // Replace subscription with imperative getter
   const getSelectedIds = useGetSelectedIds();

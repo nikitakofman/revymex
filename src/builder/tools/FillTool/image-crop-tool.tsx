@@ -6,7 +6,7 @@ import ReactCrop, {
   type PixelCrop,
 } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Label } from "../_components/ToolbarAtoms";
 import { RotateCcw, Check } from "lucide-react";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
@@ -48,7 +48,7 @@ function getCroppedImg(image, crop) {
 }
 
 export const ImageCropTool = ({ selectedNode }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [crop, setCrop] = useState();
   const [completedCrop, setCompletedCrop] = useState(null);
   const [aspect, setAspect] = useState(undefined); // undefined for free-form

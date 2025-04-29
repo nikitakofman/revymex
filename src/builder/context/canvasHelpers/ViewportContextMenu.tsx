@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Plus, Edit, Eye, AlignHorizontalJustifyCenter } from "lucide-react";
 import {
   useViewportContextMenu,
@@ -9,7 +9,7 @@ import {
 import { modalOps } from "../atoms/modal-store";
 
 const ViewportContextMenu = () => {
-  const { nodeDisp } = useBuilder();
+  const { nodeDisp } = useBuilderDynamic();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState({
     left: 0,

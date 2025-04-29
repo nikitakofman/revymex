@@ -2,14 +2,14 @@ import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
 import { ColorPicker } from "../_components/ColorPicker";
 import { ChevronLeft } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import {
   useGetSelectedIds,
   useSelectedIds,
 } from "@/builder/context/atoms/select-store";
 
 export const FilterToolPopup = ({ selectedNode, onClose }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
 
   const selectedIds = useSelectedIds();
 

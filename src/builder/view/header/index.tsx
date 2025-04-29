@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Play, Settings } from "lucide-react";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import RevymeIcon from "./revyme-icon";
 import { Tooltip } from "react-tooltip";
 import { ToolbarSlider } from "@/builder/tools/_components/ToolbarSlider";
@@ -51,7 +51,7 @@ export const SimplifiedToolSelect: React.FC<SimplifiedToolSelectProps> = ({
 };
 
 const Header = () => {
-  const { nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
 
   // Get interface state from the interface store
   const isPreviewOpen = useIsPreviewOpen();

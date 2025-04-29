@@ -1,5 +1,9 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import {
   calculateAndUpdateDimensions,
   findIndexWithinParent,
@@ -21,15 +25,10 @@ import {
 } from "../atoms/canvas-interaction-store";
 
 export const useDragStart = () => {
-  const {
-    nodeDisp,
-    contentRef,
-    nodeState,
-    setNodeStyle,
-    startRecording,
-    stopRecording,
-    selectedIdsRef,
-  } = useBuilder();
+  const { nodeDisp, nodeState, setNodeStyle, startRecording, stopRecording } =
+    useBuilderDynamic();
+
+  const { contentRef, selectedIdsRef } = useBuilderRefs();
 
   const getTransform = useGetTransform();
 

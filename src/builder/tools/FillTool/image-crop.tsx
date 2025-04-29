@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import ReactCrop, { centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Label } from "../_components/ToolbarAtoms";
 import { RotateCcw, Check, Bug, X, AlertCircle } from "lucide-react";
 import { canvasPreview, generateCroppedImageUrl } from "./canvas-preview";
@@ -195,7 +195,7 @@ function debugNodeImageSource(node) {
 }
 
 export const ImageCropPopup = ({ selectedNode, onClose }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [crop, setCrop] = useState();
   const [completedCrop, setCompletedCrop] = useState(null);
   const [aspect, setAspect] = useState(undefined); // undefined for free-form

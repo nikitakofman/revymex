@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ColorPicker } from "../_components/ColorPicker";
 import { transformNodeToFrame } from "./fill-popup";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
@@ -27,7 +27,7 @@ const GradientStopButton = ({
   onClick,
   onDrag,
 }) => {
-  const { startRecording, stopRecording } = useBuilder();
+  const { startRecording, stopRecording } = useBuilderDynamic();
   const [isDragging, setIsDragging] = useState(false);
   const buttonRef = useRef(null);
 

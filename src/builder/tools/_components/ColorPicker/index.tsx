@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, X, Pipette } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import {
   hexToRgb,
@@ -531,13 +535,9 @@ export const ColorPicker = ({
   contentPadding,
 }: ColorPickerProps) => {
   // Use the shared popupRef from useBuilder
-  const {
-    nodeState,
-    startRecording,
-    stopRecording,
-    popupRef,
-    selectedNodeIds,
-  } = useBuilder();
+  const { startRecording, stopRecording } = useBuilderDynamic();
+
+  const { selectedIdsRef } = useBuilderRefs();
 
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
@@ -668,10 +668,14 @@ export const ColorPicker = ({
   const handleColorChange = (color: string) => {
     if (externalOnChange) {
       externalOnChange(color);
-    } else if (name && selectedNodeIds && selectedNodeIds.length > 0) {
+    } else if (
+      name &&
+      selectedIdsRef.current &&
+      selectedIdsRef.current.length > 0
+    ) {
       console.log(" IN COLOR CHANGE");
       // Use our new updateNodeStyle function for each selected node
-      selectedNodeIds.forEach((nodeId) => {
+      selectedIdsRef.current.forEach((nodeId) => {
         updateNodeStyle(nodeId, { [name]: color });
       });
     }

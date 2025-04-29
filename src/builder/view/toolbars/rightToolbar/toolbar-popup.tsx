@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderRefs } from "@/builder/context/builderState";
 
 /**
  * A reusable popup component for toolbar elements that renders to document.body
@@ -28,7 +28,7 @@ export const ToolbarPopup = ({
   title,
   leftPadding = false,
 }) => {
-  const { popupRef } = useBuilder();
+  const { popupRef } = useBuilderRefs();
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [hasExpandableContent, setHasExpandableContent] = useState(false);
   const [isVisible, setIsVisible] = useState(false);

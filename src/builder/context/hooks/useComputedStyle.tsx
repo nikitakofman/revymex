@@ -178,7 +178,6 @@ export function useComputedStyle({
   defaultUnit = "px",
   isColor = false,
 }: UseComputedStyleProps): StyleValue {
-  const { nodeState } = useBuilder();
   const [styleValue, setStyleValue] = useState<StyleValue>(() => ({
     value: defaultValue,
     unit: defaultUnit,

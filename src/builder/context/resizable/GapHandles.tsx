@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { visualOps } from "../atoms/visual-store";
 import {
@@ -39,7 +39,7 @@ export const GapHandles = ({
   elementRef: React.RefObject<HTMLDivElement>;
 }) => {
   const { setNodeStyle, nodeState, startRecording, stopRecording } =
-    useBuilder();
+    useBuilderDynamic();
   const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
   const [isInteractive, setIsInteractive] = useState(false);
 

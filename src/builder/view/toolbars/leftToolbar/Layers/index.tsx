@@ -1,5 +1,9 @@
 import React, { useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { buildTreeFromNodes, findOrCreateCanvasPosition } from "./utils";
 import TreeNodeComponent from "./TreeNodeComponent";
 import { TreeNodeWithChildren } from "@/builder/types";
@@ -12,7 +16,8 @@ import {
 } from "@/builder/context/atoms/dynamic-store";
 
 const Layers: React.FC = () => {
-  const { nodeState, nodeDisp, setNodeStyle, contentRef } = useBuilder();
+  const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
+  const { contentRef } = useBuilderRefs();
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();

@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, RefObject } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Direction, ResizableWrapperProps } from "../utils";
 import { VisualHelpers } from "./VisualHelpers";
 import {
@@ -104,7 +104,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   node,
   children,
 }) => {
-  const { setNodeStyle, startRecording, stopRecording } = useBuilder();
+  const { setNodeStyle, startRecording, stopRecording } = useBuilderDynamic();
 
   // console.log(`Resizable Wrapper re-rendering`, new Date().getTime());
 

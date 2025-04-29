@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { ToolbarSection } from "./_components/ToolbarAtoms";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { ToolPopupTrigger } from "./_components/ToolbarPopupTrigger";
 import { Zap, ChevronRight, X, Plus } from "lucide-react";
@@ -11,7 +11,7 @@ import {
 } from "../context/atoms/dynamic-store";
 
 export const InteractionsTool = () => {
-  const { nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
 
   // Replace subscription with imperative getter
 
@@ -136,7 +136,7 @@ export const InteractionsTool = () => {
 };
 
 const InteractionsPopup = ({ selectedNode, onClose }) => {
-  const { nodeState, nodeDisp } = useBuilder();
+  const { nodeState, nodeDisp } = useBuilderDynamic();
   const dynamicModeNodeId = useDynamicModeNodeId();
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
   // Get the selected node ID from the passed node

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useMemo, useEffect } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Monitor, Tablet, Smartphone } from "lucide-react";
 import { createPortal } from "react-dom";
 import Button from "@/components/ui/button";
@@ -14,7 +14,7 @@ import {
 } from "@/builder/context/atoms/dynamic-store";
 
 export const DynamicToolbar: React.FC = () => {
-  const { nodeState, nodeDisp } = useBuilder();
+  const { nodeState, nodeDisp } = useBuilderDynamic();
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();

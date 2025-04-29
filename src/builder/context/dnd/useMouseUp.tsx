@@ -1,4 +1,8 @@
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import {
   findIndexWithinParent,
   findParentViewport,
@@ -30,14 +34,9 @@ import { useGetTransform } from "../atoms/canvas-interaction-store";
 import { useGetActiveViewportInDynamicMode } from "../atoms/dynamic-store";
 
 export const useMouseUp = () => {
-  const {
-    nodeDisp,
-    containerRef,
-    nodeState,
-    setNodeStyle,
-    stopRecording,
-    hasLeftViewportRef,
-  } = useBuilder();
+  const { nodeDisp, nodeState, setNodeStyle, stopRecording } =
+    useBuilderDynamic();
+  const { hasLeftViewportRef, containerRef } = useBuilderRefs();
 
   const originalIndexRef = useRef<number | null>(null);
   const { stopAutoScroll } = useAutoScroll();

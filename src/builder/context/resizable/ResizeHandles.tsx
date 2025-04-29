@@ -12,7 +12,7 @@ import {
   getHandleCursor,
   matrixToCss,
 } from "../utils";
-import { useBuilder } from "../builderState";
+import { useBuilder, useBuilderDynamic } from "../builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import {
   useGetTransform,
@@ -69,7 +69,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   isGroupSelection,
   targetRef,
 }) => {
-  const { nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
 
   const getTransform = useGetTransform();
 

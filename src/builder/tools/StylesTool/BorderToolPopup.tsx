@@ -4,10 +4,10 @@ import { ToolSelect } from "../_components/ToolSelect";
 import { ColorPicker } from "../_components/ColorPicker";
 import { ChevronLeft } from "lucide-react";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 
 export const BorderToolPopup = () => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
 
   // Track state for the color picker
   const [showColorPicker, setShowColorPicker] = useState(false);

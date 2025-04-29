@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import {
   Copy,
   Trash2,
@@ -69,7 +69,7 @@ const MenuItemComponent = ({
 };
 
 export const ContextMenu = () => {
-  const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
+  const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
   const isWindows = navigator.platform.includes("Win");

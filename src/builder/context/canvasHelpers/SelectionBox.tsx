@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { interfaceOps } from "../atoms/interface-store";
 import { selectOps, useGetTempSelectedIds } from "../atoms/select-store";
 import {
@@ -25,8 +29,9 @@ interface SelectionBoxState {
 }
 
 export const SelectionBox: React.FC = () => {
-  const { containerRef, nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
 
+  const { containerRef } = useBuilderRefs();
   // Subscribe to all states that affect whether we should show the selection box
   const transform = useTransform();
   const isMiddleMouseDown = useIsMiddleMouseDown();

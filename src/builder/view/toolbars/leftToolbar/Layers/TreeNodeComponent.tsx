@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import {
   ChevronRight,
@@ -44,7 +44,7 @@ interface TreeNodeProps {
 }
 
 const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
-  const { nodeDisp, setNodeStyle, nodeState } = useBuilder();
+  const { nodeDisp, setNodeStyle, nodeState } = useBuilderDynamic();
 
   const currentSelectedIds = useGetSelectedIds();
 

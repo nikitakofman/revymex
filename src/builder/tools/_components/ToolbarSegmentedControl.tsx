@@ -1,5 +1,5 @@
 import React from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 
 type ToolbarSegmentOption = {
@@ -34,7 +34,7 @@ export function ToolbarSegmentedControl({
   columnLayout = false, // Default to row layout
   noPadding,
 }: ToolbarSegmentedControlProps) {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
 
   // Only use the computed style if currentValue isn't explicitly provided
   const computedStyle = !currentValue

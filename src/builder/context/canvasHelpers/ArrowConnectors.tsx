@@ -1,5 +1,9 @@
 import React, { useCallback, useMemo } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useGetSelectedIds } from "../atoms/select-store";
 import {
@@ -12,7 +16,8 @@ import {
 } from "../atoms/dynamic-store";
 
 export const ArrowConnectors = () => {
-  const { nodeState, contentRef } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
+  const { contentRef } = useBuilderRefs();
 
   // Use atoms for state
   const transform = useTransform();

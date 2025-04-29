@@ -1,4 +1,8 @@
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import {
   getDropPosition,
   computeFrameDropIndicator,
@@ -52,8 +56,9 @@ const getRootContainerId = (
 };
 
 export const useMouseMove = () => {
-  const { contentRef, nodeDisp, nodeState, containerRef, hasLeftViewportRef } =
-    useBuilder();
+  const { nodeDisp, nodeState } = useBuilderDynamic();
+
+  const { contentRef, containerRef, hasLeftViewportRef } = useBuilderRefs();
 
   const currentTransform = useGetTransform();
 

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const TransformPopup = ({ selectedNode, onClose }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const currentSelectedIds = useGetSelectedIds();
   // Transform states
   const [scaleX, setScaleX] = useState(1);

@@ -1,5 +1,9 @@
 // useNodeActions.ts
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
 import { findIndexWithinParent } from "../utils";
@@ -15,7 +19,8 @@ import {
 import { useTransform } from "../atoms/canvas-interaction-store";
 
 export const useNodeActions = () => {
-  const { nodeState, nodeDisp, containerRef } = useBuilder();
+  const { nodeState, nodeDisp } = useBuilderDynamic();
+  const { containerRef } = useBuilderRefs();
 
   const currentSelectedIds = useGetSelectedIds();
   const getIsDragging = useGetIsDragging();

@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
 import { ColorPicker } from "../_components/ColorPicker";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronLeft } from "lucide-react";
 import { ToolbarSwitch } from "../_components/ToolbarSwitch";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ShadowToolPopup = () => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [x, setX] = useState(0);
   const [y, setY] = useState(4);
   const [blur, setBlur] = useState(8);

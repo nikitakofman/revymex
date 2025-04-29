@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useNodeActions } from "./useNodeActions";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 import {
@@ -15,7 +15,7 @@ import {
 } from "../atoms/canvas-interaction-store";
 
 export const useKeyboardDrag = () => {
-  const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
+  const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();

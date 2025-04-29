@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ImageIcon, Video, Eraser, Loader2 } from "lucide-react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { ToolSelect } from "../_components/ToolSelect";
 import { ColorPicker } from "../_components/ColorPicker";
@@ -36,7 +36,7 @@ export const transformNodeToFrame = (node, style, nodeDisp) => {
 };
 
 export const FillToolPopup = ({ selectedNode, onClose }) => {
-  const { nodeDisp, setNodeStyle } = useBuilder();
+  const { nodeDisp, setNodeStyle } = useBuilderDynamic();
 
   const currentSelectedIds = useGetSelectedIds();
 

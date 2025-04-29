@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Crop, RotateCcw } from "lucide-react";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 
 export const ImageCropInteractive = ({ selectedNode }) => {
-  const { setNodeStyle } = useBuilder();
+  const { setNodeStyle } = useBuilderDynamic();
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const cropBoxRef = useRef(null);

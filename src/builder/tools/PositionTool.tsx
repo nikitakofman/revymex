@@ -1,4 +1,4 @@
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
@@ -21,7 +21,7 @@ import { getDragPosition } from "../context/utils";
 import { useTransform } from "../context/atoms/canvas-interaction-store";
 
 export const PositionTool = () => {
-  const { nodeState } = useBuilder();
+  const { nodeState } = useBuilderDynamic();
   const [realTimePosition, setRealTimePosition] = useState({ x: 0, y: 0 });
 
   // Get isDragging from the drag store

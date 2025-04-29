@@ -1,13 +1,13 @@
 // DebugSnapGuides.tsx - Simplified version with alignment guides only
 
 import React, { useEffect, useState } from "react";
-import { useBuilder } from "@/builder/context/builderState";
+import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { SnapLine } from "@/builder/context/canvasHelpers/SnapGrid";
 import { useSnapGrid } from "@/builder/context/canvasHelpers/SnapGrid";
 import { isAbsoluteInFrame } from "../context/utils";
 
 const DebugSnapGuides: React.FC = () => {
-  const { transform, nodeState } = useBuilder();
+  const { transform, nodeState } = useBuilderDynamic();
   const [allGuides, setAllGuides] = useState<SnapLine[]>([]);
 
   // Get all nodes

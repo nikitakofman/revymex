@@ -9,7 +9,11 @@ import { createPortal } from "react-dom";
 import { ResizableWrapper } from "@/builder/context/resizable";
 import { useConnect } from "@/builder/context/hooks/useConnect";
 import { ElementProps } from "@/builder/types";
-import { useBuilder } from "@/builder/context/builderState";
+import {
+  useBuilder,
+  useBuilderDynamic,
+  useBuilderRefs,
+} from "@/builder/context/builderState";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TextStyle from "@tiptap/extension-text-style";
@@ -380,7 +384,8 @@ const TextElement = ({ node }: ElementProps) => {
 
   const getIsDragging = useGetIsDragging();
   const connect = useConnect();
-  const { setNodeStyle, contentRef, nodeState } = useBuilder();
+  const { setNodeStyle, nodeState } = useBuilderDynamic();
+  const { contentRef } = useBuilderRefs();
 
   const isNodeSelected = useNodeSelected(node.id);
   const getTransform = useGetTransform();
