@@ -27,7 +27,7 @@ export const useCursorManager = () => {
   const prevCursorStyleRef = useRef("");
   const prevSelectStyleRef = useRef({});
 
-  console.log(`Cursor Manager re-rendering`, new Date().getTime());
+  // console.log(`Cursor Manager re-rendering`, new Date().getTime());
 
   // Imperative getters for use in effects and event handlers
   const getIsDragging = useGetIsDragging();

@@ -21,12 +21,68 @@ import {
   dynamicOps,
   useDynamicModeNodeId,
 } from "../context/atoms/dynamic-store";
+import {
+  NodeId,
+  nodeStore,
+  nodeIdsAtom,
+  useGetNodeBasics,
+  useGetNodeStyle,
+  useGetNodeFlags,
+  useGetNodeParent,
+  useGetNodeChildren,
+  useGetNodeSharedInfo,
+  useGetNodeDynamicInfo,
+  nodeBasicsAtom,
+  nodeStyleAtom,
+  nodeFlagsAtom,
+  nodeParentAtom,
+  nodeSharedInfoAtom,
+  nodeDynamicInfoAtom,
+} from "../context/atoms/node-store";
 
 interface Operation {
   method: string;
   timestamp: number;
   args: any[];
   options?: any;
+}
+
+function getNodesFromJotai() {
+  // Get all node IDs from the Jotai store
+  const nodeIds = nodeStore.get(nodeIdsAtom);
+
+  // Create nodes array from IDs
+  return nodeIds.map((id) => {
+    const basics = nodeStore.get(nodeBasicsAtom(id));
+    const style = nodeStore.get(nodeStyleAtom(id));
+    const flags = nodeStore.get(nodeFlagsAtom(id));
+    const parentId = nodeStore.get(nodeParentAtom(id));
+    const sharedInfo = nodeStore.get(nodeSharedInfoAtom(id));
+    const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(id));
+
+    return {
+      id: basics.id,
+      type: basics.type,
+      customName: basics.customName,
+      style,
+      parentId,
+      sharedId: sharedInfo.sharedId,
+      dynamicViewportId: dynamicInfo.dynamicViewportId,
+      dynamicFamilyId: dynamicInfo.dynamicFamilyId,
+      dynamicParentId: dynamicInfo.dynamicParentId,
+      dynamicConnections: dynamicInfo.dynamicConnections,
+      dynamicPosition: dynamicInfo.dynamicPosition,
+      originalParentId: dynamicInfo.originalParentId,
+      originalState: dynamicInfo.originalState,
+      isViewport: flags.isViewport,
+      viewportWidth: flags.viewportWidth,
+      isVariant: flags.isVariant,
+      isDynamic: flags.isDynamic,
+      isLocked: flags.isLocked,
+      isAbsoluteInFrame: flags.isAbsoluteInFrame,
+      inViewport: flags.inViewport,
+    };
+  });
 }
 
 function getDescendants(nodes: Node[], rootId: string | number): Node[] {
@@ -148,6 +204,18 @@ const NodeDispOperations: React.FC<{
 export const ViewportDevTools: React.FC = () => {
   const { nodeState, nodeDisp, operations, clearOperations } = useBuilder();
 
+  // Get Jotai node state
+  const [jotaiNodes, setJotaiNodes] = useState(() => getNodesFromJotai());
+
+  // Update Jotai node state periodically
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setJotaiNodes(getNodesFromJotai());
+    }, 1000); // Update every second
+
+    return () => clearInterval(intervalId);
+  }, []);
+
   const transform = useTransform();
   const dynamicModeNodeId = useDynamicModeNodeId();
 
@@ -183,7 +251,7 @@ export const ViewportDevTools: React.FC = () => {
   const [showTree, setShowTree] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
-    "view" | "perViewport" | "import" | "drag" | "nodeDisp"
+    "view" | "jotai" | "perViewport" | "import" | "drag" | "nodeDisp"
   >("view");
 
   const [mounted, setMounted] = useState(false);
@@ -234,7 +302,8 @@ export const ViewportDevTools: React.FC = () => {
   };
 
   const handleCopyNodesJson = () => {
-    const nodesJson = JSON.stringify(nodeState.nodes, null, 2);
+    // Use Jotai nodes for copying
+    const nodesJson = JSON.stringify(jotaiNodes, null, 2);
     navigator.clipboard
       .writeText(nodesJson)
       .then(() => {
@@ -268,7 +337,8 @@ export const ViewportDevTools: React.FC = () => {
       });
   };
 
-  const viewports = nodeState.nodes.filter((n) => n.isViewport);
+  // Use Jotai nodes instead of nodeState.nodes for viewports
+  const viewports = jotaiNodes.filter((n) => n.isViewport);
 
   return createPortal(
     <>
@@ -401,7 +471,17 @@ export const ViewportDevTools: React.FC = () => {
                 }`}
                 onClick={() => setActiveTab("view")}
               >
-                All
+                Old State
+              </button>
+              <button
+                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+                  activeTab === "jotai"
+                    ? "bg-[var(--button-primary-bg)] text-white"
+                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+                }`}
+                onClick={() => setActiveTab("jotai")}
+              >
+                Jotai State
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
@@ -459,6 +539,25 @@ export const ViewportDevTools: React.FC = () => {
                 </div>
               )}
 
+              {activeTab === "jotai" && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-[var(--text-secondary)]">
+                      {jotaiNodes.length} nodes (Jotai)
+                    </span>
+                    <button
+                      className="px-2 py-1 bg-[var(--control-bg)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+                      onClick={() => setJotaiNodes(getNodesFromJotai())}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                  <textarea className="text-xs w-full whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
+                    {JSON.stringify(jotaiNodes, null, 2)}
+                  </textarea>
+                </div>
+              )}
+
               {activeTab === "drag" && (
                 <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
                   ss
@@ -476,10 +575,7 @@ export const ViewportDevTools: React.FC = () => {
                 <div className="flex gap-4 min-w-[900px] min-h-[600px]">
                   {viewports.map((viewport) => {
                     const isOpen = openViewportId === viewport.id;
-                    const descendants = getDescendants(
-                      nodeState.nodes,
-                      viewport.id
-                    );
+                    const descendants = getDescendants(jotaiNodes, viewport.id);
 
                     return (
                       <div

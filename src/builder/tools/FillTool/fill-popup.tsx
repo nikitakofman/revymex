@@ -17,6 +17,7 @@ import {
   getNodeVideoSource,
 } from "../utils";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 // Types
 export type FillType = "solid" | "linear" | "radial" | "image" | "video";
@@ -107,38 +108,37 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
 
     console.log("newType:", newType);
 
+    const selectedIds = currentSelectedIds();
+
     if (newType === "solid") {
-      setNodeStyle(
-        {
+      // Apply to all selected nodes
+      selectedIds.forEach((nodeId) => {
+        updateNodeStyle(nodeId, {
           src: undefined,
           backgroundImage: undefined,
           backgroundVideo: undefined,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
 
     if (newType === "image") {
-      setNodeStyle(
-        {
+      // Apply to all selected nodes
+      selectedIds.forEach((nodeId) => {
+        updateNodeStyle(nodeId, {
           backgroundVideo: undefined,
           backgroundColor: undefined,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
 
     if (newType === "video") {
-      setNodeStyle(
-        {
+      // Apply to all selected nodes
+      selectedIds.forEach((nodeId) => {
+        updateNodeStyle(nodeId, {
           backgroundImage: undefined,
           backgroundColor: undefined,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
 
     setFillType(newType);
@@ -162,7 +162,10 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
                   onComplete={(newUrl) => {
                     const selectedIds = currentSelectedIds();
 
-                    setNodeStyle({ src: newUrl }, selectedIds);
+                    // Apply to all selected nodes
+                    selectedIds.forEach((nodeId) => {
+                      updateNodeStyle(nodeId, { src: newUrl });
+                    });
                   }}
                 />
               )}
@@ -171,7 +174,10 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
               onSelectImage={(url) => {
                 const selectedIds = currentSelectedIds();
 
-                setNodeStyle({ src: url }, selectedIds);
+                // Apply to all selected nodes
+                selectedIds.forEach((nodeId) => {
+                  updateNodeStyle(nodeId, { src: url });
+                });
                 setCleanImageSrc(url);
               }}
               onClose={() => {}}
@@ -184,7 +190,10 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
               onSelectVideo={(url) => {
                 const selectedIds = currentSelectedIds();
 
-                setNodeStyle({ src: url }, selectedIds);
+                // Apply to all selected nodes
+                selectedIds.forEach((nodeId) => {
+                  updateNodeStyle(nodeId, { src: url });
+                });
               }}
               onClose={() => {}}
               embedded={true}
@@ -234,17 +243,21 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
         <ColorPicker
           value={backgroundColor.value || background.value}
           onChange={(color) => {
-            // We're just setting backgroundColor without clearing anything
-            const styles = {
-              backgroundColor: color,
-            };
+            const selectedIds = currentSelectedIds();
 
             if (selectedNode.type !== "frame") {
-              transformNodeToFrame(selectedNode, styles, nodeDisp);
+              // For non-frame nodes, transform to frame first
+              transformNodeToFrame(
+                selectedNode,
+                { backgroundColor: color },
+                nodeDisp
+              );
             } else {
-              const selectedIds = currentSelectedIds();
-
-              setNodeStyle(styles, selectedIds);
+              // For frame nodes, use updateNodeStyle for each selected node
+              selectedIds.forEach((nodeId) => {
+                // IMPORTANT: Using background instead of backgroundColor to override any existing gradients
+                updateNodeStyle(nodeId, { background: color });
+              });
             }
           }}
           displayMode="direct" // Use direct mode to show the color picker immediately
@@ -266,17 +279,20 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
           <div>
             <ImageSearchModal
               onSelectImage={(url) => {
-                // Just set the backgroundImage without clearing anything
-                const styles = {
-                  backgroundImage: url,
-                };
+                const selectedIds = currentSelectedIds();
 
                 if (selectedNode.type !== "frame") {
-                  transformNodeToFrame(selectedNode, styles, nodeDisp);
+                  // For non-frame nodes, transform to frame first
+                  transformNodeToFrame(
+                    selectedNode,
+                    { backgroundImage: url },
+                    nodeDisp
+                  );
                 } else {
-                  const selectedIds = currentSelectedIds();
-
-                  setNodeStyle(styles, selectedIds);
+                  // For frame nodes, use updateNodeStyle
+                  selectedIds.forEach((nodeId) => {
+                    updateNodeStyle(nodeId, { backgroundImage: url });
+                  });
                 }
                 setCleanImageSrc(url);
               }}
@@ -292,17 +308,20 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
           <div>
             <VideoSearchModal
               onSelectVideo={(url) => {
-                // Just set the backgroundVideo without clearing anything
-                const styles = {
-                  backgroundVideo: url,
-                };
+                const selectedIds = currentSelectedIds();
 
                 if (selectedNode.type !== "frame") {
-                  transformNodeToFrame(selectedNode, styles, nodeDisp);
+                  // For non-frame nodes, transform to frame first
+                  transformNodeToFrame(
+                    selectedNode,
+                    { backgroundVideo: url },
+                    nodeDisp
+                  );
                 } else {
-                  const selectedIds = currentSelectedIds();
-
-                  setNodeStyle(styles, selectedIds);
+                  // For frame nodes, use updateNodeStyle for each selected node
+                  selectedIds.forEach((nodeId) => {
+                    updateNodeStyle(nodeId, { backgroundVideo: url });
+                  });
                 }
               }}
               onClose={() => {}}

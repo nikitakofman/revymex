@@ -139,7 +139,7 @@ const CanvasController: React.FC<CanvasControllerProps> = ({
   containerRef,
   contentRef,
 }) => {
-  console.log(`Canvas Controller re-rendering`, new Date().getTime());
+  //   console.log(`Canvas Controller re-rendering`, new Date().getTime());
 
   // Use getter instead of subscription
   const getTransform = useGetTransform();

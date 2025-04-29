@@ -33,7 +33,7 @@ import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 import { useGetTransform } from "@/builder/context/atoms/canvas-interaction-store";
 
 export const Frame = ({ children, node }: ElementProps) => {
-  console.log(`Frame re-rendering: ${node.id}`, new Date().getTime());
+  // console.log(`Frame re-rendering: ${node.id}`, new Date().getTime());
 
   const { nodeDisp, setNodeStyle, containerRef, contentRef } = useBuilder();
 

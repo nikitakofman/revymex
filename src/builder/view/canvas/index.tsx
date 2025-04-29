@@ -41,10 +41,17 @@ import {
 } from "@/builder/context/atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
 import CanvasController from "@/builder/context/canvas-controller";
+import {
+  initNodeStateFromInitialState,
+  nodeStore,
+  nodeIdsAtom,
+} from "@/builder/context/atoms/node-store";
+import { nodeInitialState } from "@/builder/reducer/state";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const eventHandlersAttached = useRef(false);
+  const hasInitializedAtoms = useRef(false);
 
   const { containerRef, contentRef, nodeState } = useBuilder();
 
@@ -55,10 +62,27 @@ const Canvas = () => {
 
   const { clearSelection } = selectOps;
 
-  console.log(`Canvas re redndering`, new Date().getTime());
+  console.log(`Canvas re rendering`, new Date().getTime());
+
+  // Initialize Jotai atoms with the initial node state on first render
+  useEffect(() => {
+    if (!hasInitializedAtoms.current) {
+      console.log("Initializing Jotai node state from initial state");
+      initNodeStateFromInitialState(nodeInitialState);
+      console.log(
+        `Initialized ${nodeInitialState.nodes.length} nodes in Jotai store`
+      );
+
+      // Check initialization was successful by reading the store
+      const nodeIds = nodeStore.get(nodeIdsAtom);
+      console.log(`Verified nodeIds in store: ${nodeIds.length} nodes`);
+
+      // Mark as initialized so we don't do it again
+      hasInitializedAtoms.current = true;
+    }
+  }, []);
 
   // With this approach:
-
   const handleMouseMove = useMouseMove();
   const handleMouseUp = useMouseUp();
 

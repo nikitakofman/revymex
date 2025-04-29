@@ -56,6 +56,8 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
   console.log(`Render Nodes re-rendering`, new Date().getTime());
 
+  initNodeStateFromInitialState(nodeInitialState);
+
   // Get all node IDs directly from store
   const nodeIds = nodeStore.get(nodeIdsAtom);
 

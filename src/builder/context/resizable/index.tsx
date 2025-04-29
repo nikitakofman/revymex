@@ -106,7 +106,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 }) => {
   const { setNodeStyle, startRecording, stopRecording } = useBuilder();
 
-  console.log(`Resizable Wrapper re-rendering`, new Date().getTime());
+  // console.log(`Resizable Wrapper re-rendering`, new Date().getTime());
 
   const getTransform = useGetTransform();
   const isMiddleMouseDown = useIsMiddleMouseDown();

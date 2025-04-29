@@ -75,7 +75,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
 
   const [isInteractive, setIsInteractive] = useState(false);
 
-  console.log(`Resize Handles re-rendering ${node.id}`, new Date().getTime());
+  // console.log(`Resize Handles re-rendering ${node.id}`, new Date().getTime());
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();

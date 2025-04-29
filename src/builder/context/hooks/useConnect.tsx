@@ -29,7 +29,7 @@ export const useConnect = () => {
   // Use the basic useBuilder hook without global subscriptions
   const { nodeState, nodeDisp, setNodeStyle } = useBuilder();
 
-  console.log(`Use Connect re-rendering`, new Date().getTime());
+  // console.log(`Use Connect re-rendering`, new Date().getTime());
 
   const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);

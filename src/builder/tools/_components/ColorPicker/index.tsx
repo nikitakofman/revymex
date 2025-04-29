@@ -10,6 +10,7 @@ import {
   rgbToHsl,
   rgbToHsv,
 } from "./utils";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 type ColorMode = "hex" | "rgb" | "hsl" | "hsv";
 
@@ -530,8 +531,14 @@ export const ColorPicker = ({
   contentPadding,
 }: ColorPickerProps) => {
   // Use the shared popupRef from useBuilder
-  const { setNodeStyle, startRecording, stopRecording, popupRef } =
-    useBuilder();
+  const {
+    nodeState,
+    startRecording,
+    stopRecording,
+    popupRef,
+    selectedNodeIds,
+  } = useBuilder();
+
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
   const [hsv, setHsv] = useState({ h: 0, s: 100, v: 100 });
@@ -661,8 +668,12 @@ export const ColorPicker = ({
   const handleColorChange = (color: string) => {
     if (externalOnChange) {
       externalOnChange(color);
-    } else if (name) {
-      setNodeStyle({ [name]: color }, undefined, true);
+    } else if (name && selectedNodeIds && selectedNodeIds.length > 0) {
+      console.log(" IN COLOR CHANGE");
+      // Use our new updateNodeStyle function for each selected node
+      selectedNodeIds.forEach((nodeId) => {
+        updateNodeStyle(nodeId, { [name]: color });
+      });
     }
   };
 

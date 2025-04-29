@@ -38,7 +38,6 @@ const selectOperations = {
   // Get current selection states
   getSelectedIds: () => {
     const ids = selectStore.get(_internalSelectedIdsAtom);
-    console.log("Getting selected IDs:", ids);
     return ids;
   },
   getTempSelectedIds: () => {
@@ -50,13 +49,8 @@ const selectOperations = {
 
   // Single node selection
   selectNode: (nodeId: string | number) => {
-    console.log(`Selecting node: ${nodeId}`);
     selectStore.set(_internalSelectedIdsAtom, [String(nodeId)]);
     selectStore.set(_internalSelectNodeIdAtom, String(nodeId));
-    console.log(
-      "After selecting node:",
-      selectStore.get(_internalSelectedIdsAtom)
-    );
   },
 
   // Add to multi-selection
@@ -72,18 +66,12 @@ const selectOperations = {
 
   // Set entire selection
   setSelectedIds: (ids: (string | number)[]) => {
-    console.log(`Setting selected IDs:`, ids);
     const stringIds = ids.map((id) => String(id));
     selectStore.set(_internalSelectedIdsAtom, stringIds);
-    console.log(
-      "After setting IDs:",
-      selectStore.get(_internalSelectedIdsAtom)
-    );
   },
 
   // Clear selection
   clearSelection: () => {
-    console.log("Clearing selection");
     selectStore.set(_internalSelectedIdsAtom, []);
   },
 
@@ -102,18 +90,15 @@ const selectOperations = {
 
   // Set current select node ID (for context menu etc.)
   setSelectNodeId: (nodeId: string | null) => {
-    console.log(`Setting select node ID: ${nodeId}`);
     // IMPORTANT: This should also update the selection, not just the node ID
     selectStore.set(_internalSelectNodeIdAtom, nodeId);
 
     // Also update the selection if nodeId is not null
     if (nodeId !== null) {
       selectStore.set(_internalSelectedIdsAtom, [String(nodeId)]);
-      console.log(`Also updated selection to: [${nodeId}]`);
     } else {
       // If nodeId is null, clear the selection
       selectStore.set(_internalSelectedIdsAtom, []);
-      console.log("Cleared selection because nodeId was null");
     }
   },
 };
@@ -163,13 +148,7 @@ export function useGetTempSelectedIds() {
 }
 
 // Add a DEBUG function to help diagnose store issues
-export const debugSelectStore = () => {
-  console.log({
-    selectedIds: selectStore.get(_internalSelectedIdsAtom),
-    tempSelectedIds: selectStore.get(_internalTempSelectedIdsAtom),
-    selectNodeId: selectStore.get(_internalSelectNodeIdAtom),
-  });
-};
+export const debugSelectStore = () => {};
 
 // Initialize the store with empty arrays
 selectStore.set(_internalSelectedIdsAtom, []);
@@ -177,9 +156,7 @@ selectStore.set(_internalTempSelectedIdsAtom, []);
 selectStore.set(_internalSelectNodeIdAtom, null);
 
 // Setup a listener for selection changes
-selectStore.sub(_internalSelectedIdsAtom, () => {
-  console.log("Selection changed:", selectStore.get(_internalSelectedIdsAtom));
-});
+selectStore.sub(_internalSelectedIdsAtom, () => {});
 
 export const selectionCountAtom = selectAtom(
   _internalSelectedIdsAtom,

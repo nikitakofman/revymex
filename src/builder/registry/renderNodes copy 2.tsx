@@ -17,35 +17,13 @@ import {
   useDynamicModeNodeId,
 } from "../context/atoms/dynamic-store";
 import { canvasOps } from "../context/atoms/canvas-interaction-store";
-import {
-  NodeId,
-  nodeStore,
-  nodeIdsAtom,
-  useGetNodeBasics,
-  useGetNodeStyle,
-  useGetNodeFlags,
-  useGetNodeParent,
-  useGetNodeSharedInfo,
-  useGetNodeDynamicInfo,
-  useGetNodeChildren,
-  initNodeStateFromInitialState,
-} from "../context/atoms/node-store";
-import { nodeInitialState } from "../reducer/state";
 
 interface RenderNodesProps {
   filter: "inViewport" | "outOfViewport" | "dynamicMode";
 }
 
 export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
-  // Get getter functions (non-reactive)
-  const getNodeBasics = useGetNodeBasics();
-  const getNodeStyle = useGetNodeStyle();
-  const getNodeFlags = useGetNodeFlags();
-  const getNodeParent = useGetNodeParent();
-  const getNodeChildren = useGetNodeChildren();
-  const getNodeSharedInfo = useGetNodeSharedInfo();
-  const getNodeDynamicInfo = useGetNodeDynamicInfo();
-
+  const { nodeState } = useBuilder();
   const getIsDragging = useGetIsDragging();
   const getDraggedNode = useGetDraggedNode();
   const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
@@ -56,45 +34,11 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
   console.log(`Render Nodes re-rendering`, new Date().getTime());
 
-  // Get all node IDs directly from store
-  const nodeIds = nodeStore.get(nodeIdsAtom);
-
-  // Create nodes array from IDs
-  const nodes = nodeIds.map((id) => {
-    const basics = getNodeBasics(id);
-    const style = getNodeStyle(id);
-    const flags = getNodeFlags(id);
-    const parentId = getNodeParent(id);
-    const sharedInfo = getNodeSharedInfo(id);
-    const dynamicInfo = getNodeDynamicInfo(id);
-
-    return {
-      id: basics.id,
-      type: basics.type,
-      customName: basics.customName,
-      style,
-      parentId,
-      sharedId: sharedInfo.sharedId,
-      dynamicViewportId: dynamicInfo.dynamicViewportId,
-      dynamicFamilyId: dynamicInfo.dynamicFamilyId,
-      dynamicParentId: dynamicInfo.dynamicParentId,
-      dynamicConnections: dynamicInfo.dynamicConnections,
-      dynamicPosition: dynamicInfo.dynamicPosition,
-      originalParentId: dynamicInfo.originalParentId,
-      originalState: dynamicInfo.originalState,
-      isViewport: flags.isViewport,
-      viewportWidth: flags.viewportWidth,
-      isVariant: flags.isVariant,
-      isDynamic: flags.isDynamic,
-      isLocked: flags.isLocked,
-      isAbsoluteInFrame: flags.isAbsoluteInFrame,
-      inViewport: flags.inViewport,
-    };
-  });
-
   // Find the active viewport node to get its width
   const activeViewport = activeViewportId
-    ? nodes.find((node) => node.isViewport && node.id === activeViewportId)
+    ? nodeState.nodes.find(
+        (node) => node.isViewport && node.id === activeViewportId
+      )
     : null;
 
   // Get the viewport width (or default to desktop 1440px if not found)
@@ -102,7 +46,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
 
   // Pass the active viewport to getFilteredNodes
   const viewportFilteredNodes = getFilteredNodes(
-    nodes,
+    nodeState.nodes,
     filter,
     dynamicModeNodeId,
     activeViewportId
@@ -242,7 +186,7 @@ export const RenderNodes: React.FC<RenderNodesProps> = ({ filter }) => {
       switch (node.type) {
         case "frame": {
           // Only include visible children
-          const children = nodes.filter(
+          const children = nodeState.nodes.filter(
             (child) =>
               child.parentId === node.id && child.style.display !== "none"
           );

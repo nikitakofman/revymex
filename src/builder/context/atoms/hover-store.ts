@@ -21,13 +21,7 @@ export const hoverNodeIdAtom = atom((get) => get(_internalHoverNodeIdAtom));
 // Create a singleton instance of the hover operations
 const hoverOperations = {
   setHoverNodeId: (nodeId: string | null) => {
-    console.log(`setHoverNodeId called with: ${nodeId}`);
     hoverStore.set(_internalHoverNodeIdAtom, nodeId);
-    console.log(
-      `Hover store updated. New value: ${hoverStore.get(
-        _internalHoverNodeIdAtom
-      )}`
-    );
   },
   getHoverNodeId: () => {
     return hoverStore.get(_internalHoverNodeIdAtom);
