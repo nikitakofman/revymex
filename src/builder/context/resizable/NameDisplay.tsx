@@ -1,6 +1,5 @@
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import React, { useRef, useState } from "react";
-import { useBuilder, useBuilderDynamic } from "../builderState";
+import { useBuilderDynamic } from "../builderState";
 import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
 import { useDragStart } from "../dnd/useDragStart";
 import { selectOps } from "../atoms/select-store";
@@ -11,10 +10,28 @@ import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
 } from "../atoms/dynamic-store";
+import {
+  useNodeFlags,
+  useNodeParent,
+  useNodeBasics,
+  useGetNode,
+  useNodeStyle,
+  useNodeState,
+} from "../atoms/node-store";
 
-const NameDisplay = ({ node }: { node: Node }) => {
+const NameDisplay = ({ nodeId }: { nodeId: string }) => {
   const { nodeState } = useBuilderDynamic();
   const handleDragStart = useDragStart();
+
+  // Get node data directly from atoms
+  const flags = useNodeFlags(nodeId);
+  const { isViewport, isDynamic, isVariant, inViewport } = flags;
+  const parentId = useNodeParent(nodeId);
+  const basics = useNodeBasics(nodeId);
+  const { type, customName } = basics;
+
+  // Get a full node builder for compatibility with drag functions
+  const getNode = useGetNode();
 
   // Use atoms for state
   const transform = useTransform();
@@ -28,31 +45,27 @@ const NameDisplay = ({ node }: { node: Node }) => {
   const mouseDownRef = useRef({ x: 0, y: 0, time: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
-  // Get the full node data
-  const fullNode = nodeState.nodes.find((nodes) => node.id === nodes.id);
-
   // Get active viewport in dynamic mode
   const activeViewport = nodeState.nodes.find(
-    (nodes) => nodes.id === activeViewportInDynamicMode
+    (node) => node.id === activeViewportInDynamicMode
   );
 
   // Early returns for nodes we don't want to display names for
-  if (node.isViewport) return null;
-  if (isDraggingFromStore) return null; // Changed this line only
+  if (!isViewport) return null;
+  if (isDraggingFromStore) return null;
 
   // In normal mode (not dynamic mode), don't show names for nodes in viewports
   if (!dynamicModeNodeId) {
     // Check if this node is inside a viewport
-    const isInsideViewport = node.inViewport || !!node.parentId;
+    const isInsideViewport = inViewport || !!parentId;
     if (isInsideViewport) return null;
   }
 
   // Changed: Now we're only filtering out non-top-level nodes in dynamic mode
-  if (dynamicModeNodeId && node.parentId !== null && !node.isDynamic)
-    return null;
+  if (dynamicModeNodeId && parentId !== null && !isDynamic) return null;
 
   // Determine name to display - always start with custom name or type
-  let nameToDisplay = node.customName || node.type;
+  let nameToDisplay = customName || type;
 
   // Get the viewport name for appending to the display
   const viewportName =
@@ -66,8 +79,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
       : "");
 
   // Check if this is a base dynamic node or a variant
-  const isBaseDynamicNode = node.isDynamic;
-  const isVariant = node.isVariant;
+  const isBaseDynamicNode = isDynamic;
 
   // Check if this should show the viewport suffix
   // We only want to show viewport suffix for:
@@ -108,6 +120,9 @@ const NameDisplay = ({ node }: { node: Node }) => {
       if (distance > 5 && !isDragging) {
         setIsDragging(true);
 
+        // Build a node for drag operation
+        const node = getNode(nodeId);
+
         // Start the drag operation
         handleDragStart(e as any, undefined, node);
 
@@ -124,7 +139,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
         const timeDiff = Date.now() - mouseDownRef.current.time;
         if (timeDiff < 300) {
           // This is a click - select the node
-          setSelectedIds([node.id]);
+          setSelectedIds([nodeId]);
         }
       }
 
@@ -156,7 +171,7 @@ const NameDisplay = ({ node }: { node: Node }) => {
       }}
       onMouseDown={handleMouseDown}
       onContextMenu={(e) =>
-        contextMenuOps.setContextMenu(e.clientX, e.clientY, node.id, true)
+        contextMenuOps.setContextMenu(e.clientX, e.clientY, nodeId, true)
       }
     >
       {/* Show Crown icon for base dynamic nodes */}

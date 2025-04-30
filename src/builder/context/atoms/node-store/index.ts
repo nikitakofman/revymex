@@ -146,6 +146,21 @@ export const nodeFlagsAtom = atomFamily((id: NodeId) =>
   })
 );
 
+export function getCurrentNodes() {
+  const nodeState = nodeStore.get(nodeStateAtom);
+  return nodeState.nodes;
+}
+
+/**
+ * Get a subset of the node state for use in drag operations
+ * Avoids passing the entire node state when only nodes are needed
+ */
+export function getNodeStateForDrag() {
+  return {
+    nodes: getCurrentNodes(),
+  };
+}
+
 // Atom family for sync flags
 export const nodeSyncFlagsAtom = atomFamily((id: NodeId) =>
   atom<NodeSyncFlags>({
@@ -309,6 +324,38 @@ export const nodesInViewportAtom = atomFamily((viewportId: NodeId) =>
   })
 );
 
+// Atom for full node state - useful for debugging
+export const nodeStateAtom = atom((get) => {
+  const nodeIds = get(nodeIdsAtom);
+  const nodes = [];
+
+  for (const id of nodeIds) {
+    const basics = get(nodeBasicsAtom(id));
+    const style = get(nodeStyleAtom(id));
+    const flags = get(nodeFlagsAtom(id));
+    const parentId = get(nodeParentAtom(id));
+    const sharedInfo = get(nodeSharedInfoAtom(id));
+    const dynamicInfo = get(nodeDynamicInfoAtom(id));
+    const variantInfo = get(nodeVariantInfoAtom(id));
+    const syncFlags = get(nodeSyncFlagsAtom(id));
+
+    nodes.push({
+      ...basics,
+      style,
+      ...flags,
+      parentId,
+      ...sharedInfo,
+      ...dynamicInfo,
+      ...variantInfo,
+      ...syncFlags,
+    });
+  }
+
+  return {
+    nodes,
+  };
+});
+
 // Batch update utilities
 // ==================================
 
@@ -431,45 +478,51 @@ export const useNodesInViewport = (viewportId: NodeId) => {
   return useAtomValue(nodesInViewportAtom(viewportId), { store: nodeStore });
 };
 
+// Full node state hook - for debugging and compatibility
+export const useNodeState = () => {
+  return useAtomValue(nodeStateAtom, { store: nodeStore });
+};
+
 // Non-reactive getter functions - won't cause re-renders
+// FIXED: These now properly accept a nodeId parameter
 export const useGetNodeBasics = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeBasics => {
     return nodeStore.get(nodeBasicsAtom(id));
   }, []);
 };
 
 export const useGetNodeStyle = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeStyle => {
     return nodeStore.get(nodeStyleAtom(id));
   }, []);
 };
 
 export const useGetNodeFlags = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeFlags => {
     return nodeStore.get(nodeFlagsAtom(id));
   }, []);
 };
 
 export const useGetNodeParent = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeId | null => {
     return nodeStore.get(nodeParentAtom(id));
   }, []);
 };
 
 export const useGetNodeChildren = () => {
-  return useCallback((parentId: NodeId | null) => {
+  return useCallback((parentId: NodeId | null): NodeId[] => {
     return nodeStore.get(nodeChildrenAtom(parentId));
   }, []);
 };
 
 export const useGetNodeIds = () => {
-  return useCallback(() => {
+  return useCallback((): NodeId[] => {
     return nodeStore.get(nodeIdsAtom);
   }, []);
 };
 
 export const useGetChangedNodes = () => {
-  return useCallback(() => {
+  return useCallback((): Set<NodeId> => {
     return nodeStore.get(changedNodesAtom);
   }, []);
 };
@@ -480,36 +533,99 @@ export const useNodeIds = () => {
 
 // Get node shared info (non-reactive)
 export const useGetNodeSharedInfo = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeSharedInfo => {
     return nodeStore.get(nodeSharedInfoAtom(id));
   }, []);
 };
 
 // Get node dynamic info (non-reactive)
 export const useGetNodeDynamicInfo = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeDynamicInfo => {
     return nodeStore.get(nodeDynamicInfoAtom(id));
   }, []);
 };
 
 // Get node variant info (non-reactive)
 export const useGetNodeVariantInfo = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeVariantInfo => {
     return nodeStore.get(nodeVariantInfoAtom(id));
   }, []);
 };
 
 // Get node sync flags (non-reactive)
 export const useGetNodeSyncFlags = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeSyncFlags => {
     return nodeStore.get(nodeSyncFlagsAtom(id));
   }, []);
 };
 
 // Get node dynamic state (non-reactive)
 export const useGetNodeDynamicState = () => {
-  return useCallback((id: NodeId) => {
+  return useCallback((id: NodeId): NodeDynamicState => {
     return nodeStore.get(nodeDynamicStateAtom(id));
+  }, []);
+};
+
+export function useGetNodesForDrag() {
+  const getAllNodes = useGetAllNodes();
+
+  return useCallback(() => {
+    return {
+      nodes: getAllNodes(),
+    };
+  }, [getAllNodes]);
+}
+
+// Get a helper function to build a full node object from separate atoms
+export const useGetNode = () => {
+  return useCallback((id: NodeId) => {
+    const basics = nodeStore.get(nodeBasicsAtom(id));
+    const style = nodeStore.get(nodeStyleAtom(id));
+    const flags = nodeStore.get(nodeFlagsAtom(id));
+    const parentId = nodeStore.get(nodeParentAtom(id));
+    const sharedInfo = nodeStore.get(nodeSharedInfoAtom(id));
+    const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(id));
+    const variantInfo = nodeStore.get(nodeVariantInfoAtom(id));
+    const syncFlags = nodeStore.get(nodeSyncFlagsAtom(id));
+
+    return {
+      ...basics,
+      style,
+      ...flags,
+      parentId,
+      ...sharedInfo,
+      ...dynamicInfo,
+      ...variantInfo,
+      ...syncFlags,
+    };
+  }, []);
+};
+
+// Get all nodes (useful for compatibility)
+export const useGetAllNodes = () => {
+  return useCallback(() => {
+    const nodeIds = nodeStore.get(nodeIdsAtom);
+    return nodeIds.map((id) => {
+      const basics = nodeStore.get(nodeBasicsAtom(id));
+      const style = nodeStore.get(nodeStyleAtom(id));
+      const flags = nodeStore.get(nodeFlagsAtom(id));
+      const parentId = nodeStore.get(nodeParentAtom(id));
+      const sharedInfo = nodeStore.get(nodeSharedInfoAtom(id));
+      const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(id));
+      const variantInfo = nodeStore.get(nodeVariantInfoAtom(id));
+      const syncFlags = nodeStore.get(nodeSyncFlagsAtom(id));
+
+      return {
+        ...basics,
+        style,
+        ...flags,
+        parentId,
+        ...sharedInfo,
+        ...dynamicInfo,
+        ...variantInfo,
+        ...syncFlags,
+      };
+    });
   }, []);
 };
 

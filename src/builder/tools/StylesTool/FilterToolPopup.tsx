@@ -2,15 +2,14 @@ import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
 import { ColorPicker } from "../_components/ColorPicker";
 import { ChevronLeft } from "lucide-react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import {
   useGetSelectedIds,
   useSelectedIds,
 } from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
-export const FilterToolPopup = ({ selectedNode, onClose }) => {
-  const { setNodeStyle } = useBuilderDynamic();
-
+export const FilterToolPopup = () => {
+  // Remove the useBuilderDynamic dependency
   const selectedIds = useSelectedIds();
 
   // Filter states
@@ -26,6 +25,13 @@ export const FilterToolPopup = ({ selectedNode, onClose }) => {
   // Color picker state
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Helper function to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    selectedIds.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
 
   // Parse filter string on component mount
   useEffect(() => {
@@ -128,7 +134,7 @@ export const FilterToolPopup = ({ selectedNode, onClose }) => {
 
     // Trim trailing space and apply the filter
     filterValue = filterValue.trim();
-    setNodeStyle({ filter: filterValue }, undefined, true);
+    updateStyleForSelectedNodes({ filter: filterValue });
   };
 
   // Update filters when any property changes

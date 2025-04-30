@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder, useBuilderDynamic, useBuilderRefs } from "../builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic, useBuilderRefs } from "../builderState";
 import { Zap } from "lucide-react";
 import {
   useNodeSelected,
@@ -11,11 +10,37 @@ import {
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
 import { modalOps, useConnectionTypeModal } from "../atoms/modal-store";
 import { useGetTransform } from "../atoms/canvas-interaction-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeBasics,
+  useNodeDynamicInfo,
+  useNodeSharedInfo,
+  useNodeFlags,
+  useGetNode,
+} from "../atoms/node-store";
 
 export const ConnectionHandle: React.FC<{
-  node: Node;
-}> = ({ node }) => {
-  const { nodeState } = useBuilderDynamic;
+  nodeId: NodeId;
+}> = ({ nodeId }) => {
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const basics = useNodeBasics(nodeId);
+  const { type } = basics;
+
+  // Get node flags (contains isDynamic and isVariant)
+  const flags = useNodeFlags(nodeId);
+  const { isDynamic = false, isVariant = false } = flags;
+
+  // Get dynamic info from atoms
+  const dynamicInfo = useNodeDynamicInfo(nodeId);
+  const { dynamicParentId = null, dynamicConnections = [] } = dynamicInfo || {};
+
+  // Get shared info from atoms
+  const sharedInfo = useNodeSharedInfo(nodeId);
+  const { sharedId = null } = sharedInfo || {};
+
+  const { nodeState } = useBuilderDynamic();
   const { contentRef } = useBuilderRefs();
 
   // Get the transform getter directly in the component
@@ -26,7 +51,7 @@ export const ConnectionHandle: React.FC<{
   const connectionTypeModal = useConnectionTypeModal();
 
   // Replace global selection array subscription with node-specific selection and imperative getter
-  const isNodeSelected = useNodeSelected(node.id);
+  const isNodeSelected = useNodeSelected(nodeId);
   const getSelectedIds = useGetSelectedIds();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -58,13 +83,13 @@ export const ConnectionHandle: React.FC<{
 
   // Find the topmost parent of a node in the dynamic system
   const findTopmostParent = useCallback(
-    (nodeId: string | number): string | number => {
-      const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
-      if (!targetNode) return nodeId;
+    (targetNodeId: string | number): string | number => {
+      const targetNode = nodeState.nodes.find((n) => n.id === targetNodeId);
+      if (!targetNode) return targetNodeId;
 
       // FIXED: If this node doesn't have a dynamicFamilyId, it should be directly targeted without redirection
       if (!targetNode.dynamicFamilyId) {
-        return nodeId;
+        return targetNodeId;
       }
 
       // ADDED FOR BASE NODE: If this is a direct child of a base node, return the base node
@@ -88,12 +113,12 @@ export const ConnectionHandle: React.FC<{
       }
 
       // If this is the main dynamic node or has no parent, it's already the top
-      if (nodeId === dynamicModeNodeId || !targetNode.parentId) {
-        return nodeId;
+      if (targetNodeId === dynamicModeNodeId || !targetNode.parentId) {
+        return targetNodeId;
       }
 
       // Start traversing upward
-      let currentId = nodeId;
+      let currentId = targetNodeId;
       let currentNode = targetNode;
 
       while (currentNode.parentId) {
@@ -121,9 +146,9 @@ export const ConnectionHandle: React.FC<{
 
   // Get all ancestor IDs of a node
   const getAncestorIds = useCallback(
-    (nodeId: string | number): (string | number)[] => {
+    (targetNodeId: string | number): (string | number)[] => {
       const ancestors: (string | number)[] = [];
-      let currentNode = nodeState.nodes.find((n) => n.id === nodeId);
+      let currentNode = nodeState.nodes.find((n) => n.id === targetNodeId);
 
       while (currentNode && currentNode.parentId) {
         ancestors.push(currentNode.parentId);
@@ -185,8 +210,8 @@ export const ConnectionHandle: React.FC<{
   // Checks if the node should display the connection handle
   const shouldShowHandle = useCallback(() => {
     // Original checks - these still work for desktop
-    if (node.id === dynamicModeNodeId) return true;
-    if (node.dynamicParentId === dynamicModeNodeId) return true;
+    if (nodeId === dynamicModeNodeId) return true;
+    if (dynamicParentId === dynamicModeNodeId) return true;
 
     // NEW: Check for responsive counterparts in dynamic mode
     if (dynamicModeNodeId) {
@@ -196,16 +221,16 @@ export const ConnectionHandle: React.FC<{
       if (
         mainNode &&
         mainNode.sharedId &&
-        node.sharedId === mainNode.sharedId &&
-        node.isDynamic
+        sharedId === mainNode.sharedId &&
+        isDynamic
       ) {
         return true;
       }
 
       // If this is a variant of a responsive counterpart
-      if (node.dynamicParentId) {
+      if (dynamicParentId) {
         const parentNode = nodeState.nodes.find(
-          (n) => n.id === node.dynamicParentId
+          (n) => n.id === dynamicParentId
         );
         if (
           parentNode &&
@@ -218,29 +243,36 @@ export const ConnectionHandle: React.FC<{
     }
 
     // Also check if this node has any connections
-    if (node.dynamicConnections && node.dynamicConnections.length > 0)
-      return true;
+    if (dynamicConnections && dynamicConnections.length > 0) return true;
 
     return false;
-  }, [node, dynamicModeNodeId, nodeState.nodes]);
+  }, [
+    nodeId,
+    dynamicParentId,
+    sharedId,
+    isDynamic,
+    dynamicConnections,
+    dynamicModeNodeId,
+    nodeState.nodes,
+  ]);
 
   // Ensure the source node stays selected when showing connection modal
   useEffect(() => {
     // If we have a connection modal showing and the current node is the source
     if (
       connectionTypeModal.show &&
-      connectionTypeModal.sourceId === node.id &&
+      connectionTypeModal.sourceId === nodeId &&
       !isNodeSelected
     ) {
       // Re-select this node to ensure it stays selected
-      selectOps.selectNode(node.id);
+      selectOps.selectNode(nodeId);
     }
-  }, [connectionTypeModal, node.id, isNodeSelected]);
+  }, [connectionTypeModal, nodeId, isNodeSelected]);
 
   // Helper function to check if a node has a dynamicFamilyId
   const hasDynamicFamilyId = useCallback(
-    (nodeId: string | number): boolean => {
-      const targetNode = nodeState.nodes.find((n) => n.id === nodeId);
+    (targetNodeId: string | number): boolean => {
+      const targetNode = nodeState.nodes.find((n) => n.id === targetNodeId);
       return !!targetNode?.dynamicFamilyId;
     },
     [nodeState.nodes]
@@ -254,8 +286,8 @@ export const ConnectionHandle: React.FC<{
     const selectedIds = getSelectedIds();
 
     // Make sure the source node is selected before dragging
-    if (!selectedIds.includes(node.id)) {
-      selectOps.selectNode(node.id);
+    if (!selectedIds.includes(nodeId)) {
+      selectOps.selectNode(nodeId);
     }
 
     // Get the cable icon's center position in screen coordinates
@@ -271,7 +303,7 @@ export const ConnectionHandle: React.FC<{
     setEndPoint({ x: e.clientX, y: e.clientY });
 
     // Get all ancestors of the current node - we can't connect to these
-    const sourceAncestors = getAncestorIds(node.id);
+    const sourceAncestors = getAncestorIds(nodeId);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       // Set the current end point of the dragging line
@@ -293,7 +325,7 @@ export const ConnectionHandle: React.FC<{
 
           if (
             targetId &&
-            targetId !== node.id &&
+            targetId !== nodeId &&
             !sourceAncestors.includes(targetId)
           ) {
             // CRITICAL FIX: Check if this is a node that should be ignored
@@ -350,12 +382,12 @@ export const ConnectionHandle: React.FC<{
         console.log("Showing modal for target:", currentHoverTarget.id);
 
         // Ensure our source node remains selected
-        if (!currentSelectedIds.includes(node.id)) {
-          selectOps.selectNode(node.id);
+        if (!currentSelectedIds.includes(nodeId)) {
+          selectOps.selectNode(nodeId);
         }
 
         // Show the connection type modal using our new dynamic-store
-        modalOps.showConnectionTypeModal(node.id, currentHoverTarget.id, {
+        modalOps.showConnectionTypeModal(nodeId, currentHoverTarget.id, {
           x: upEvent.clientX,
           y: upEvent.clientY,
         });
@@ -373,7 +405,7 @@ export const ConnectionHandle: React.FC<{
 
             if (
               targetId &&
-              targetId !== node.id &&
+              targetId !== nodeId &&
               !sourceAncestors.includes(targetId)
             ) {
               // CRITICAL FIX: Skip nodes without dynamicFamilyId - they cannot be targets
@@ -400,12 +432,12 @@ export const ConnectionHandle: React.FC<{
               );
 
               // Ensure our source node remains selected
-              if (!currentSelectedIds.includes(node.id)) {
-                selectOps.selectNode(node.id);
+              if (!currentSelectedIds.includes(nodeId)) {
+                selectOps.selectNode(nodeId);
               }
 
               // Show the connection type modal using our new dynamic-store
-              modalOps.showConnectionTypeModal(node.id, topmostParentId, {
+              modalOps.showConnectionTypeModal(nodeId, topmostParentId, {
                 x: upEvent.clientX,
                 y: upEvent.clientY,
               });

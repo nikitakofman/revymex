@@ -13,6 +13,7 @@ export const nodeInitialState: NodeState = {
       id: "viewport-1440",
       type: "frame",
       isViewport: true,
+      sharedId: "desfaultSharedIdview8",
       viewportName: "Desktop",
       viewportWidth: 1440,
       style: {
@@ -36,6 +37,7 @@ export const nodeInitialState: NodeState = {
       id: "viewport-768",
       type: "frame",
       isViewport: true,
+      sharedId: "desfaultSharedIdview8",
       viewportWidth: 768,
       style: {
         width: "768px",
@@ -59,6 +61,7 @@ export const nodeInitialState: NodeState = {
       id: "viewport-375",
       type: "frame",
       isViewport: true,
+      sharedId: "desfaultSharedIdview8",
       viewportWidth: 375,
       style: {
         width: "375px",

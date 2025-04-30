@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
 import { ColorPicker } from "../_components/ColorPicker";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronLeft } from "lucide-react";
 import { ToolbarSwitch } from "../_components/ToolbarSwitch";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 export const ShadowToolPopup = () => {
-  const { setNodeStyle } = useBuilderDynamic();
+  // Remove the useBuilderDynamic dependency
   const [x, setX] = useState(0);
   const [y, setY] = useState(4);
   const [blur, setBlur] = useState(8);
@@ -16,18 +19,25 @@ export const ShadowToolPopup = () => {
   const [inset, setInset] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
-  const currentSelectedIds = useGetSelectedIds();
+  // Use both reactive and imperative hooks for selected IDs
+  const getSelectedIds = useGetSelectedIds();
+
+  // Helper function to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    const ids = getSelectedIds();
+    ids.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
 
   // This effect runs when the component mounts or when selection changes
   useEffect(() => {
-    const selectedIds = currentSelectedIds();
+    const ids = getSelectedIds();
 
-    if (!selectedIds.length) return;
+    if (!ids.length) return;
 
     // Get the selected node's style
-    const element = document.querySelector(
-      `[data-node-id="${selectedIds[0]}"]`
-    );
+    const element = document.querySelector(`[data-node-id="${ids[0]}"]`);
     if (!element) return;
 
     // Use the inline style directly instead of computed style
@@ -67,7 +77,7 @@ export const ShadowToolPopup = () => {
 
     // Check for inset
     setInset(inlineBoxShadow.includes("inset"));
-  }, [currentSelectedIds]);
+  }, [getSelectedIds]);
 
   // Apply the complete shadow
   const applyShadow = () => {
@@ -77,7 +87,7 @@ export const ShadowToolPopup = () => {
     const shadowValue = `${insetText}${x}px ${y}px ${blur}px ${spread}px ${color}`;
 
     console.log("Applying shadow:", shadowValue);
-    setNodeStyle({ boxShadow: shadowValue }, undefined, true);
+    updateStyleForSelectedNodes({ boxShadow: shadowValue });
   };
 
   // Update shadow when any property changes

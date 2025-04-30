@@ -305,148 +305,223 @@ export const Frame = ({
     const isDragging = getIsDragging();
 
     return (
-      // <ResizableWrapper nodeId={nodeId} isDraggable={!isViewport}>
-      <div
-        className={`${
-          isDropTarget ? "dropTarget border-4 border-blue-900" : ""
-        } relative`}
-        style={{
-          ...style,
-          minHeight: "100vh",
-          pointerEvents: "auto",
-        }}
-        data-node-id={nodeId}
-        data-node-type="frame"
-        data-viewport="true"
-        onMouseDown={(e) => {
-          // Only prevent direct clicks on the viewport background
-          if (e.target === e.currentTarget) {
+      <ResizableWrapper nodeId={nodeId} isDraggable={!isViewport}>
+        <div
+          className={`${
+            isDropTarget ? "dropTarget border-4 border-blue-900" : ""
+          } relative`}
+          style={{
+            ...style,
+            minHeight: "100vh",
+            pointerEvents: "auto",
+          }}
+          data-node-id={nodeId}
+          data-node-type="frame"
+          data-viewport="true"
+          onMouseDown={(e) => {
+            // Only prevent direct clicks on the viewport background
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+            }
+          }}
+          onMouseOver={(e) => {
             e.stopPropagation();
-          }
-        }}
-        onMouseOver={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
-      >
-        {/* Viewport Header rendered in a portal but stays properly positioned */}
-        {contentRef.current &&
-          !isDragging &&
-          position &&
-          createPortal(
+            e.preventDefault();
+          }}
+        >
+          {/* Viewport Header rendered in a portal but stays properly positioned */}
+          {contentRef.current &&
+            !isDragging &&
+            position &&
+            createPortal(
+              <div
+                data-viewport-header="true"
+                data-viewport-id={nodeId}
+                className={`absolute viewport-header overflow-hidden select-none bg-[var(--control-bg)] z-[9999] flex items-center ${
+                  isHovered ? "hover-highlight" : ""
+                }`}
+                style={{
+                  // Position relative to the viewport with the same transform as the canvas
+                  position: "absolute",
+                  transformOrigin: "top left",
+                  // Position is set in the untransformed coordinate space
+                  left: style.left,
+                  top:
+                    parseFloat(String(style.top)) -
+                    scaledHeaderHeight -
+                    scaledHeaderMargin,
+                  width: parseFloat(String(style.width)),
+                  height: `${scaledHeaderHeight}px`,
+                  boxShadow: "var(--shadow-sm)",
+                  border: `${1 / transform.scale}px solid var(--border-light)`,
+                  padding: `0 ${8 / transform.scale}px`,
+                  borderRadius: `${8 / transform.scale}px`,
+                  minHeight: `${Math.min(36, 24 / transform.scale)}px`,
+                  maxHeight: `${36 / transform.scale}px`,
+                  pointerEvents: "auto",
+                }}
+                onMouseOver={(e) => {
+                  e.stopPropagation();
+
+                  // Get current selected IDs
+                  const currentSelectedIds = getSelectedIds();
+
+                  if (!currentSelectedIds.includes(nodeId)) {
+                    requestAnimationFrame(() => {
+                      hoverOps.setHoverNodeId(nodeId);
+                    });
+                  }
+                }}
+                onMouseOut={(e) => {
+                  e.stopPropagation();
+
+                  // Get current selected IDs
+                  const currentSelectedIds = getSelectedIds();
+
+                  if (!currentSelectedIds.includes(nodeId) && isHovered) {
+                    requestAnimationFrame(() => {
+                      hoverOps.setHoverNodeId(null);
+                    });
+                  }
+                }}
+                onClick={handleHeaderClick}
+                onMouseDown={(e) => {
+                  if (isLocked) {
+                    return;
+                  } else {
+                    handleHeaderMouseDown(e);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  contextMenuOps.setContextMenu(
+                    e.clientX,
+                    e.clientY,
+                    nodeId,
+                    true
+                  );
+                }}
+              >
+                <div className="flex pointer-events-none items-center justify-between w-full">
+                  <div
+                    className="flex items-center gap-1 text-[var(--text-secondary)]"
+                    style={{
+                      padding: `${6 / transform.scale}px ${
+                        8 / transform.scale
+                      }px`,
+                      fontSize: `${10 / transform.scale}px`,
+                    }}
+                  >
+                    {viewportName || nodeId}
+                  </div>
+
+                  {/* Single ellipsis button - only shown when scale >= 0.15 */}
+                  {transform.scale >= 0.15 && (
+                    <div className="flex items-center">
+                      <button
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const buttonRect =
+                            e.currentTarget.getBoundingClientRect();
+                          contextMenuOps.showViewportContextMenu(nodeId, {
+                            x: buttonRect.right,
+                            y: buttonRect.bottom,
+                          });
+                        }}
+                        className="flex items-center justify-center hover:bg-[var(--accent)] text-white transition-colors duration-150"
+                        style={{
+                          width: `${24 / transform.scale}px`,
+                          height: `${24 / transform.scale}px`,
+                          borderRadius: `${6 / transform.scale}px`,
+                          pointerEvents: "auto",
+                        }}
+                      >
+                        <Ellipsis size={14 / transform.scale} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>,
+              contentRef.current
+            )}
+
+          {/* Background media wrapper */}
+          {(style.backgroundImage || style.backgroundVideo) && (
             <div
-              data-viewport-header="true"
-              data-viewport-id={nodeId}
-              className={`absolute viewport-header overflow-hidden select-none bg-[var(--control-bg)] z-[9999] flex items-center ${
-                isHovered ? "hover-highlight" : ""
-              }`}
+              data-background-wrapper="true"
               style={{
-                // Position relative to the viewport with the same transform as the canvas
                 position: "absolute",
-                transformOrigin: "top left",
-                // Position is set in the untransformed coordinate space
-                left: style.left,
-                top:
-                  parseFloat(String(style.top)) -
-                  scaledHeaderHeight -
-                  scaledHeaderMargin,
-                width: parseFloat(String(style.width)),
-                height: `${scaledHeaderHeight}px`,
-                boxShadow: "var(--shadow-sm)",
-                border: `${1 / transform.scale}px solid var(--border-light)`,
-                padding: `0 ${8 / transform.scale}px`,
-                borderRadius: `${8 / transform.scale}px`,
-                minHeight: `${Math.min(36, 24 / transform.scale)}px`,
-                maxHeight: `${36 / transform.scale}px`,
-                pointerEvents: "auto",
-              }}
-              onMouseOver={(e) => {
-                e.stopPropagation();
-
-                // Get current selected IDs
-                const currentSelectedIds = getSelectedIds();
-
-                if (!currentSelectedIds.includes(nodeId)) {
-                  requestAnimationFrame(() => {
-                    hoverOps.setHoverNodeId(nodeId);
-                  });
-                }
-              }}
-              onMouseOut={(e) => {
-                e.stopPropagation();
-
-                // Get current selected IDs
-                const currentSelectedIds = getSelectedIds();
-
-                if (!currentSelectedIds.includes(nodeId) && isHovered) {
-                  requestAnimationFrame(() => {
-                    hoverOps.setHoverNodeId(null);
-                  });
-                }
-              }}
-              onClick={handleHeaderClick}
-              onMouseDown={(e) => {
-                if (isLocked) {
-                  return;
-                } else {
-                  handleHeaderMouseDown(e);
-                }
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                contextMenuOps.setContextMenu(
-                  e.clientX,
-                  e.clientY,
-                  nodeId,
-                  true
-                );
+                inset: 0,
+                borderRadius: "inherit",
+                overflow: "hidden",
+                zIndex: 0,
+                pointerEvents: "none",
               }}
             >
-              <div className="flex pointer-events-none items-center justify-between w-full">
-                <div
-                  className="flex items-center gap-1 text-[var(--text-secondary)]"
+              {style.backgroundVideo ? (
+                <video
                   style={{
-                    padding: `${6 / transform.scale}px ${
-                      8 / transform.scale
-                    }px`,
-                    fontSize: `${10 / transform.scale}px`,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: style.objectFit || "cover",
+                    objectPosition: style.objectPosition,
+                    borderRadius: "inherit",
+                    pointerEvents: "none",
                   }}
-                >
-                  {viewportName || nodeId}
-                </div>
-
-                {/* Single ellipsis button - only shown when scale >= 0.15 */}
-                {transform.scale >= 0.15 && (
-                  <div className="flex items-center">
-                    <button
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const buttonRect =
-                          e.currentTarget.getBoundingClientRect();
-                        contextMenuOps.showViewportContextMenu(nodeId, {
-                          x: buttonRect.right,
-                          y: buttonRect.bottom,
-                        });
-                      }}
-                      className="flex items-center justify-center hover:bg-[var(--accent)] text-white transition-colors duration-150"
-                      style={{
-                        width: `${24 / transform.scale}px`,
-                        height: `${24 / transform.scale}px`,
-                        borderRadius: `${6 / transform.scale}px`,
-                        pointerEvents: "auto",
-                      }}
-                    >
-                      <Ellipsis size={14 / transform.scale} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>,
-            contentRef.current
+                  src={style.backgroundVideo}
+                  autoPlay={false}
+                  muted
+                  loop
+                  playsInline
+                />
+              ) : style.backgroundImage ? (
+                <Image
+                  fill={false}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: style.objectFit || "cover",
+                    objectPosition: style.objectPosition,
+                    borderRadius: "inherit",
+                    pointerEvents: "none",
+                  }}
+                  src={style.backgroundImage}
+                  alt=""
+                />
+              ) : null}
+            </div>
           )}
 
+          {/* Render children directly in the viewport to preserve styling inheritance */}
+          {children}
+        </div>
+      </ResizableWrapper>
+    );
+  }
+
+  // Create connect props based on nodeId
+  const connectProps = connect(nodeId);
+
+  return (
+    <ResizableWrapper nodeId={nodeId} isDraggable={!isViewport}>
+      <div
+        data-node-id={nodeId}
+        data-node-type="frame"
+        data-is-viewport={isViewport ? "true" : "false"}
+        data-is-variant={isVariant ? "true" : "false"}
+        data-is-dynamic={isDynamic ? "true" : "false"}
+        className={`${isSelected ? "outline outline-2 outline-blue-500" : ""} ${
+          isHovered ? "hover-highlight" : ""
+        }`}
+        style={{
+          ...style,
+          cursor: getIsDragging() ? "grabbing" : "auto",
+        }}
+        onContextMenu={connectProps.onContextMenu}
+        onMouseDown={connectProps.onMouseDown}
+      >
         {/* Background media wrapper */}
         {(style.backgroundImage || style.backgroundVideo) && (
           <div
@@ -465,7 +540,7 @@ export const Frame = ({
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: style.objectFit || "cover",
+                  objectFit: style.objectFit,
                   objectPosition: style.objectPosition,
                   borderRadius: "inherit",
                   pointerEvents: "none",
@@ -474,15 +549,14 @@ export const Frame = ({
                 autoPlay={false}
                 muted
                 loop
-                playsInline
               />
             ) : style.backgroundImage ? (
               <Image
-                fill={false}
+                fill={true}
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: style.objectFit || "cover",
+                  objectFit: style.objectFit,
                   objectPosition: style.objectPosition,
                   borderRadius: "inherit",
                   pointerEvents: "none",
@@ -493,88 +567,14 @@ export const Frame = ({
             ) : null}
           </div>
         )}
-
-        {/* Render children directly in the viewport to preserve styling inheritance */}
+        {isDropTarget && (
+          <div
+            className="absolute inset-0 dropTarget rounded-[inherit] z-10"
+            style={{ borderRadius: style.borderRadius }}
+          />
+        )}
         {children}
       </div>
-      // {/* </ResizableWrapper> */}
-    );
-  }
-
-  // Create connect props based on nodeId
-  const connectProps = connect(nodeId);
-
-  return (
-    // <ResizableWrapper node={node} isDraggable={!isViewport}>
-    <div
-      data-node-id={nodeId}
-      data-node-type="frame"
-      data-is-viewport={isViewport ? "true" : "false"}
-      data-is-variant={isVariant ? "true" : "false"}
-      data-is-dynamic={isDynamic ? "true" : "false"}
-      className={`${isSelected ? "outline outline-2 outline-blue-500" : ""} ${
-        isHovered ? "hover-highlight" : ""
-      }`}
-      style={{
-        ...style,
-        cursor: getIsDragging() ? "grabbing" : "auto",
-      }}
-      onContextMenu={connectProps.onContextMenu}
-      onMouseDown={connectProps.onMouseDown}
-    >
-      {/* Background media wrapper */}
-      {(style.backgroundImage || style.backgroundVideo) && (
-        <div
-          data-background-wrapper="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: "inherit",
-            overflow: "hidden",
-            zIndex: 0,
-            pointerEvents: "none",
-          }}
-        >
-          {style.backgroundVideo ? (
-            <video
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: style.objectFit,
-                objectPosition: style.objectPosition,
-                borderRadius: "inherit",
-                pointerEvents: "none",
-              }}
-              src={style.backgroundVideo}
-              autoPlay={false}
-              muted
-              loop
-            />
-          ) : style.backgroundImage ? (
-            <Image
-              fill={true}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: style.objectFit,
-                objectPosition: style.objectPosition,
-                borderRadius: "inherit",
-                pointerEvents: "none",
-              }}
-              src={style.backgroundImage}
-              alt=""
-            />
-          ) : null}
-        </div>
-      )}
-      {isDropTarget && (
-        <div
-          className="absolute inset-0 dropTarget rounded-[inherit] z-10"
-          style={{ borderRadius: style.borderRadius }}
-        />
-      )}
-      {children}
-    </div>
-    // </ResizableWrapper>
+    </ResizableWrapper>
   );
 };

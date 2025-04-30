@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useBuilder } from "@/builder/context/builderState";
 import { Plus } from "lucide-react";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
 import {
   useNodeSelected,
@@ -13,12 +12,32 @@ import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
 } from "../atoms/dynamic-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeFlags,
+  useNodeDynamicInfo,
+  useGetNode,
+} from "../atoms/node-store";
 
 interface AddVariantsUIProps {
-  node: Node;
+  nodeId: NodeId;
 }
 
-export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
+export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const { isDynamic = false, isVariant = false } = flags;
+
+  // Get dynamic info from atoms
+  const dynamicInfo = useNodeDynamicInfo(nodeId);
+  const { dynamicFamilyId = null, dynamicViewportId = null } =
+    dynamicInfo || {};
+
+  // Get node builder function for topmost parent calculation
+  const getNode = useGetNode();
+
   const { nodeDisp, nodeState } = useBuilder();
 
   // Use imperative getter instead of subscription
@@ -27,7 +46,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
 
   // Use node-specific selection check and imperative getter
-  const isNodeSelected = useNodeSelected(node.id);
+  const isNodeSelected = useNodeSelected(nodeId);
   const getSelectedIds = useGetSelectedIds();
 
   // State for element dimensions and position
@@ -43,20 +62,20 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   // Find the topmost parent node in the dynamic family
   const topmostParent = React.useMemo(() => {
     // If not in dynamic mode, return the current node
-    if (!dynamicModeNodeId) return node;
+    if (!dynamicModeNodeId) return getNode(nodeId);
 
     // Get the dynamic family ID
     const familyNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
     const familyId = familyNode?.dynamicFamilyId;
-    if (!familyId) return node;
+    if (!familyId) return getNode(nodeId);
 
     // First check if current node is already a top-level node in this family
     if (
-      (node.isDynamic || node.isVariant) &&
-      node.dynamicFamilyId === familyId &&
-      !node.parentId
+      (isDynamic || isVariant) &&
+      dynamicFamilyId === familyId &&
+      !nodeState.nodes.find((n) => n.id === nodeId)?.parentId
     ) {
-      return node;
+      return getNode(nodeId);
     }
 
     // Otherwise, find the top-level node for the selected element
@@ -82,14 +101,22 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
 
     // Find which top-level node this element belongs to
     for (const topNode of topLevelNodes) {
-      if (topNode.id === node.id || isDescendantOf(node.id, topNode.id)) {
+      if (topNode.id === nodeId || isDescendantOf(nodeId, topNode.id)) {
         return topNode;
       }
     }
 
     // If no ancestor found, use current node
-    return node;
-  }, [node, nodeState.nodes, dynamicModeNodeId]);
+    return getNode(nodeId);
+  }, [
+    nodeId,
+    nodeState.nodes,
+    dynamicModeNodeId,
+    isDynamic,
+    isVariant,
+    dynamicFamilyId,
+    getNode,
+  ]);
 
   // Function to get element bounding rects for all visible nodes
   const getAllNodeRects = () => {
@@ -393,11 +420,11 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
     if (!isPositionAvailable) return false;
 
     // Only show for nodes that are part of a dynamicFamilyId
-    if (!node.dynamicFamilyId && !topmostParent?.dynamicFamilyId) return false;
+    if (!dynamicFamilyId && !topmostParent?.dynamicFamilyId) return false;
 
     // CRITICAL CHANGE: Only show the button when clicking directly on the topmost parent
     // Check if the current node IS the topmost parent (not a child)
-    if (topmostParent && node.id === topmostParent.id) {
+    if (topmostParent && nodeId === topmostParent.id) {
       // Use the node-specific selection state - prevents re-renders in other components
       return isNodeSelected;
     }
@@ -407,8 +434,8 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
   }, [
     dynamicModeNodeId,
     isPositionAvailable,
-    node.dynamicFamilyId,
-    node.id,
+    dynamicFamilyId,
+    nodeId,
     topmostParent,
     isNodeSelected,
   ]);
@@ -435,7 +462,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ node }) => {
         onClick={handleAddVariant}
         className="bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]  flex items-center justify-center text-white shadow-md"
         style={{
-          borderRadius: node.style.borderRadius,
+          borderRadius: style.borderRadius,
           width: `${elementSize.width}px`,
           height: `${elementSize.height}px`,
           border: `${2 / transform.scale}px solid var(--border-light)`,

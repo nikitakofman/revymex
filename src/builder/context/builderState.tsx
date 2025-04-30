@@ -193,32 +193,50 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     [nodeDisp, currentSelectedIds, getDynamicModeNodeId, nodeState.nodes]
   );
 
-  const dynamicValue: BuilderDynamicContextType = {
-    nodeState,
-    setNodeStyle,
-    nodeDisp,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    operations,
-    clearOperations: useCallback(() => setOperations([]), []),
-    startRecording,
-    stopRecording,
-  };
+  const refsValue = useMemo<BuilderRefsContextType>(
+    () => ({
+      containerRef,
+      contentRef,
+      elementRef,
+      dragDimensionsRef,
+      selectedIdsRef,
+      popupRef,
+      draggingOverCanvasRef,
+      hasLeftViewportRef,
+    }),
+    [] // Empty dependency array - this value never changes
+  );
+
+  // Create memoized dynamic value that only changes when its dependencies change
+  const dynamicValue = useMemo<BuilderDynamicContextType>(
+    () => ({
+      nodeState,
+      setNodeStyle,
+      nodeDisp,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
+      operations,
+      setOperations,
+      startRecording,
+      stopRecording,
+    }),
+    [
+      nodeState,
+      setNodeStyle,
+      nodeDisp,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
+      operations,
+      startRecording,
+      stopRecording,
+    ]
+  );
 
   console.log("builder state re rendering");
-
-  const refsValue: BuilderRefsContextType = {
-    containerRef,
-    contentRef,
-    elementRef,
-    dragDimensionsRef,
-    selectedIdsRef,
-    popupRef,
-    draggingOverCanvasRef,
-    hasLeftViewportRef,
-  };
 
   return (
     <BuilderRefsContext.Provider value={refsValue}>

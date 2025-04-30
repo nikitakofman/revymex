@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolSelect } from "../_components/ToolSelect";
 import { Label } from "../_components/ToolbarAtoms";
-import { Crop, Maximize, MinusCircle } from "lucide-react";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { ImageCropPopup } from "./image-crop";
 import ToolbarButton from "../_components/ToolbarButton";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
+import {} from "@/builder/context/atoms/node-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 export const ImageSettingsControl = ({ selectedNode }) => {
-  const { setNodeStyle } = useBuilderDynamic();
+  // Remove setNodeStyle and use updateNodeStyle directly
   const [imageProps, setImageProps] = useState({
     objectFit: "cover",
     objectPosition: "center",
@@ -19,7 +22,11 @@ export const ImageSettingsControl = ({ selectedNode }) => {
     altText: "",
   });
 
-  const currentSelectedIds = useGetSelectedIds();
+  // Use reactive hook for immediate updates
+  const selectedIds = useSelectedIds();
+  // Keep imperative getter for event handlers
+  const getSelectedIds = useGetSelectedIds();
+
   // State for popup handling
   const [isCropPopupOpen, setIsCropPopupOpen] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
@@ -39,18 +46,24 @@ export const ImageSettingsControl = ({ selectedNode }) => {
     }
   }, [selectedNode]);
 
+  // Helper to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    const ids = getSelectedIds();
+    ids.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
+
   // Handle changes to the image properties
   const handleChange = (property, value) => {
-    const selectedIds = currentSelectedIds();
-    setNodeStyle({ [property]: value }, selectedIds);
+    updateStyleForSelectedNodes({ [property]: value });
     setImageProps((prev) => ({ ...prev, [property]: value }));
   };
 
   const handleAltTextChange = (e) => {
-    const selectedIds = currentSelectedIds();
-
     const value = e.target.value;
-    setNodeStyle({ alt: value, altText: value }, selectedIds);
+    // Update both alt and altText properties for compatibility
+    updateStyleForSelectedNodes({ alt: value, altText: value });
     setImageProps((prev) => ({ ...prev, altText: value }));
   };
 
@@ -98,8 +111,6 @@ export const ImageSettingsControl = ({ selectedNode }) => {
           />
         </div>
 
-        {/* Crop Button */}
-
         <div className="flex items-center justify-between gap-2">
           <Label>Alt Text</Label>
           <input
@@ -121,10 +132,7 @@ export const ImageSettingsControl = ({ selectedNode }) => {
             Crop image
           </ToolbarButton>
         </div>
-        <div
-          ref={cropButtonRef}
-          className="flex items-center justify-between rounded-md transition-colors"
-        >
+        <div className="flex items-center justify-between rounded-md transition-colors">
           <ToolbarButton
             className="cursor-pointer w-full"
             onClick={handleOpenCropPopup}

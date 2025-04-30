@@ -1,13 +1,14 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
 import { canvasOps, useTransform } from "../atoms/canvas-interaction-store";
+import { NodeId, useNodeStyle, useNodeFlags } from "../atoms/node-store";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 interface BorderRadiusHandleProps {
-  node: Node;
-  elementRef: React.RefObject<HTMLDivElement>;
+  nodeId: NodeId;
+  elementRef?: React.RefObject<HTMLDivElement>;
   groupBounds?: {
     top: number;
     left: number;
@@ -18,11 +19,17 @@ interface BorderRadiusHandleProps {
 }
 
 export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
-  node,
+  nodeId,
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const { setNodeStyle, startRecording, stopRecording } = useBuilderDynamic();
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const { isDynamic = false } = flags;
+  const dynamicParentId = flags.dynamicParentId || null;
+
+  const { startRecording, stopRecording } = useBuilderDynamic();
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();
@@ -32,8 +39,8 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
   const isPrimarySelectedNode = useCallback(() => {
     if (!isGroupSelection) return true;
     const selectedIds = getSelectedIds();
-    return selectedIds.length > 0 && node.id === selectedIds[0];
-  }, [isGroupSelection, node.id, getSelectedIds]);
+    return selectedIds.length > 0 && nodeId === selectedIds[0];
+  }, [isGroupSelection, nodeId, getSelectedIds]);
 
   const startPosRef = useRef<number>(0);
   const startRadiusRef = useRef<number>(0);
@@ -67,8 +74,8 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
 
     // Get current radius in pixels
     let currentRadius = 0;
-    if (node.style.borderRadius) {
-      const match = node.style.borderRadius.toString().match(/(\d+)/);
+    if (style.borderRadius) {
+      const match = style.borderRadius.toString().match(/(\d+)/);
       if (match) {
         currentRadius = parseInt(match[1]);
       }
@@ -98,16 +105,18 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
       });
 
       // Apply border radius to all selected nodes if it's a group selection
-      const nodesToUpdate = isGroupSelection ? selectedIds : [node.id];
+      const nodesToUpdate = isGroupSelection ? selectedIds : [nodeId];
 
       if (newRadius === 0) {
-        setNodeStyle({ borderRadius: undefined }, nodesToUpdate, true);
+        // Use updateNodeStyle for each node in the array
+        nodesToUpdate.forEach((id) => {
+          updateNodeStyle(id, { borderRadius: undefined });
+        });
       } else {
-        setNodeStyle(
-          { borderRadius: `${Math.round(newRadius)}px` },
-          nodesToUpdate,
-          true
-        );
+        // Use updateNodeStyle for each node in the array
+        nodesToUpdate.forEach((id) => {
+          updateNodeStyle(id, { borderRadius: `${Math.round(newRadius)}px` });
+        });
       }
     };
 
@@ -159,7 +168,7 @@ export const BorderRadiusHandle: React.FC<BorderRadiusHandleProps> = ({
         height: `${handleSize}px`,
         borderRadius: "50%",
         backgroundColor:
-          node.isDynamic || node.dynamicParentId
+          isDynamic || dynamicParentId
             ? "var(--accent-secondary)"
             : "var(--accent)",
         border: `${borderWidth}px solid white`,

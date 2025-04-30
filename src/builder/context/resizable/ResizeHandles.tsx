@@ -4,7 +4,6 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import {
   applyMatrixToPoint,
   Direction,
@@ -12,13 +11,21 @@ import {
   getHandleCursor,
   matrixToCss,
 } from "../utils";
-import { useBuilder, useBuilderDynamic } from "../builderState";
+import { useBuilderDynamic } from "../builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import {
   useGetTransform,
   useTransform,
 } from "../atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
+import {
+  useNodeStyle,
+  useNodeFlags,
+  useNodeParent,
+  useNodeBasics,
+  useGetNode,
+  NodeId,
+} from "../atoms/node-store";
 
 interface GroupBounds {
   top: number;
@@ -28,7 +35,7 @@ interface GroupBounds {
 }
 
 interface ResizeHandlesProps {
-  node: Node;
+  nodeId: NodeId;
   handleResizeStart: (
     e: React.PointerEvent,
     direction: Direction,
@@ -63,19 +70,27 @@ interface CornerPositions {
    RESIZE HANDLES COMPONENT
 --------------------------------------------*/
 export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
-  node,
+  nodeId,
   handleResizeStart,
   groupBounds,
-  isGroupSelection,
+  isGroupSelection = false,
   targetRef,
 }) => {
-  const { nodeState } = useBuilderDynamic();
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const { isViewport = false, isDynamic = false } = flags;
+  const basics = useNodeBasics(nodeId);
+  const { type } = basics;
 
+  // Get a full node builder for compatibility with utility functions
+  const getNode = useGetNode();
+
+  const { nodeState } = useBuilderDynamic();
   const getTransform = useGetTransform();
+  const transform = useTransform();
 
   const [isInteractive, setIsInteractive] = useState(false);
-
-  // console.log(`Resize Handles re-rendering ${node.id}`, new Date().getTime());
 
   // Use the imperative getter function instead of subscription
   const getSelectedIds = useGetSelectedIds();
@@ -93,8 +108,8 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   }, []);
 
   // Determine if width/height are set to auto
-  const isWidthAuto = node.style.width === "auto";
-  const isHeightAuto = node.style.height === "auto";
+  const isWidthAuto = style.width === "auto";
+  const isHeightAuto = style.height === "auto";
 
   const [cornerPositions, setCornerPositions] =
     useState<CornerPositions | null>(null);
@@ -107,8 +122,8 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   const isPrimarySelectedNode = useCallback(() => {
     if (!isGroupSelection) return true;
     const selectedIds = getSelectedIds();
-    return selectedIds.length > 0 && node.id === selectedIds[0];
-  }, [isGroupSelection, node.id, getSelectedIds]);
+    return selectedIds.length > 0 && nodeId === selectedIds[0];
+  }, [isGroupSelection, nodeId, getSelectedIds]);
 
   // Group selection: only render for the first selected node.
   useLayoutEffect(() => {
@@ -127,6 +142,9 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     }
 
     setElementSize({ width, height });
+
+    // Build a node for the matrix calculation
+    const node = getNode(nodeId);
 
     // Get the full transform matrix for the entire node chain
     const matrix = getFullTransformMatrix(node, nodeState, width, height);
@@ -178,10 +196,11 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     targetRef,
     isGroupSelection,
     getTransform,
-    node,
+    nodeId,
     nodeState,
+    getNode,
     // Including these dependencies ensures we recalculate when any transform changes
-    node.style.transform,
+    style.transform,
   ]);
 
   // Early return conditions using the isPrimarySelectedNode function
@@ -336,7 +355,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
         <>
           {["topLeft", "topRight", "bottomRight", "bottomLeft"].map(
             (direction) => {
-              if (node.isViewport) {
+              if (isViewport) {
                 return null;
               }
 
@@ -360,7 +379,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                       height: `${handleSize}px`,
                       transform: "translate(-50%, -50%)",
                       border: `${1 / getTransform().scale}px solid ${
-                        node.isDynamic || dynamicModeNodeId
+                        isDynamic || dynamicModeNodeId
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
                       }`,
@@ -386,7 +405,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                       width: `${handleSize}px`,
                       height: `${handleSize}px`,
                       border: `${1 / getTransform().scale}px solid ${
-                        node.isDynamic || dynamicModeNodeId
+                        isDynamic || dynamicModeNodeId
                           ? "var(--accent-secondary)"
                           : "var(--accent)"
                       }`,
@@ -423,7 +442,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                   width: `${handleSize}px`,
                   height: `${handleSize}px`,
                   border: `${1 / getTransform().scale}px solid ${
-                    node.isDynamic || dynamicModeNodeId
+                    isDynamic || dynamicModeNodeId
                       ? "var(--accent-secondary)"
                       : "var(--accent)"
                   }`,
@@ -457,7 +476,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
                     border: `${1 / getTransform().scale}px solid ${
-                      node.isDynamic || dynamicModeNodeId
+                      isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
                     }`,
@@ -496,7 +515,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
                     border: `${1 / getTransform().scale}px solid ${
-                      node.isDynamic || dynamicModeNodeId
+                      isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
                     }`,
@@ -531,7 +550,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
                     width: `${handleSize}px`,
                     height: `${handleSize}px`,
                     border: `${1 / getTransform().scale}px solid ${
-                      node.isDynamic || dynamicModeNodeId
+                      isDynamic || dynamicModeNodeId
                         ? "var(--accent-secondary)"
                         : "var(--accent)"
                     }`,
@@ -551,7 +570,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
         })
       ) : null}
 
-      {node.isViewport && (
+      {isViewport && (
         <div
           data-resize-handle="true"
           data-direct-resize="true"
@@ -588,7 +607,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
           {["top", "right", "bottom", "left"].map((direction) => {
             // Skip edges that should be disabled based on auto dimensions
 
-            if (node.isViewport && direction !== "bottom") {
+            if (isViewport && direction !== "bottom") {
               return null;
             }
 

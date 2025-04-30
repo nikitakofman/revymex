@@ -24,6 +24,7 @@ import {
   useGetNodeDynamicInfo,
 } from "@/builder/context/atoms/node-store";
 import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { useDragRules } from "../dnd/rules/use-drag-rules";
 
 export const useConnect = () => {
   // Use the basic useBuilder hook without global subscriptions
@@ -37,6 +38,8 @@ export const useConnect = () => {
   const getNodeParent = useGetNodeParent();
   const getNodeSharedInfo = useGetNodeSharedInfo();
   const getNodeDynamicInfo = useGetNodeDynamicInfo();
+
+  const { dragStart } = useDragRules();
 
   // const handleDragStart = useDragStart();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -294,7 +297,8 @@ export const useConnect = () => {
                     parentId,
                     style,
                   };
-                  // handleDragStart(e, undefined, nodeData);
+                  // Use the new rules-based drag start instead
+                  dragStart(e, nodeData);
                 }
               }
             }

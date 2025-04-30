@@ -1,6 +1,8 @@
 import React from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
+import { useSelectedIds } from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 type ToolbarSegmentOption = {
   label?: string;
@@ -19,6 +21,7 @@ interface ToolbarSegmentedControlProps {
   className?: string;
   currentValue?: string; // Added explicit currentValue prop
   columnLayout?: boolean; // New prop for column layout
+  noPadding?: boolean;
 }
 
 export function ToolbarSegmentedControl({
@@ -34,17 +37,16 @@ export function ToolbarSegmentedControl({
   columnLayout = false, // Default to row layout
   noPadding,
 }: ToolbarSegmentedControlProps) {
-  const { setNodeStyle } = useBuilderDynamic();
+  // Use selectedIds from Jotai store
+  const selectedIds = useSelectedIds();
 
-  // Only use the computed style if currentValue isn't explicitly provided
-  const computedStyle = !currentValue
-    ? useComputedStyle({
-        property: cssProperty,
-        parseValue,
-        defaultValue,
-        isColor,
-      })
-    : null;
+  // Always call useComputedStyle, but conditionally use its value
+  const computedStyle = useComputedStyle({
+    property: cssProperty,
+    parseValue,
+    defaultValue,
+    isColor,
+  });
 
   // If currentValue is provided, use it; otherwise use the computed style
   const activeValue =
@@ -54,13 +56,16 @@ export function ToolbarSegmentedControl({
   const handleSegmentClick = (newValue: string) => {
     if (newValue === "mixed") return;
 
-    // Only call setNodeStyle if the property is a real CSS property
+    // Only call updateNodeStyle if the property is a real CSS property
     // For custom tracking properties, don't call this
     if (
       !cssProperty.includes("fill-type") &&
       !cssProperty.includes("-custom")
     ) {
-      setNodeStyle({ [cssProperty]: newValue }, undefined, true);
+      // Update each selected node's style
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, { [cssProperty]: newValue });
+      });
     }
 
     // Always call onChange if provided
@@ -77,7 +82,7 @@ export function ToolbarSegmentedControl({
     <div
       className={`flex ${
         columnLayout ? "flex-col" : "flex-row"
-      } bg-[var(--control-bg)] rounded-md ${!noPadding && "p-0.5"}`}
+      } bg-[var(--control-bg)] rounded-md ${!noPadding ? "p-0.5" : ""}`}
     >
       {finalOptions.map((option) => {
         const isActive = option.value === activeValue;

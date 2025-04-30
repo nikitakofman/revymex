@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { ToolbarSection } from "../_components/ToolbarAtoms";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
 import { BorderToolPopup } from "./BorderToolPopup";
 import { TransformPopup } from "./TransformPopup";
@@ -9,15 +8,16 @@ import { FilterToolPopup } from "./FilterToolPopup";
 import { ToolInput } from "../_components/ToolInput";
 import { ToolPopupTrigger } from "../_components/ToolbarPopupTrigger";
 import ToolbarButton from "../_components/ToolbarButton";
-import {
-  useselectedIds,
-  useSelectedIds,
-} from "@/builder/context/atoms/select-store";
+import { useSelectedIds } from "@/builder/context/atoms/select-store";
+import { useGetNode } from "@/builder/context/atoms/node-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 export const StylesTool = () => {
-  const { nodeState, setNodeStyle } = useBuilderDynamic();
+  // Remove nodeState and setNodeStyle
+  // Add getNode from Jotai
+  const getNode = useGetNode();
 
-  // Replace subscription with imperative getter
+  // Use reactive hook
   const selectedIds = useSelectedIds();
   const [selectedNode, setSelectedNode] = useState(null);
 
@@ -25,15 +25,14 @@ export const StylesTool = () => {
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [opacityValue, setOpacityValue] = useState(1);
 
-  // Update the selected node when needed
+  // Update the selected node when needed using getNode
   useEffect(() => {
-    // Get the current selected IDs
     if (selectedIds.length === 0) {
       setSelectedNode(null);
       return;
     }
 
-    const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+    const node = getNode(selectedIds[0]);
     setSelectedNode(node);
 
     // Update opacity value from the node's style if available
@@ -42,7 +41,7 @@ export const StylesTool = () => {
     } else {
       setOpacityValue(1); // Default opacity
     }
-  }, [nodeState.nodes, selectedIds]);
+  }, [selectedIds, getNode]);
 
   // Set up an observer for selection changes
   useEffect(() => {
@@ -53,7 +52,7 @@ export const StylesTool = () => {
         return;
       }
 
-      const node = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+      const node = getNode(selectedIds[0]);
       setSelectedNode(node);
 
       // Update opacity value from the node's style if available
@@ -74,9 +73,16 @@ export const StylesTool = () => {
     return () => {
       selectionObserver.disconnect();
     };
-  }, [nodeState.nodes, selectedIds]);
+  }, [selectedIds, getNode]);
 
   if (!selectedNode) return null;
+
+  // Helper function to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    selectedIds.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
 
   const handleTriggerPopup = (tool) => (triggerElement, e) => {
     e.stopPropagation();
@@ -92,23 +98,15 @@ export const StylesTool = () => {
     const formattedValue = parseFloat(value.toFixed(1));
     setOpacityValue(formattedValue);
 
-    setNodeStyle(
-      {
-        opacity: formattedValue.toString(),
-      },
-      undefined,
-      true
-    );
+    updateStyleForSelectedNodes({
+      opacity: formattedValue.toString(),
+    });
   };
 
   const handleZindexChange = (value) => {
-    setNodeStyle(
-      {
-        zIndex: value,
-      },
-      undefined,
-      true
-    );
+    updateStyleForSelectedNodes({
+      zIndex: value,
+    });
   };
 
   return (
@@ -120,7 +118,7 @@ export const StylesTool = () => {
           label="Opacity"
           min={0}
           max={1}
-          step={0.1}
+          step={0.01}
           value={opacityValue}
           customValue={opacityValue}
           onCustomChange={handleOpacityChange}
@@ -176,10 +174,7 @@ export const StylesTool = () => {
         title="Border"
         leftPadding
       >
-        <BorderToolPopup
-          selectedNode={selectedNode}
-          onClose={() => setActiveTool(null)}
-        />
+        <BorderToolPopup />
       </ToolbarPopup>
 
       <ToolbarPopup
@@ -189,10 +184,7 @@ export const StylesTool = () => {
         leftPadding
         title="Shadow"
       >
-        <ShadowToolPopup
-          selectedNode={selectedNode}
-          onClose={() => setActiveTool(null)}
-        />
+        <ShadowToolPopup />
       </ToolbarPopup>
 
       <ToolbarPopup
@@ -202,10 +194,7 @@ export const StylesTool = () => {
         leftPadding
         title="Filter"
       >
-        <FilterToolPopup
-          selectedNode={selectedNode}
-          onClose={() => setActiveTool(null)}
-        />
+        <FilterToolPopup />
       </ToolbarPopup>
 
       <ToolbarPopup
@@ -215,10 +204,7 @@ export const StylesTool = () => {
         title="Transform"
         leftPadding
       >
-        <TransformPopup
-          selectedNode={selectedNode}
-          onClose={() => setActiveTool(null)}
-        />
+        <TransformPopup />
       </ToolbarPopup>
     </>
   );

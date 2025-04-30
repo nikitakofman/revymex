@@ -36,7 +36,7 @@ export const transformNodeToFrame = (node, style, nodeDisp) => {
 };
 
 export const FillToolPopup = ({ selectedNode, onClose }) => {
-  const { nodeDisp, setNodeStyle } = useBuilderDynamic();
+  const { nodeDisp } = useBuilderDynamic();
 
   const currentSelectedIds = useGetSelectedIds();
 
@@ -270,7 +270,6 @@ export const FillToolPopup = ({ selectedNode, onClose }) => {
           fillType={fillType}
           selectedNode={selectedNode}
           nodeDisp={nodeDisp}
-          setNodeStyle={setNodeStyle}
         />
       )}
 

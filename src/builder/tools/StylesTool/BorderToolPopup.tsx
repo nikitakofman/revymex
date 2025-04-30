@@ -4,10 +4,12 @@ import { ToolSelect } from "../_components/ToolSelect";
 import { ColorPicker } from "../_components/ColorPicker";
 import { ChevronLeft } from "lucide-react";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useSelectedIds } from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 export const BorderToolPopup = () => {
-  const { setNodeStyle } = useBuilderDynamic();
+  // Use reactive hook for selected IDs
+  const selectedIds = useSelectedIds();
 
   // Track state for the color picker
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -26,9 +28,16 @@ export const BorderToolPopup = () => {
     ? "#000000"
     : (borderColorStyle.value as string);
 
+  // Helper function to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    selectedIds.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
+
   // Set up border color handler
   const handleBorderColorChange = (color) => {
-    setNodeStyle({ borderColor: color }, undefined, true);
+    updateStyleForSelectedNodes({ borderColor: color });
   };
 
   // Handle switching to color picker with smooth transition

@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -17,6 +17,13 @@ import {
   useSelectedIds,
 } from "@/builder/context/atoms/select-store";
 import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeBasics,
+} from "@/builder/context/atoms/node-store";
+import { nanoid } from "nanoid";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   step?: number;
@@ -53,7 +60,7 @@ const getParentLayoutMode = (
 const updateFillStyles = (
   element: HTMLElement,
   propertyName: string,
-  setNodeStyle: any
+  nodeIds: NodeId[]
 ) => {
   const parentLayout = getParentLayoutMode(element);
   const isWidthProperty = propertyName === "width";
@@ -80,7 +87,10 @@ const updateFillStyles = (
     }
   }
 
-  setNodeStyle(styles, undefined, true);
+  // Update each node's style
+  nodeIds.forEach((id) => {
+    updateNodeStyle(id, styles);
+  });
 };
 
 // Function to parse box-shadow value
@@ -149,8 +159,7 @@ export function ToolInput({
   sliderStep = 1,
   ...props
 }: ToolInputProps) {
-  const { setNodeStyle, nodeState, startRecording, stopRecording } =
-    useBuilderDynamic();
+  const { nodeState, startRecording, stopRecording } = useBuilderDynamic();
   const [localValue, setLocalValue] = useState<string | number>(
     value || customValue || "0"
   );
@@ -158,8 +167,7 @@ export function ToolInput({
   const [isMixed, setIsMixed] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
-  // const selectedIds = useGetSelectedIds();
-
+  // Use selectedIds from Jotai
   const selectedIds = useSelectedIds();
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -498,8 +506,10 @@ export function ToolInput({
     // Create the new shadow string
     const newShadow = createBoxShadow(shadowParts);
 
-    // Apply the new shadow
-    setNodeStyle({ boxShadow: newShadow }, undefined, true);
+    // Apply the new shadow to each selected node
+    selectedIds.forEach((id) => {
+      updateNodeStyle(id, { boxShadow: newShadow });
+    });
   };
 
   const updateValue = (
@@ -541,29 +551,28 @@ export function ToolInput({
     if (isGridInput) {
       const property =
         label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
-      setNodeStyle(
-        {
+
+      // Apply grid template to each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           display: "grid",
           [property]: `repeat(${Math.round(newValue)}, 1fr)`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     } else if (localUnit === "fill") {
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
-        updateFillStyles(element, props.name || "", setNodeStyle);
+        updateFillStyles(element, props.name || "", selectedIds);
       }
     } else {
-      setNodeStyle(
-        {
+      // Apply style to each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           [props.name || ""]: `${newValue}${localUnit}`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
   };
 
@@ -606,20 +615,19 @@ export function ToolInput({
       // Existing fill handling
       setLocalUnit(newUnit);
       setLocalValue("1");
-      updateFillStyles(elements[0], props.name || "", setNodeStyle);
+      updateFillStyles(elements[0], props.name || "", selectedIds);
     } else if (newUnit === "auto") {
       // Existing auto handling
       setLocalUnit(newUnit);
       setLocalValue("auto");
 
-      setNodeStyle(
-        {
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           [props.name || ""]: "auto",
           ...(localUnit === "fill" ? { flex: "0 0 auto" } : {}),
-        },
-        undefined,
-        true
-      );
+        });
+      });
     } else if ((newUnit === "vw" || newUnit === "px") && isTextFontSize) {
       // Improved conversion between px and vw for text font size
       // Get the current value as number
@@ -642,15 +650,13 @@ export function ToolInput({
       setLocalUnit(newUnit);
       setLocalValue(formattedValue);
 
-      // Update the actual style
-      setNodeStyle(
-        {
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           [props.name || ""]: `${formattedValue}${newUnit}`,
           ...(localUnit === "fill" ? { flex: "0 0 auto" } : {}),
-        },
-        undefined,
-        true
-      );
+        });
+      });
 
       // If we're in custom mode, also notify parent
       if (isCustomMode && onCustomChange) {
@@ -681,25 +687,20 @@ export function ToolInput({
         setLocalValue(Math.round(convertedValue).toString());
       }
 
-      if (localUnit === "fill") {
-        // Reset flex property when changing from fill to another unit
-        setNodeStyle(
-          {
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        if (localUnit === "fill") {
+          // Reset flex property when changing from fill to another unit
+          updateNodeStyle(id, {
             [props.name || ""]: `${convertedValue}${newUnit}`,
             flex: "0 0 auto", // Reset flex to default
-          },
-          undefined,
-          true
-        );
-      } else {
-        setNodeStyle(
-          {
+          });
+        } else {
+          updateNodeStyle(id, {
             [props.name || ""]: `${convertedValue}${newUnit}`,
-          },
-          undefined,
-          true
-        );
-      }
+          });
+        }
+      });
     }
 
     onUnitChange?.(newUnit);
@@ -764,16 +765,15 @@ export function ToolInput({
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
-        updateFillStyles(element, props.name || "", setNodeStyle);
+        updateFillStyles(element, props.name || "", selectedIds);
       }
     } else {
-      setNodeStyle(
-        {
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           [props.name || ""]: `${clampedValue}${localUnit}`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
   };
 
@@ -800,29 +800,28 @@ export function ToolInput({
     if (isGridInput) {
       const property =
         label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
-      setNodeStyle(
-        {
+
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           display: "grid",
           [property]: `repeat(${Math.round(resetValue)}, 1fr)`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     } else if (localUnit === "fill") {
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
-        updateFillStyles(element, props.name || "", setNodeStyle);
+        updateFillStyles(element, props.name || "", selectedIds);
       }
     } else {
-      setNodeStyle(
-        {
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           [props.name || ""]: `${resetValue}${localUnit}`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
   };
 
@@ -848,29 +847,28 @@ export function ToolInput({
     if (isGridInput) {
       const property =
         label === "Columns" ? "gridTemplateColumns" : "gridTemplateRows";
-      setNodeStyle(
-        {
+
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           display: "grid",
           [property]: `repeat(${Math.round(sliderValue)}, 1fr)`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     } else if (localUnit === "fill") {
       const element = document.querySelector(
         `[data-node-id="${selectedIds[0]}"]`
       ) as HTMLElement;
       if (element) {
-        updateFillStyles(element, props.name || "", setNodeStyle);
+        updateFillStyles(element, props.name || "", selectedIds);
       }
     } else {
-      setNodeStyle(
-        {
+      // Update each selected node
+      selectedIds.forEach((id) => {
+        updateNodeStyle(id, {
           [props.name || ""]: `${sliderValue}${localUnit}`,
-        },
-        undefined,
-        true
-      );
+        });
+      });
     }
   };
 
@@ -881,6 +879,7 @@ export function ToolInput({
     canvasOps.setIsDraggingChevrons(true);
 
     const sessionId = startRecording();
+    sessionIdRef.current = sessionId;
 
     currentValueRef.current =
       parseFloat(localValue.toString()) || (isGridInput ? 3 : 0);
@@ -929,6 +928,10 @@ export function ToolInput({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
+
+    // Store handlers for cleanup
+    activeMouseMoveHandlerRef.current = handleMouseMove;
+    activeMouseUpHandlerRef.current = handleMouseUp;
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);

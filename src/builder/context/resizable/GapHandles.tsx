@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { visualOps } from "../atoms/visual-store";
 import {
   canvasOps,
@@ -8,6 +7,8 @@ import {
   useIsResizing,
   useTransform,
 } from "../atoms/canvas-interaction-store";
+import { NodeId, useNodeStyle, useNodeBasics } from "../atoms/node-store";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 const parseRotation = (rotate: string | undefined): number => {
   if (!rotate) return 0;
@@ -15,31 +16,38 @@ const parseRotation = (rotate: string | undefined): number => {
   return match ? parseFloat(match[1]) : 0;
 };
 
-const hasRotation = (node: Node, nodes: Node[]): boolean => {
-  let currentNode = node;
-  while (currentNode) {
+const hasRotation = (nodeId: NodeId, nodes: any[]): boolean => {
+  let currentNodeId = nodeId;
+  while (currentNodeId) {
+    const currentNode = nodes.find((n) => n.id === currentNodeId);
+    if (!currentNode) break;
+
     if (parseRotation(currentNode.style.rotate) !== 0) {
       return true;
     }
     if (!currentNode.parentId) break;
-    currentNode =
-      nodes.find((n) => n.id === currentNode.parentId) || currentNode;
-    if (!currentNode) break;
+    currentNodeId = currentNode.parentId;
   }
   return false;
 };
 
 export const GapHandles = ({
-  node,
+  nodeId,
   isSelected,
   elementRef,
 }: {
-  node: Node;
+  nodeId: NodeId;
   isSelected: boolean;
   elementRef: React.RefObject<HTMLDivElement>;
 }) => {
-  const { setNodeStyle, nodeState, startRecording, stopRecording } =
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const basics = useNodeBasics(nodeId);
+  const { type } = basics;
+
+  const { nodeState, startRecording, stopRecording, setNodeStyle } =
     useBuilderDynamic();
+
   const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
   const [isInteractive, setIsInteractive] = useState(false);
 
@@ -50,7 +58,7 @@ export const GapHandles = ({
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInteractive(true);
-    }, 200); // 100ms delay before making it interactive
+    }, 200); // 200ms delay before making it interactive
 
     return () => {
       clearTimeout(timer);
@@ -65,15 +73,15 @@ export const GapHandles = ({
 
     // Initialize gap if it doesn't exist or has an invalid value
     const hasInvalidGap =
-      !node.style.gap ||
-      node.style.gap === "NaNpx" ||
-      node.style.gap === "undefinedpx" ||
-      isNaN(parseInt(node.style.gap));
+      !style.gap ||
+      style.gap === "NaNpx" ||
+      style.gap === "undefinedpx" ||
+      isNaN(parseInt(style.gap));
 
     // Set initial gap to 0px if it's invalid or missing
     if (hasInvalidGap) {
       console.log("Initializing gap to 0px");
-      setNodeStyle({ gap: "0px" }, [node.id], false);
+      updateNodeStyle(nodeId, { gap: "0px" });
     }
 
     const sessionId = startRecording();
@@ -126,7 +134,8 @@ export const GapHandles = ({
         value: newGap,
       });
 
-      setNodeStyle({ gap: `${Math.round(newGap)}px` }, [node.id], false);
+      // Using updateNodeStyle instead of setNodeStyle
+      updateNodeStyle(nodeId, { gap: `${Math.round(newGap)}px` });
     };
 
     const handleMouseUp = () => {
@@ -150,12 +159,12 @@ export const GapHandles = ({
     transform.scale < 0.2
   )
     return null;
-  if (node.type !== "frame") return null;
+  if (type !== "frame") return null;
 
   // Check if this node or any of its parents have rotation
-  if (hasRotation(node, nodeState.nodes)) return null;
+  if (hasRotation(nodeId, nodeState.nodes)) return null;
 
-  const frameElement = document.querySelector(`[data-node-id="${node.id}"]`);
+  const frameElement = document.querySelector(`[data-node-id="${nodeId}"]`);
   if (!frameElement) return null;
 
   const computedStyle = window.getComputedStyle(frameElement);
@@ -167,7 +176,7 @@ export const GapHandles = ({
   const isColumn = computedStyle.flexDirection === "column";
 
   const frameChildren = nodeState.nodes
-    .filter((child) => child.parentId === node.id)
+    .filter((child) => child.parentId === nodeId)
     .map((childNode) => {
       const el = document.querySelector(
         `[data-node-id="${childNode.id}"]`

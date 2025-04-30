@@ -39,6 +39,7 @@ import {
   nodeSharedInfoAtom,
   nodeDynamicInfoAtom,
 } from "../context/atoms/node-store";
+import { pushNodes } from "../context/atoms/node-store/operations/global-operations";
 
 interface Operation {
   method: string;
@@ -292,7 +293,7 @@ export const ViewportDevTools: React.FC = () => {
       if (!Array.isArray(nodes)) {
         throw new Error("Invalid format: Expected an array of nodes");
       }
-      nodeDisp.setNodes(nodes);
+      pushNodes(nodes);
       setImportError(null);
       setImportValue("");
     } catch (error) {

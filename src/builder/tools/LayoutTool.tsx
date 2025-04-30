@@ -10,9 +10,10 @@ import {
   Grid2x2,
 } from "lucide-react";
 
-// Replace these imports with your actual component paths
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+// Updated imports to use Jotai node store
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
+import { NodeId } from "@/builder/context/atoms/node-store";
 
 import {
   Label,
@@ -23,6 +24,8 @@ import { ToolbarSegmentedControl } from "./_components/ToolbarSegmentedControl";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
 import { ToolbarSwitch } from "./_components/ToolbarSwitch";
+import { useSelectedIds } from "../context/atoms/select-store";
+import { updateNodeStyle } from "../context/atoms/node-store/operations/style-operations";
 
 const AlignmentGrid = ({ direction, distribution, alignment, onChange }) => {
   // Track hover state for rows/columns
@@ -161,7 +164,7 @@ const AlignmentGrid = ({ direction, distribution, alignment, onChange }) => {
 };
 
 export default function LayoutTool() {
-  const { setNodeStyle } = useBuilderDynamic();
+  const selectedIds = useSelectedIds();
 
   // Track layout mode (Stack/Grid)
   const [layoutMode, setLayoutMode] = useState("flex");
@@ -280,45 +283,40 @@ export default function LayoutTool() {
     computedGridRows,
   ]);
 
+  // Helper function to update style for all selected nodes using Jotai atoms
+  const updateStyleForSelectedNodes = (styles) => {
+    selectedIds.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
+
   // Handler functions for control changes
   const handleLayoutChange = (value) => {
     setLayoutMode(value);
 
     if (value === "grid") {
       // When switching to grid, set grid template columns and rows
-      setNodeStyle(
-        {
-          display: "grid",
-          gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
-          gridTemplateRows: `repeat(${gridRows}, 1fr)`,
-        },
-        undefined,
-        true
-      );
+      updateStyleForSelectedNodes({
+        display: "grid",
+        gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
+        gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+      });
     } else {
       // When switching to flex, set flex properties
-      setNodeStyle(
-        {
-          display: "flex",
-          flexDirection: direction,
-          justifyContent: distribution,
-          alignItems: alignment,
-        },
-        undefined,
-        true
-      );
+      updateStyleForSelectedNodes({
+        display: "flex",
+        flexDirection: direction,
+        justifyContent: distribution,
+        alignItems: alignment,
+      });
     }
   };
 
   const handleDirectionChange = (value) => {
     setDirection(value);
-    setNodeStyle(
-      {
-        flexDirection: value,
-      },
-      undefined,
-      true
-    );
+    updateStyleForSelectedNodes({
+      flexDirection: value,
+    });
   };
 
   const handleDistributionChange = (value) => {
@@ -346,36 +344,24 @@ export default function LayoutTool() {
           : "center";
 
       // Update with standard value based on current grid selection
-      setNodeStyle(
-        {
-          justifyContent: newJustify,
-        },
-        undefined,
-        true
-      );
+      updateStyleForSelectedNodes({
+        justifyContent: newJustify,
+      });
 
       setDistribution(newJustify);
     } else {
       // Apply advanced distribution
-      setNodeStyle(
-        {
-          justifyContent: value,
-        },
-        undefined,
-        true
-      );
+      updateStyleForSelectedNodes({
+        justifyContent: value,
+      });
     }
   };
 
   const handleAlignmentChange = (value) => {
     setAlignment(value);
-    setNodeStyle(
-      {
-        alignItems: value,
-      },
-      undefined,
-      true
-    );
+    updateStyleForSelectedNodes({
+      alignItems: value,
+    });
   };
 
   // New combined handler for alignment grid
@@ -388,40 +374,28 @@ export default function LayoutTool() {
       setDistribution(justify);
     }
 
-    // Apply the changes to the node
-    setNodeStyle(
-      {
-        // Use the existing distribution if keepDistribution flag is true
-        justifyContent: keepDistribution ? distribution : justify,
-        alignItems: align,
-      },
-      undefined,
-      true
-    );
+    // Apply the changes to the nodes
+    updateStyleForSelectedNodes({
+      // Use the existing distribution if keepDistribution flag is true
+      justifyContent: keepDistribution ? distribution : justify,
+      alignItems: align,
+    });
   };
 
   const handleGridColumnsChange = (value) => {
     setGridColumns(value);
-    setNodeStyle(
-      {
-        display: "grid",
-        gridTemplateColumns: `repeat(${value}, 1fr)`,
-      },
-      undefined,
-      true
-    );
+    updateStyleForSelectedNodes({
+      display: "grid",
+      gridTemplateColumns: `repeat(${value}, 1fr)`,
+    });
   };
 
   const handleGridRowsChange = (value) => {
     setGridRows(value);
-    setNodeStyle(
-      {
-        display: "grid",
-        gridTemplateRows: `repeat(${value}, 1fr)`,
-      },
-      undefined,
-      true
-    );
+    updateStyleForSelectedNodes({
+      display: "grid",
+      gridTemplateRows: `repeat(${value}, 1fr)`,
+    });
   };
 
   // Distribution options for dropdown - added "Stack" option
@@ -473,30 +447,6 @@ export default function LayoutTool() {
           {/* Stack-specific controls */}
           {layoutMode === "flex" && (
             <>
-              {/* Direction: Row vs Column */}
-              {/* <div className="flex justify-between items-center">
-                <Label>Direction</Label>
-                <div className="w-3/5">
-                  <ToolbarSegmentedControl
-                    cssProperty="flexDirection"
-                    defaultValue="row"
-                    size="sm"
-                    options={[
-                      {
-                        value: "row",
-                        icon: <ArrowRight className="w-4 h-4" />,
-                      },
-                      {
-                        value: "column",
-                        icon: <ArrowDown className="w-4 h-4" />,
-                      },
-                    ]}
-                    onChange={handleDirectionChange}
-                    currentValue={direction}
-                  />
-                </div>
-              </div> */}
-
               {/* New Alignment Grid */}
               <div className="flex flex-row-reverse gap-4">
                 <div className=" w-1/2 flex flex-col space-y-2 mt-1.5">
@@ -538,19 +488,6 @@ export default function LayoutTool() {
                   </div>
                 </div>
               </div>
-
-              {/* Distribution options */}
-              {/* <div className="flex justify-between items-center">
-                <Label>Distribute</Label>
-                <div className="w-3/5">
-                  <ToolSelect
-                    name="distribute"
-                    value={getCurrentDistributionValue()}
-                    onChange={handleDistributionChange}
-                    options={distributionOptions}
-                  />
-                </div>
-              </div> */}
 
               {/* Wrap: Yes/No */}
               <div className="flex justify-between w-full items-center">

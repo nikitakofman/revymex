@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { ToolSelect } from "../_components/ToolSelect";
 import { Label } from "../_components/ToolbarAtoms";
 import { ToolbarSwitch } from "../_components/ToolbarSwitch";
 import { ImageCropPopup } from "./image-crop";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 export const VideoSettingsControl = ({ selectedNode }) => {
-  const { setNodeStyle } = useBuilderDynamic();
+  // Remove setNodeStyle dependency
   const [videoProps, setVideoProps] = useState({
     autoplay: false,
     loop: false,
@@ -17,7 +20,10 @@ export const VideoSettingsControl = ({ selectedNode }) => {
     objectFit: "cover",
   });
 
-  const currentSelectedIds = useGetSelectedIds();
+  // Use both reactive and imperative hooks for selected IDs
+  const selectedIds = useSelectedIds();
+  const getSelectedIds = useGetSelectedIds();
+
   // Only use computed style for objectFit which is a CSS property
   const objectFit = useComputedStyle({
     property: "objectFit",
@@ -38,20 +44,24 @@ export const VideoSettingsControl = ({ selectedNode }) => {
     }
   }, [selectedNode, objectFit.value]);
 
+  // Helper to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    const ids = getSelectedIds();
+    ids.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
+
   // Handle toggle for boolean properties
   const handleToggle = (property, value) => {
-    const selectedIds = currentSelectedIds();
-
     const boolValue = value === "true";
-    setNodeStyle({ [property]: boolValue }, selectedIds);
+    updateStyleForSelectedNodes({ [property]: boolValue });
     setVideoProps((prev) => ({ ...prev, [property]: boolValue }));
   };
 
   // Handle fit change
   const handleFitChange = (value) => {
-    const selectedIds = currentSelectedIds();
-
-    setNodeStyle({ objectFit: value }, selectedIds);
+    updateStyleForSelectedNodes({ objectFit: value });
     setVideoProps((prev) => ({ ...prev, objectFit: value }));
   };
 
@@ -104,11 +114,6 @@ export const VideoSettingsControl = ({ selectedNode }) => {
           onChange={(value) => handleToggle("controls", value)}
         />
       )}
-      {/* 
-      <ImageCropPopup
-        selectedNode={selectedNode}
-        // onClose={() => setIsCropPopupOpen(false)}
-      /> */}
 
       {/* Muted Toggle */}
       <ToolbarSwitch

@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { ColorPicker } from "../_components/ColorPicker";
 import { transformNodeToFrame } from "./fill-popup";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 // Types
 export interface GradientStop {
@@ -16,7 +20,7 @@ interface GradientEditorProps {
   fillType: "linear" | "radial";
   selectedNode: any;
   nodeDisp: any;
-  setNodeStyle: any;
+  // Removed setNodeStyle prop
 }
 
 // Gradient Stop Button Component
@@ -97,9 +101,11 @@ export const GradientEditor = ({
   fillType,
   selectedNode,
   nodeDisp,
-  setNodeStyle,
 }: GradientEditorProps) => {
-  const currentSelectedIds = useGetSelectedIds();
+  // Use both reactive and imperative hooks for selected IDs
+  const selectedIds = useSelectedIds();
+  const getSelectedIds = useGetSelectedIds();
+
   // Initialize gradient stops based on current background if available
   const [gradientStops, setGradientStops] = useState(() => {
     // Parse gradient stops from the current background if available
@@ -141,6 +147,14 @@ export const GradientEditor = ({
     () => gradientStops[0]?.id
   );
 
+  // Helper function to update style for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    const ids = getSelectedIds();
+    ids.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
+
   const updateGradientBackground = (stops) => {
     const gradientStopsString = stops
       .map((stop) => `${stop.color} ${stop.position}%`)
@@ -151,8 +165,6 @@ export const GradientEditor = ({
         ? `linear-gradient(90deg, ${gradientStopsString})`
         : `radial-gradient(circle at center, ${gradientStopsString})`;
 
-    const selectedIds = currentSelectedIds();
-
     if (selectedNode.type !== "frame") {
       transformNodeToFrame(
         selectedNode,
@@ -160,7 +172,8 @@ export const GradientEditor = ({
         nodeDisp
       );
     } else {
-      setNodeStyle({ background: gradientValue }, selectedIds);
+      // Use updateNodeStyle instead of setNodeStyle
+      updateStyleForSelectedNodes({ background: gradientValue });
     }
   };
 

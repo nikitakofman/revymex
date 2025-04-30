@@ -40,7 +40,7 @@ export function updateNodeStyle(nodeId: NodeId, style: CSSProperties): void {
     applyStyleOperations(operations);
 
     // Mark source node as changed
-    nodeStore.set(changedNodesAtom, (prev) => {
+    nodeStore.set(changedNodesAtom, (prev: Set<NodeId>) => {
       const newSet = new Set(prev);
       newSet.add(nodeId);
       return newSet;
@@ -79,7 +79,7 @@ function applyStyleOperations(operations: StyleOperation[]): void {
 
   // Update the changed nodes atom
   if (changedNodes.size > 0) {
-    nodeStore.set(changedNodesAtom, (prev) => {
+    nodeStore.set(changedNodesAtom, (prev: Set<NodeId>) => {
       const newSet = new Set(prev);
       changedNodes.forEach((id) => newSet.add(id));
       return newSet;

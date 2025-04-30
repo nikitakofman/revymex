@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { ToolInput } from "../_components/ToolInput";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
-export const TransformPopup = ({ selectedNode, onClose }) => {
-  const { setNodeStyle } = useBuilderDynamic();
-  const currentSelectedIds = useGetSelectedIds();
+export const TransformPopup = () => {
+  // Remove useBuilderDynamic dependency
+
+  // Use both imperative and reactive hooks for selected IDs
+  const getSelectedIds = useGetSelectedIds();
+
   // Transform states
   const [scaleX, setScaleX] = useState(1);
   const [scaleY, setScaleY] = useState(1);
@@ -16,16 +22,22 @@ export const TransformPopup = ({ selectedNode, onClose }) => {
   const [skewX, setSkewX] = useState(0);
   const [skewY, setSkewY] = useState(0);
 
+  // Helper function to update styles for all selected nodes
+  const updateStyleForSelectedNodes = (styles) => {
+    const ids = getSelectedIds();
+    ids.forEach((id) => {
+      updateNodeStyle(id, styles);
+    });
+  };
+
   // Parse transform string on component mount
   useEffect(() => {
-    const selectedIds = currentSelectedIds();
+    const ids = getSelectedIds();
 
-    if (!selectedIds.length) return;
+    if (!ids.length) return;
 
     // Get the selected node's style
-    const element = document.querySelector(
-      `[data-node-id="${selectedIds[0]}"]`
-    );
+    const element = document.querySelector(`[data-node-id="${ids[0]}"]`);
     if (!element) return;
 
     // Get transform style
@@ -80,7 +92,7 @@ export const TransformPopup = ({ selectedNode, onClose }) => {
     if (skewYMatch) {
       setSkewY(parseFloat(skewYMatch[1]));
     }
-  }, [currentSelectedIds]);
+  }, [getSelectedIds]);
 
   // Apply transforms
   const applyTransforms = () => {
@@ -122,7 +134,7 @@ export const TransformPopup = ({ selectedNode, onClose }) => {
 
     // Trim trailing space and apply the transform
     transformValue = transformValue.trim();
-    setNodeStyle({ transform: transformValue }, undefined, true);
+    updateStyleForSelectedNodes({ transform: transformValue });
   };
 
   // Update transforms when any property changes

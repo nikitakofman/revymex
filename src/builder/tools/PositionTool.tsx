@@ -1,59 +1,53 @@
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import PlaceholderToolInput from "./_components/ToolInputPlaceholder";
 import { useEffect, useState } from "react";
-import {
-  useGetSelectedIds,
-  useSelectedIds,
-} from "../context/atoms/select-store";
+import { useSelectedIds } from "../context/atoms/select-store";
 import {
   useIsDragging,
   useDraggedNode,
   useDragSource,
-  useGetDragPositions,
   useDragPositions,
   useLastMousePosition,
 } from "../context/atoms/drag-store";
-import { getDragPosition } from "../context/utils";
 import { useTransform } from "../context/atoms/canvas-interaction-store";
+import { useGetNode } from "../context/atoms/node-store";
 
 export const PositionTool = () => {
-  const { nodeState } = useBuilderDynamic();
   const [realTimePosition, setRealTimePosition] = useState({ x: 0, y: 0 });
 
-  // Get isDragging from the drag store
+  // Get state from atoms
   const isDraggingFromStore = useIsDragging();
-  // Get draggedNode from the drag store
   const draggedNode = useDraggedNode();
   const dragSource = useDragSource();
   const dragPositions = useDragPositions();
-  const dragPosition = useDragPositions();
   const lastMousePosition = useLastMousePosition();
   const transform = useTransform();
 
-  // Replace subscription with imperative getter
+  // Use reactive hook
   const selectedIds = useSelectedIds();
+  const getNode = useGetNode();
 
   const [viewportNode, setViewportNode] = useState(false);
 
-  // Update viewportNode state when needed
+  // Check if first selected node is a viewport using Jotai
   useEffect(() => {
-    // Get the current selection
     if (selectedIds.length === 0) {
       setViewportNode(false);
       return;
     }
 
     // Check if the selected node is a viewport
-    const isViewport = nodeState.nodes
-      .find((n) => n.id === selectedIds[0])
-      ?.id.includes("viewport");
+    // Here we use Jotai's getNode utility instead of nodeState
+    const node = getNode(selectedIds[0]);
+    const isViewport =
+      node && (node.isViewport || node.id.toString().includes("viewport"));
 
     setViewportNode(!!isViewport);
-  }, [nodeState.nodes, selectedIds]);
+  }, [selectedIds, getNode]);
 
   const positionStyle = useComputedStyle({
     property: "position",
@@ -73,16 +67,16 @@ export const PositionTool = () => {
     : (positionStyle.value as string);
   const showCoordinates = position === "absolute" || position === "fixed";
 
-  const isDragging = dragPosition && isDraggingFromStore;
+  const isDragging = dragPositions && isDraggingFromStore;
 
-  // Helper to check if node is absolutely positioned within a frame
+  // Helper to check if node is absolutely positioned within a frame using Jotai
   const isAbsoluteInFrame = (nodeId: string) => {
     if (!nodeId) return false;
-    const node = nodeState.nodes.find((n) => n.id === nodeId);
+    const node = getNode(nodeId);
     return node?.isAbsoluteInFrame === true && node?.parentId !== null;
   };
 
-  // Updated to use draggedNode from the store
+  // Use draggedNode from the store
   const isDraggingAbsoluteInFrame =
     isDragging &&
     draggedNode &&
@@ -91,7 +85,6 @@ export const PositionTool = () => {
 
   // Update real-time position when drag state changes
   useEffect(() => {
-    // Updated to use draggedNode from the store
     if (isDragging && draggedNode) {
       const node = draggedNode.node;
 
@@ -106,13 +99,11 @@ export const PositionTool = () => {
           const mouseY = lastMousePosition.y;
           const offset = draggedNode.offset;
 
-          // Find the parent frame element to get its position
-          const parentNode = nodeState.nodes.find(
-            (n) => n.id === node.parentId
-          );
-          if (parentNode) {
+          // Get parent node info using Jotai
+          const parentId = node.parentId;
+          if (parentId) {
             const parentElement = document.querySelector(
-              `[data-node-id="${node.parentId}"]`
+              `[data-node-id="${parentId}"]`
             );
             if (parentElement) {
               const parentRect = parentElement.getBoundingClientRect();
@@ -142,7 +133,6 @@ export const PositionTool = () => {
     lastMousePosition,
     draggedNode,
     isDraggingAbsoluteInFrame,
-    nodeState.nodes,
     transform.scale,
   ]);
 

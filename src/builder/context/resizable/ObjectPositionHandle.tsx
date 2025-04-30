@@ -1,12 +1,18 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { useTransform } from "../atoms/canvas-interaction-store";
 import { visualOps } from "../atoms/visual-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeFlags,
+  useNodeBasics,
+} from "../atoms/node-store";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 interface ObjectPositionHandleProps {
-  node: Node;
+  nodeId: NodeId;
   elementRef: React.RefObject<HTMLDivElement>;
   groupBounds?: {
     top: number;
@@ -18,12 +24,17 @@ interface ObjectPositionHandleProps {
 }
 
 export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
-  node,
+  nodeId,
   elementRef,
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const { setNodeStyle, startRecording, stopRecording } = useBuilderDynamic();
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const basics = useNodeBasics(nodeId);
+  const { type } = basics;
+
+  const { startRecording, stopRecording } = useBuilderDynamic();
 
   const transform = useTransform();
 
@@ -40,14 +51,14 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
   const isPrimarySelectedNode = useCallback(() => {
     if (!isGroupSelection) return true;
     const selectedIds = getSelectedIds();
-    return selectedIds.length > 0 && node.id === selectedIds[0];
-  }, [isGroupSelection, node.id, getSelectedIds]);
+    return selectedIds.length > 0 && nodeId === selectedIds[0];
+  }, [isGroupSelection, nodeId, getSelectedIds]);
 
   // Initialize position values based on existing objectPosition
   useEffect(() => {
-    if (node && node.style.objectPosition) {
+    if (style.objectPosition) {
       // Parse existing objectPosition (e.g., "25% 75%")
-      const positionStr = node.style.objectPosition.toString();
+      const positionStr = style.objectPosition.toString();
       const matches = positionStr.match(/(\d+)%\s+(\d+)%/);
 
       if (matches && matches.length === 3) {
@@ -67,7 +78,7 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
         currentPositionRef.current.x = 100;
       }
     }
-  }, [node]);
+  }, [style.objectPosition]);
 
   // Start timer when the component mounts
   useEffect(() => {
@@ -83,15 +94,12 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
   // Check if the node is eligible for the object-position handle
   const isEligibleNode = () => {
     // Direct image or video node
-    if (node.type === "image" || node.type === "video") {
+    if (type === "image" || type === "video") {
       return true;
     }
 
     // Frame with background image or video
-    if (
-      node.type === "frame" &&
-      (node.style.backgroundImage || node.style.backgroundVideo)
-    ) {
+    if (type === "frame" && (style.backgroundImage || style.backgroundVideo)) {
       return true;
     }
 
@@ -100,7 +108,7 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
 
   // Check if objectFit is "cover" - the only mode where position adjustment makes sense
   const hasCoverObjectFit = () => {
-    const objectFit = node.style.objectFit;
+    const objectFit = style.objectFit;
     return !objectFit || objectFit === "cover";
   };
 
@@ -141,14 +149,14 @@ export const ObjectPositionHandle: React.FC<ObjectPositionHandleProps> = ({
       }
 
       // Apply object position to all selected nodes if it's a group selection
-      const nodesToUpdate = isGroupSelection ? selectedIds : [node.id];
+      const nodesToUpdate = isGroupSelection ? selectedIds : [nodeId];
 
-      // Update the node style
-      setNodeStyle(
-        { objectPosition: `${Math.round(newX)}% ${Math.round(newY)}%` },
-        nodesToUpdate,
-        true
-      );
+      // Update each node individually
+      nodesToUpdate.forEach((id) => {
+        updateNodeStyle(id, {
+          objectPosition: `${Math.round(newX)}% ${Math.round(newY)}%`,
+        });
+      });
 
       // Set the current position reference for future movements
       currentPositionRef.current = { x: newX, y: newY };

@@ -1,7 +1,6 @@
 import React, { useState, useLayoutEffect, RefObject, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
-  useBuilder,
   useBuilderDynamic,
   useBuilderRefs,
 } from "@/builder/context/builderState";
@@ -9,7 +8,6 @@ import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
 import { ResizeHandles } from "./ResizeHandles";
 import { GapHandles } from "./GapHandles";
 import { GripHandles } from "./GripHandles";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import {
   hasSkewTransform,
   parseSkew,
@@ -46,26 +44,60 @@ import {
   useIsMovingCanvas,
   useIsResizing,
   useIsRotating,
-  useTransform,
 } from "../atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
+import {
+  useNodeStyle,
+  useNodeFlags,
+  useNodeParent,
+  useNodeSharedInfo,
+  useNodeDynamicInfo,
+  useNodeBasics,
+  useNodeState,
+  useGetNode,
+} from "@/builder/context/atoms/node-store";
 
 export const VisualHelpers = ({
   elementRef,
-  node,
+  nodeId,
   handleResizeStart,
 }: {
   elementRef: RefObject<HTMLDivElement>;
-  node: Node;
+  nodeId: string;
   handleResizeStart: (e: React.PointerEvent, direction: Direction) => void;
 }) => {
+  // Get all node data from atoms - reactive approach
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const parentId = useNodeParent(nodeId);
+  const sharedInfo = useNodeSharedInfo(nodeId);
+  const dynamicInfo = useNodeDynamicInfo(nodeId);
+  const basics = useNodeBasics(nodeId);
+
+  // Get full node state for complex operations
+  const nodeState = useNodeState();
+
+  // Get a single node getter for compatibility
+  const getNode = useGetNode();
+
+  // Extract commonly used properties
+  const { isLocked = false, isDynamic = false, isViewport = false } = flags;
+  const { type } = basics;
+
+  // Create a compatibility node object for functions that still require it
+  const node = {
+    id: nodeId,
+    type,
+    style,
+    isLocked,
+    isDynamic,
+    ...flags,
+    ...dynamicInfo,
+    ...sharedInfo,
+    parentId,
+  };
+
   // bounding rect in the *canvas* coordinate system
-
-  // console.log(
-  //   `Visual Helpers re-rendering for ${node.id}`,
-  //   new Date().getTime()
-  // );
-
   const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const [localComputedStyle, setLocalComputedStyle] =
     useState<CSSStyleDeclaration | null>(null);
@@ -85,7 +117,6 @@ export const VisualHelpers = ({
   // Track parent's rotation as well (for children to inherit)
   const [cumulativeRotation, setCumulativeRotation] = useState<number>(0);
 
-  const { nodeState } = useBuilderDynamic();
   const { contentRef } = useBuilderRefs();
 
   // Use atoms for state
@@ -93,9 +124,9 @@ export const VisualHelpers = ({
   const isResizing = useIsResizing();
   const isEditingText = useIsEditingText();
   const getTransform = useGetTransform();
-  const isHovered = useNodeHovered(node.id);
-  const isNodeTempSelected = useNodeTempSelected(node.id);
-  const isSelected = useNodeSelected(node.id);
+  const isHovered = useNodeHovered(nodeId);
+  const isNodeTempSelected = useNodeTempSelected(nodeId);
+  const isSelected = useNodeSelected(nodeId);
   const getSelectedIds = useGetSelectedIds();
   const dragSource = useDragSource();
   const isMovingCanvas = useIsMovingCanvas();
@@ -103,8 +134,6 @@ export const VisualHelpers = ({
   const isRotating = useIsRotating();
 
   const cumulativeSkew = getCumulativeSkew(node, nodeState);
-
-  const isLocked = node.isLocked === true;
 
   // Whether we can show selection or hover
   const isInteractive =
@@ -119,7 +148,7 @@ export const VisualHelpers = ({
     store: selectStore,
   });
   const isMultiSelection = selectionCount > 1;
-  const isPrimarySelected = isSelected && primarySelectedId === node.id;
+  const isPrimarySelected = isSelected && primarySelectedId === nodeId;
 
   /* ---------------------------------
      Calculate cumulative parent rotation
@@ -200,8 +229,8 @@ export const VisualHelpers = ({
     isSelected,
     dragSource,
     isMovingCanvas,
-    node.id,
-    node.style.transform,
+    nodeId,
+    style.transform,
   ]);
 
   /* ---------------------------------
@@ -343,7 +372,7 @@ export const VisualHelpers = ({
             <div
               style={{
                 ...getBorderStyle(
-                  node.isDynamic || dynamicModeNodeId
+                  isDynamic || dynamicModeNodeId
                     ? "var(--accent-secondary)"
                     : "var(--accent)",
                   998
@@ -358,7 +387,7 @@ export const VisualHelpers = ({
             <div
               style={{
                 ...getBorderStyle(
-                  node.isDynamic || dynamicModeNodeId
+                  isDynamic || dynamicModeNodeId
                     ? "var(--accent-secondary)"
                     : "var(--accent)",
                   999
@@ -368,7 +397,7 @@ export const VisualHelpers = ({
             />
           )}
 
-          {!isMovingCanvas && <NameDisplay node={node} />}
+          {!isMovingCanvas && <NameDisplay nodeId={nodeId} />}
 
           {/* Actual selection border + handles */}
           {showHelpers && isSelected && !isEditingText && (
@@ -376,7 +405,7 @@ export const VisualHelpers = ({
               <div
                 style={{
                   ...getBorderStyle(
-                    node.isDynamic || dynamicModeNodeId
+                    isDynamic || dynamicModeNodeId
                       ? "var(--accent-secondary)"
                       : "#3b82f6",
                     1000
@@ -386,7 +415,7 @@ export const VisualHelpers = ({
               />
               {!isLocked && (
                 <ResizeHandles
-                  node={node}
+                  nodeId={nodeId}
                   handleResizeStart={handleResizeStart}
                   isGroupSelection={false}
                   targetRef={elementRef}
@@ -397,47 +426,49 @@ export const VisualHelpers = ({
               {/* Single-element controls if not locked */}
               {!isLocked && (
                 <>
-                  {!node.id.includes("viewport") &&
-                    !hasSkewTransform(node.style.transform) && (
-                      <FontSizeHandle node={node} elementRef={elementRef} />
+                  {!nodeId.includes("viewport") &&
+                    !hasSkewTransform(style.transform) && (
+                      <FontSizeHandle nodeId={nodeId} elementRef={elementRef} />
                     )}
                   {/* Rotate handle if no skew */}
-                  {!node.id.includes("viewport") &&
-                    !hasSkewTransform(node.style.transform) && (
-                      <RotateHandle node={node} elementRef={elementRef} />
+                  {!nodeId.includes("viewport") &&
+                    !hasSkewTransform(style.transform) && (
+                      <RotateHandle nodeId={nodeId} elementRef={elementRef} />
                     )}
 
                   {/* BorderRadius handle */}
-                  {!node.id.includes("viewport") &&
-                    !hasSkewTransform(node.style.transform) &&
-                    node.type !== "text" && (
-                      <BorderRadiusHandle node={node} elementRef={elementRef} />
+                  {!nodeId.includes("viewport") &&
+                    !hasSkewTransform(style.transform) &&
+                    type !== "text" && (
+                      <BorderRadiusHandle
+                        nodeId={nodeId}
+                        elementRef={elementRef}
+                      />
                     )}
 
-                  {!hasSkewTransform(node.style.transform) &&
-                    (node.type === "image" ||
-                      node.type === "video" ||
-                      (node.type === "frame" &&
-                        (node.style.backgroundImage ||
-                          node.style.backgroundVideo))) && (
+                  {!hasSkewTransform(style.transform) &&
+                    (type === "image" ||
+                      type === "video" ||
+                      (type === "frame" &&
+                        (style.backgroundImage || style.backgroundVideo))) && (
                       <ObjectPositionHandle
-                        node={node}
+                        nodeId={nodeId}
                         elementRef={elementRef}
                       />
                     )}
 
                   {/* Grip handles */}
-                  {!node.id.includes("viewport") &&
-                    !hasSkewTransform(node.style.transform) &&
+                  {!nodeId.includes("viewport") &&
+                    !hasSkewTransform(style.transform) &&
                     !isAbsoluteInFrame(node) && (
-                      <GripHandles node={node} elementRef={elementRef} />
+                      <GripHandles nodeId={nodeId} elementRef={elementRef} />
                     )}
 
                   {/* Gap handles (only if not display:grid) */}
-                  {(!node.isDynamic || dynamicModeNodeId === node.id) &&
+                  {(!isDynamic || dynamicModeNodeId === nodeId) &&
                     localComputedStyle?.display !== "grid" && (
                       <GapHandles
-                        node={node}
+                        nodeId={nodeId}
                         isSelected={isSelected}
                         elementRef={elementRef}
                       />
@@ -445,9 +476,9 @@ export const VisualHelpers = ({
 
                   {/* Connection handle */}
                   {dynamicModeNodeId !== null && (
-                    <ConnectionHandle node={node} />
+                    <ConnectionHandle nodeId={nodeId} />
                   )}
-                  <AddVariantsUI node={node} />
+                  <AddVariantsUI nodeId={nodeId} />
                 </>
               )}
             </>
@@ -478,7 +509,7 @@ export const VisualHelpers = ({
               border: (() => {
                 // Get transform only when this style is rendered
                 const transform = getTransform();
-                return node.isDynamic || dynamicModeNodeId
+                return isDynamic || dynamicModeNodeId
                   ? `${2 / transform.scale}px solid var(--accent-secondary)`
                   : `${2 / transform.scale}px solid #3b82f6`;
               })(),
@@ -490,7 +521,7 @@ export const VisualHelpers = ({
           {!isLocked && isPrimarySelected && (
             <>
               <ResizeHandles
-                node={node}
+                nodeId={nodeId}
                 handleResizeStart={handleResizeStart}
                 groupBounds={groupBoundsState}
                 isGroupSelection={true}
@@ -498,14 +529,14 @@ export const VisualHelpers = ({
               />
 
               <RotateHandle
-                node={node}
+                nodeId={nodeId}
                 elementRef={elementRef}
                 groupBounds={groupBoundsState}
                 isGroupSelection={true}
               />
 
               <BorderRadiusHandle
-                node={node}
+                nodeId={nodeId}
                 elementRef={elementRef}
                 groupBounds={groupBoundsState}
                 isGroupSelection={true}

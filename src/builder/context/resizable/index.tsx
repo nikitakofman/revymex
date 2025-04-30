@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, RefObject } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Direction, ResizableWrapperProps } from "../utils";
+import { useBuilderDynamic } from "@/builder/context/builderState";
+import { Direction } from "../utils";
 import { VisualHelpers } from "./VisualHelpers";
 import {
   useNodeSelected,
@@ -21,6 +21,12 @@ import {
   useIsTextMenuOpen,
 } from "../atoms/canvas-interaction-store";
 import { useNodeHovered } from "../atoms/hover-store";
+import {
+  useNodeStyle,
+  useGetNodeFlags,
+  useGetNodeParent,
+} from "@/builder/context/atoms/node-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 /**
  * If SHIFT + direct edge, we snap movement to multiples of SHIFT_INCREMENT.
@@ -100,13 +106,27 @@ function getHandlesFromDirection(dir: Direction) {
  * - No min-size clamp.
  * - Respects locked nodes: they can be selected but not modified.
  */
-export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
-  node,
+export const ResizableWrapper = ({
+  nodeId,
+  isDraggable = true,
   children,
+}: {
+  nodeId: string;
+  isDraggable?: boolean;
+  children: React.ReactElement;
 }) => {
-  const { setNodeStyle, startRecording, stopRecording } = useBuilderDynamic();
+  const { startRecording, stopRecording } = useBuilderDynamic();
 
-  // console.log(`Resizable Wrapper re-rendering`, new Date().getTime());
+  // Get node data from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useGetNodeFlags(nodeId);
+  const parentId = useGetNodeParent(nodeId);
+
+  // Extract flags
+  const { isLocked = false } = flags;
+
+  // For debugging
+  // console.log(`Resizable Wrapper re-rendering: ${nodeId}`, new Date().getTime());
 
   const getTransform = useGetTransform();
   const isMiddleMouseDown = useIsMiddleMouseDown();
@@ -116,9 +136,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
   const isTextMenuOpen = useIsTextMenuOpen();
   const isFontSizeHandleActive = useIsFontSizeHandleActive();
 
-  const isSelected = useNodeSelected(node.id);
-  const isHovered = useNodeHovered(node.id);
-  const isNodeTempSelected = useNodeTempSelected(node.id);
+  const isSelected = useNodeSelected(nodeId);
+  const isHovered = useNodeHovered(nodeId);
+  const isNodeTempSelected = useNodeTempSelected(nodeId);
 
   const elementRef = useRef<HTMLDivElement>(null) as RefObject<HTMLDivElement>;
 
@@ -126,8 +146,6 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
   // Use the imperative getter for selected IDs - no subscription
   const getSelectedIds = useGetSelectedIds();
-
-  const isLocked = node.isLocked === true;
 
   // For SHIFT+corner aspect ratio.
   const aspectRatioRef = useRef<AspectRatioState>({
@@ -171,7 +189,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
                   : document.querySelector(`[data-node-id="${id}"]`);
               return selectedNode !== null;
             })
-          : [node.id];
+          : [nodeId];
 
       // If all selected nodes are locked, don't proceed
       if (selectedNodesToResize.length === 0) return;
@@ -183,9 +201,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       const finalStyleUpdates = new Map();
 
       // 1) Capture each node's initial geometry.
-      selectedNodesToResize.forEach((nodeId) => {
+      selectedNodesToResize.forEach((id) => {
         const el = document.querySelector(
-          `[data-node-id="${nodeId}"]`
+          `[data-node-id="${id}"]`
         ) as HTMLElement;
         if (!el) return;
         const rect = el.getBoundingClientRect();
@@ -199,7 +217,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         // Convert screen coordinates to parent-local coordinates.
         const localX = (rect.left - parentRect.left) / transform.scale;
         const localY = (rect.top - parentRect.top) / transform.scale;
-        initialSizesRef.current[nodeId] = {
+        initialSizesRef.current[id] = {
           width: w,
           height: h,
           left: localX,
@@ -279,8 +297,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         // 3. Find maximum initial dimensions among selected nodes (for normalization).
         let maxInitialWidth = 0;
         let maxInitialHeight = 0;
-        selectedNodesToResize.forEach((nodeId) => {
-          const init = initialSizesRef.current[nodeId];
+        selectedNodesToResize.forEach((id) => {
+          const init = initialSizesRef.current[id];
           if (!init) return;
           maxInitialWidth = Math.max(maxInitialWidth, init.width);
           maxInitialHeight = Math.max(maxInitialHeight, init.height);
@@ -298,8 +316,8 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         let mainFinalHeight: number | undefined;
 
         // 4. Process each selected node.
-        selectedNodesToResize.forEach((nodeId) => {
-          const init = initialSizesRef.current[nodeId];
+        selectedNodesToResize.forEach((id) => {
+          const init = initialSizesRef.current[id];
           if (!init) return;
           const { width, height, left, top } = init;
 
@@ -384,7 +402,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
             if (crossed) {
               startX = moveEvent.clientX;
               startY = moveEvent.clientY;
-              initialSizesRef.current[nodeId] = {
+              initialSizesRef.current[id] = {
                 ...init,
                 width: newWidth,
                 height: newHeight,
@@ -402,7 +420,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
               newWidth = -newWidth;
               newLeft = wasLeft ? left + width : left;
               startX = moveEvent.clientX;
-              initialSizesRef.current[nodeId] = {
+              initialSizesRef.current[id] = {
                 ...init,
                 width: 0,
                 left: newLeft,
@@ -415,7 +433,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
               newHeight = -newHeight;
               newTop = wasTop ? top + height : top;
               startY = moveEvent.clientY;
-              initialSizesRef.current[nodeId] = {
+              initialSizesRef.current[id] = {
                 ...init,
                 height: 0,
                 top: newTop,
@@ -433,14 +451,14 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           if (parentElement?.clientHeight && isHeightPercent) {
             finalHeight = (newHeight / parentElement.clientHeight) * 100;
           }
-          if (nodeId === node.id) {
+          if (id === nodeId) {
             mainFinalWidth = finalWidth;
             mainFinalHeight = finalHeight;
           }
 
           // 9. Build the style update.
           const styleUpdate: Record<string, string> = {};
-          if (!node.parentId) {
+          if (!parentId) {
             styleUpdate.left = `${newLeft}px`;
             styleUpdate.top = `${newTop}px`;
           }
@@ -471,7 +489,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
 
           // DIRECT DOM UPDATE: Apply style directly to DOM
           const nodeElement = document.querySelector(
-            `[data-node-id="${nodeId}"]`
+            `[data-node-id="${id}"]`
           ) as HTMLElement;
           if (nodeElement) {
             Object.entries(styleUpdate).forEach(([prop, value]) => {
@@ -480,7 +498,7 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
           }
 
           // Store the final style update for this node to apply at the end
-          finalStyleUpdates.set(nodeId, styleUpdate);
+          finalStyleUpdates.set(id, styleUpdate);
         });
 
         if (mainFinalWidth !== undefined && mainFinalHeight !== undefined) {
@@ -499,9 +517,10 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       };
 
       const handlePointerUp = () => {
-        // Apply all final style updates at once to React state
-        finalStyleUpdates.forEach((styleUpdate, nodeId) => {
-          setNodeStyle(styleUpdate, [nodeId], true);
+        // Apply all final style updates at once using updateNodeStyle
+        finalStyleUpdates.forEach((styleUpdate, id) => {
+          // Use updateNodeStyle instead of setNodeStyle
+          updateNodeStyle(id, styleUpdate);
         });
 
         visualOps.hideStyleHelper();
@@ -517,17 +536,25 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
       window.addEventListener("pointerup", handlePointerUp);
     },
     [
-      node,
+      nodeId,
       getTransform,
-      setNodeStyle,
       startRecording,
       stopRecording,
       isLocked,
       getSelectedIds,
+      parentId,
     ]
   );
 
   const noPointer = isResizing;
+
+  // Create a node object to pass to VisualHelpers (for backward compatibility)
+  const nodeForVisualHelpers = {
+    id: nodeId,
+    type: "frame",
+    isLocked,
+    style,
+  };
 
   return (
     <>
@@ -550,9 +577,9 @@ export const ResizableWrapper: React.FC<ResizableWrapperProps> = ({
         !isDraggingChevrons &&
         (isSelected || isHovered || isNodeTempSelected) && (
           <VisualHelpers
-            key={node.id}
+            key={nodeId}
             elementRef={elementRef}
-            node={node}
+            nodeId={nodeId}
             handleResizeStart={handleResizeStart}
           />
         )}

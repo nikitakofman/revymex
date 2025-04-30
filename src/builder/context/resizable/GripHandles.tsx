@@ -6,8 +6,7 @@ import {
   useMemo,
 } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder, useBuilderDynamic, useBuilderRefs } from "../builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic, useBuilderRefs } from "../builderState";
 import { Move, MoveHorizontal, MoveVertical } from "lucide-react";
 import { useDragStart } from "../dnd/useDragStart";
 import { hasSkewTransform } from "../utils";
@@ -15,14 +14,30 @@ import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 import { dragOps } from "../atoms/drag-store";
 import { useTransform } from "../atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeFlags,
+  useNodeParent,
+  useGetNode,
+} from "../atoms/node-store";
 
 export const GripHandles = ({
-  node,
+  nodeId,
   elementRef,
 }: {
-  node: Node;
+  nodeId: NodeId;
   elementRef: RefObject<HTMLDivElement>;
 }) => {
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const { isDynamic = false } = flags;
+  const parentId = useNodeParent(nodeId);
+
+  // Get a full node builder for compatibility with drag functions
+  const getNode = useGetNode();
+
   const { nodeState } = useBuilderDynamic();
   const { contentRef } = useBuilderRefs();
   const handleDragStart = useDragStart();
@@ -41,19 +56,19 @@ export const GripHandles = ({
 
   // Check if node has siblings (nodes with same parent)
   const hasSiblings = useMemo(() => {
-    if (!node.parentId) return false;
+    if (!parentId) return false;
 
     // Count nodes with the same parent ID
     const siblingCount = nodeState.nodes.filter(
-      (n) => n.parentId === node.parentId && n.id !== node.id
+      (n) => n.parentId === parentId && n.id !== nodeId
     ).length;
 
     return siblingCount > 0;
-  }, [node.parentId, node.id, nodeState.nodes]);
+  }, [parentId, nodeId, nodeState.nodes]);
 
   // Check if parent node has siblings
   const parentNode = nodeState.nodes.find(
-    (n) => n.id === node.parentId && n.type === "frame"
+    (n) => n.id === parentId && n.type === "frame"
   );
 
   const parentHasSiblings = useMemo(() => {
@@ -68,19 +83,22 @@ export const GripHandles = ({
   }, [parentNode, nodeState.nodes]);
 
   const startGripDrag = useCallback(
-    async (e: React.MouseEvent, nodeToMove: Node) => {
+    async (e: React.MouseEvent, nodeIdToMove: NodeId) => {
       if (!elementRef.current) return;
       e.preventDefault();
       e.stopPropagation();
 
       const targetElement = document.querySelector(
-        `[data-node-id="${nodeToMove.id}"]`
+        `[data-node-id="${nodeIdToMove}"]`
       );
       const parentElement = targetElement?.parentElement;
       if (!parentElement) return;
 
       const isColumn =
         getComputedStyle(parentElement).flexDirection === "column";
+
+      // Build a full node for the drag operation
+      const nodeToMove = getNode(nodeIdToMove);
 
       handleDragStart(e, undefined, nodeToMove);
 
@@ -91,7 +109,7 @@ export const GripHandles = ({
         });
       });
     },
-    [elementRef, handleDragStart]
+    [elementRef, handleDragStart, getNode]
   );
 
   const parentElement = parentNode
@@ -153,12 +171,13 @@ export const GripHandles = ({
   }, [parentElement, contentRef, transform.scale]);
 
   const renderGripHandle = (
-    targetNode: Node,
+    targetNodeId: NodeId,
+    targetNode: any, // Still using node for compatibility
     isParentHandle: boolean = false,
     flexDir: boolean
   ) => (
     <div
-      key={`grip-${targetNode.id}`}
+      key={`grip-${targetNodeId}`}
       className="absolute"
       style={{
         pointerEvents: "auto",
@@ -178,13 +197,13 @@ export const GripHandles = ({
       }}
       onMouseDown={(e) => {
         clearSelection();
-        addToSelection(targetNode.id);
-        startGripDrag(e, targetNode);
+        addToSelection(targetNodeId);
+        startGripDrag(e, targetNodeId);
       }}
       onClick={(e) => {
         e.stopPropagation();
-        console.log("CLICK", targetNode);
-        addToSelection(targetNode.id);
+        console.log("CLICK", targetNodeId);
+        addToSelection(targetNodeId);
       }}
       onMouseEnter={
         isParentHandle
@@ -210,12 +229,12 @@ export const GripHandles = ({
         }}
       >
         {flexDir ? (
-          node.parentId ? (
+          parentId ? (
             <MoveVertical size={18 / transform.scale} />
           ) : (
             <Move size={18 / transform.scale} />
           )
-        ) : node.parentId ? (
+        ) : parentId ? (
           <MoveHorizontal size={18 / transform.scale} />
         ) : (
           <Move size={18 / transform.scale} />
@@ -224,15 +243,23 @@ export const GripHandles = ({
     </div>
   );
 
+  // Build a node-like object with the necessary properties
+  const node = {
+    id: nodeId,
+    parentId,
+    isDynamic,
+    style,
+  };
+
   return (
     <>
       {/* Only show the node's grip handle if it has siblings */}
       {hasSiblings &&
-        (node.style.rotate === "0deg" ||
-          node.style.rotate === undefined ||
-          !node.style.transform) &&
-        !hasSkewTransform(node.style.transform) &&
-        renderGripHandle(node, false, isColumn)}
+        (style.rotate === "0deg" ||
+          style.rotate === undefined ||
+          !style.transform) &&
+        !hasSkewTransform(style.transform) &&
+        renderGripHandle(nodeId, node, false, isColumn)}
 
       {/* Only show the parent's grip handle if the parent has siblings */}
       {parentNode &&
@@ -252,7 +279,7 @@ export const GripHandles = ({
               zIndex: 9999,
             }}
           >
-            {renderGripHandle(parentNode, true, isParentColumn)}
+            {renderGripHandle(parentNode.id, parentNode, true, isParentColumn)}
           </div>,
           contentRef.current
         )}

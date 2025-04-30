@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { ToolbarSection } from "../_components/ToolbarAtoms";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Wand2 } from "lucide-react";
 import { ToolbarPopup } from "@/builder/view/toolbars/rightToolbar/toolbar-popup";
@@ -14,9 +13,16 @@ import {
   getNextImageSource,
 } from "../utils";
 import { useSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeBasics,
+  useGetNode,
+} from "@/builder/context/atoms/node-store";
 
 export const FillTool = () => {
-  const { nodeState } = useBuilderDynamic();
+  // Replace nodeState with Jotai hooks
+  const getNode = useGetNode();
 
   // Use subscription-based hook
   const selectedIds = useSelectedIds();
@@ -24,8 +30,20 @@ export const FillTool = () => {
   // Memoize the selected node to prevent unnecessary calculations
   const selectedNode = useMemo(() => {
     if (selectedIds.length === 0) return null;
-    return nodeState.nodes.find((n) => n.id === selectedIds[0]) || null;
-  }, [nodeState.nodes, selectedIds]);
+    return getNode(selectedIds[0]) || null;
+  }, [selectedIds, getNode]);
+
+  // Get node type and style using Jotai hooks when we have a selected node
+  const nodeType = useMemo(() => {
+    if (!selectedNode) return null;
+    return selectedNode.type;
+  }, [selectedNode]);
+
+  // Get node style using Jotai hooks
+  const nodeStyle = useMemo(() => {
+    if (!selectedNode) return {};
+    return selectedNode.style || {};
+  }, [selectedNode]);
 
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
@@ -61,7 +79,7 @@ export const FillTool = () => {
 
   // Directly query the DOM to get the actual image source when the node changes
   useEffect(() => {
-    if (selectedNode && selectedNode.type === "image") {
+    if (selectedNode && nodeType === "image") {
       const element = document.querySelector(
         `[data-node-id="${selectedNode.id}"]`
       );
@@ -76,6 +94,7 @@ export const FillTool = () => {
     }
   }, [
     selectedNode,
+    nodeType,
     background,
     backgroundColor,
     backgroundImage,
@@ -88,11 +107,11 @@ export const FillTool = () => {
     if (!selectedNode) return {};
 
     return {
-      background: selectedNode.style?.background,
-      backgroundColor: selectedNode.style?.backgroundColor,
-      backgroundImage: selectedNode.style?.backgroundImage,
-      backgroundVideo: selectedNode.style?.backgroundVideo,
-      src: selectedNode.style?.src,
+      background: nodeStyle.background,
+      backgroundColor: nodeStyle.backgroundColor,
+      backgroundImage: nodeStyle.backgroundImage,
+      backgroundVideo: nodeStyle.backgroundVideo,
+      src: nodeStyle.src,
     };
   };
 
@@ -102,12 +121,12 @@ export const FillTool = () => {
   const directStyles = getDirectNodeStyle();
 
   // Check if the selected node is a video or has video background
-  const isVideoNode = selectedNode.type === "video";
+  const isVideoNode = nodeType === "video";
   const hasVideoBackground = !!directStyles.backgroundVideo;
   const showVideoSettings = isVideoNode || hasVideoBackground;
 
   // Check if the selected node is an image or has image background
-  const isImageNode = selectedNode.type === "image";
+  const isImageNode = nodeType === "image";
   const hasImageBackground = !!directStyles.backgroundImage;
   const showImageSettings = isImageNode || hasImageBackground;
 
@@ -125,7 +144,7 @@ export const FillTool = () => {
     const nodeStyles = getDirectNodeStyle();
 
     // 1. First check for image nodes with directly queried src from DOM
-    if (selectedNode.type === "image" && actualImageSrc) {
+    if (nodeType === "image" && actualImageSrc) {
       return {
         type: "image",
         preview: (
@@ -139,12 +158,12 @@ export const FillTool = () => {
         ),
         label: "Image",
       };
-    } else if (selectedNode.type === "video") {
+    } else if (nodeType === "video") {
       return {
         type: "video",
         preview: (
           <video
-            src={selectedNode.style.src}
+            src={nodeStyle.src}
             className="h-full w-full object-cover"
             autoPlay
             loop
@@ -168,7 +187,7 @@ export const FillTool = () => {
             )}
           />
         ),
-        label: selectedNode.type === "image" ? "Image" : "Image Background",
+        label: nodeType === "image" ? "Image" : "Image Background",
       };
     }
 
@@ -187,7 +206,7 @@ export const FillTool = () => {
             />
           </div>
         ),
-        label: selectedNode.type === "video" ? "Video" : "Video Background",
+        label: nodeType === "video" ? "Video" : "Video Background",
       };
     }
 
@@ -366,11 +385,7 @@ export const FillTool = () => {
   };
 
   const sectionName =
-    selectedNode.type === "image"
-      ? "Image"
-      : selectedNode.type === "video"
-      ? "Video"
-      : "Fill";
+    nodeType === "image" ? "Image" : nodeType === "video" ? "Video" : "Fill";
 
   return (
     <>

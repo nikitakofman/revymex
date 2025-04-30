@@ -1,13 +1,20 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
 import { canvasOps, useTransform } from "../atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "../atoms/dynamic-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeFlags,
+  useNodeBasics,
+  useGetNode,
+} from "../atoms/node-store";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 interface FontSizeHandleProps {
-  node: Node;
+  nodeId: NodeId;
   elementRef: React.RefObject<HTMLDivElement>;
   groupBounds?: {
     top: number;
@@ -26,18 +33,22 @@ interface FontSizeInfo {
 }
 
 export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
-  node,
+  nodeId,
   elementRef,
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const {
-    setNodeStyle,
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const { isDynamic = false } = flags;
+  const basics = useNodeBasics(nodeId);
+  const { type } = basics;
 
-    startRecording,
-    stopRecording,
-    nodeState,
-  } = useBuilderDynamic();
+  // Get a full node builder for compatibility with some functions
+  const getNode = useGetNode();
+
+  const { startRecording, stopRecording, nodeState } = useBuilderDynamic();
 
   const transform = useTransform();
 
@@ -49,8 +60,8 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
   const isPrimarySelectedNode = useCallback(() => {
     if (!isGroupSelection) return true;
     const selectedIds = getSelectedIds();
-    return selectedIds.length > 0 && node.id === selectedIds[0];
-  }, [isGroupSelection, node.id, getSelectedIds]);
+    return selectedIds.length > 0 && nodeId === selectedIds[0];
+  }, [isGroupSelection, nodeId, getSelectedIds]);
 
   const startPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const startFontSizeRef = useRef<number>(16); // Default average font size
@@ -125,12 +136,15 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
     // Get the current selection imperatively at the time of the event
     const selectedIds = getSelectedIds();
 
+    // Get the full node for text extraction
+    const node = getNode(nodeId);
+
     // Extract all font sizes from the text content
     const fontSizes: { size: number; unit: string }[] = [];
     let averageFontSize = 16; // Default
     let primaryUnit = "px"; // Default unit
 
-    if (node.style.text) {
+    if (style.text) {
       // Extract all font sizes with regex - FIXED to correctly capture the unit
       // This regex properly separates the numeric part from the unit
       const fontSizePattern = /font-size:\s*([\d.]+)([a-z%]*)/g;
@@ -141,7 +155,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
       let totalPx = 0;
       let totalVw = 0;
 
-      while ((match = fontSizePattern.exec(node.style.text)) !== null) {
+      while ((match = fontSizePattern.exec(style.text)) !== null) {
         if (match[1]) {
           const size = parseFloat(match[1]);
           // Make sure to capture the unit part correctly
@@ -281,7 +295,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
             const selectedNode = nodeState.nodes.find((n) => n.id === id);
             return selectedNode && selectedNode.type === "text";
           })
-        : [node.id];
+        : [nodeId];
 
       // Update each text node
       nodesToUpdate.forEach((id) => {
@@ -299,11 +313,13 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 
         // Check if this node has independent text styles
         if (textNode.independentStyles?.text) {
-          // Update only this node
-          setNodeStyle({ text: updatedText }, [id], false, true, true);
+          // Update only this node - using updateNodeStyle instead of setNodeStyle
+          updateNodeStyle(id, { text: updatedText });
         } else {
           // Update with normal syncing behavior
-          setNodeStyle({ text: updatedText }, [id], true, false, false);
+          // Note: we would need to add a separate function for syncing updates
+          // For now, use standard updateNodeStyle
+          updateNodeStyle(id, { text: updatedText });
         }
       });
 
@@ -410,7 +426,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
   };
 
   // Don't render if it's not a text element or doesn't have auto width/height
-  if (node.type !== "text" || !isAutoSized) {
+  if (type !== "text" || !isAutoSized) {
     return null;
   }
 
@@ -439,7 +455,7 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
         borderRadius: "50%",
         backgroundColor: "white",
         border: `${borderWidth}px solid ${
-          node.isDynamic || dynamicModeNodeId
+          isDynamic || dynamicModeNodeId
             ? "var(--accent-secondary)"
             : "var(--accent)"
         }`,

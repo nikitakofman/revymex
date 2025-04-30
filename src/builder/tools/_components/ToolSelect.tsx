@@ -1,9 +1,18 @@
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronDown } from "lucide-react";
 import { useComputedStyle } from "@/builder/context/hooks/useComputedStyle";
 import { Label } from "./ToolbarAtoms";
-import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
+import {
+  useGetSelectedIds,
+  useSelectedIds,
+} from "@/builder/context/atoms/select-store";
 import { useEffect, useState } from "react";
+import {
+  NodeId,
+  useNodeParent,
+  useGetNode,
+} from "@/builder/context/atoms/node-store";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 interface ToolSelectProps {
   label: string;
@@ -24,26 +33,25 @@ export const ToolSelect = ({
   onChange,
   customSelectWidth,
 }: ToolSelectProps) => {
-  const { setNodeStyle, nodeState, nodeDisp } = useBuilderDynamic();
+  const { nodeDisp } = useBuilderDynamic();
 
-  // Replace subscription with imperative getter
+  // Use reactive hooks for selected IDs
+  const selectedIds = useSelectedIds();
   const getSelectedIds = useGetSelectedIds();
   const [hasParent, setHasParent] = useState(false);
+  const getNode = useGetNode();
+  const parentId = useNodeParent(selectedIds[0]);
 
   // Update hasParent state when needed
   useEffect(() => {
-    // Get the current selection
-    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) {
+      setHasParent(false);
+      return;
+    }
 
-    // Calculate if selected node has a parent
-    const nodeHasParent =
-      selectedIds.length > 0 &&
-      nodeState.nodes.some(
-        (node) => node.id === selectedIds[0] && node.parentId
-      );
-
-    setHasParent(nodeHasParent);
-  }, [nodeState.nodes, getSelectedIds]);
+    // Get parent of first selected node using Jotai
+    setHasParent(!!parentId);
+  }, [selectedIds]);
 
   const computedStyle = useComputedStyle({
     property: name,
@@ -70,7 +78,10 @@ export const ToolSelect = ({
       if (name === "position") {
         handlePositionChange(newValue);
       } else {
-        setNodeStyle({ [name]: newValue });
+        // Use updateNodeStyle for each selected node
+        selectedIds.forEach((id) => {
+          updateNodeStyle(id, { [name]: newValue });
+        });
       }
     }
   };
@@ -78,57 +89,65 @@ export const ToolSelect = ({
   // Handle position changes with special logic for absolute positioning in frames
   const handlePositionChange = (position: string) => {
     // Get the current selection when handling position change
-    const selectedIds = getSelectedIds();
-    if (selectedIds.length === 0) return;
+    const currentSelectedIds = getSelectedIds();
+    if (currentSelectedIds.length === 0) return;
 
     // If position is absolute, check if node is within a frame
     if (position === "absolute") {
       // For each selected node
-      selectedIds.forEach((nodeId) => {
-        const node = nodeState.nodes.find((n) => n.id === nodeId);
+      currentSelectedIds.forEach((nodeId) => {
+        // Get node info from Jotai
+        const node = getNode(nodeId);
         if (!node) return;
 
-        // Check if parent is a frame
-        const parentNode = node.parentId
-          ? nodeState.nodes.find((n) => n.id === node.parentId)
-          : null;
+        // Get parent node info from Jotai
+        const parentId = node.parentId;
+        let isInFrame = false;
 
-        const isInFrame =
-          parentNode && (parentNode.type === "frame" || parentNode.isViewport);
+        if (parentId) {
+          const parentNode = getNode(parentId);
+          isInFrame =
+            parentNode &&
+            (parentNode.type === "frame" || parentNode.isViewport);
+        }
 
         if (isInFrame) {
           // For elements in frames, set the isAbsoluteInFrame flag
-          nodeDisp.updateNode(node.id, { isAbsoluteInFrame: true });
+          // Keep nodeDisp.updateNode as requested
+          nodeDisp.updateNode(nodeId, { isAbsoluteInFrame: true });
 
           // If the element already has positions, keep them
           // Otherwise, set initial positions at 0,0 within the frame
           const currentLeft = node.style.left || "0px";
           const currentTop = node.style.top || "0px";
 
-          setNodeStyle(
-            {
-              position: "absolute",
-              left: currentLeft,
-              top: currentTop,
-            },
-            [node.id]
-          );
+          // Use updateNodeStyle instead of setNodeStyle
+          updateNodeStyle(nodeId, {
+            position: "absolute",
+            left: currentLeft,
+            top: currentTop,
+          });
 
           return;
         }
       });
     } else if (position !== "absolute") {
       // When changing from absolute to another position, reset the flag
-      selectedIds.forEach((nodeId) => {
-        const node = nodeState.nodes.find((n) => n.id === nodeId);
+      currentSelectedIds.forEach((nodeId) => {
+        // Get node info from Jotai
+        const node = getNode(nodeId);
+
         if (node?.isAbsoluteInFrame) {
-          nodeDisp.updateNode(node.id, { isAbsoluteInFrame: false });
+          // Keep nodeDisp.updateNode as requested
+          nodeDisp.updateNode(nodeId, { isAbsoluteInFrame: false });
         }
       });
     }
 
-    // Apply the position style
-    setNodeStyle({ position });
+    // Apply the position style to all selected nodes
+    currentSelectedIds.forEach((id) => {
+      updateNodeStyle(id, { position });
+    });
   };
 
   // Event handlers to prevent propagation

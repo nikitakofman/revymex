@@ -1,6 +1,5 @@
 import React, { useRef } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
 import {
@@ -8,11 +7,19 @@ import {
   useIsRotating,
   useTransform,
 } from "../atoms/canvas-interaction-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeFlags,
+  useNodeBasics,
+  useGetNode,
+} from "../atoms/node-store";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 const SNAP_ANGLE = 15; // Defines the increment for snapping (15 degrees)
 
 interface RotateHandleProps {
-  node: Node;
+  nodeId: NodeId;
   elementRef: React.RefObject<HTMLDivElement>;
   groupBounds?: {
     top: number;
@@ -24,13 +31,21 @@ interface RotateHandleProps {
 }
 
 export const RotateHandle: React.FC<RotateHandleProps> = ({
-  node,
+  nodeId,
   elementRef,
   groupBounds,
   isGroupSelection = false,
 }) => {
-  const { setNodeStyle, startRecording, stopRecording, nodeState } =
-    useBuilderDynamic();
+  // Get node data directly from atoms
+  const style = useNodeStyle(nodeId);
+  const flags = useNodeFlags(nodeId);
+  const { isDynamic = false } = flags;
+  const dynamicParentId = flags.dynamicParentId || null;
+
+  const isRotating = useIsRotating();
+
+  // Original functions from context
+  const { startRecording, stopRecording, nodeState } = useBuilderDynamic();
 
   const transform = useTransform();
 
@@ -81,8 +96,8 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
 
     // Store the initial rotation for reference
     let currentRotation = 0;
-    if (node.style.rotate) {
-      const match = node.style.rotate.match(/([-\d.]+)deg/);
+    if (style.rotate) {
+      const match = style.rotate.match(/([-\d.]+)deg/);
       if (match) {
         currentRotation = parseFloat(match[1]);
       }
@@ -133,8 +148,8 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
       // Handle multiple nodes for group rotation
       if (isGroupSelection) {
         // Use selectedIds from the hook
-        selectedIds.forEach((nodeId) => {
-          const initialRotation = initialRotationsRef.current.get(nodeId) || 0;
+        selectedIds.forEach((id) => {
+          const initialRotation = initialRotationsRef.current.get(id) || 0;
           let newRotation = initialRotation + deltaAngleDeg;
 
           if (e.shiftKey) {
@@ -149,9 +164,10 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
             Math.abs(newRotation) < 0.5 ||
             Math.abs(newRotation - 360) < 0.5
           ) {
-            setNodeStyle({ rotate: undefined }, [nodeId], false);
+            // Use updateNodeStyle instead of setNodeStyle for single node updates
+            updateNodeStyle(id, { rotate: undefined });
           } else {
-            setNodeStyle({ rotate: `${newRotation}deg` }, [nodeId], false);
+            updateNodeStyle(id, { rotate: `${newRotation}deg` });
           }
         });
       } else {
@@ -165,11 +181,11 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
         // Normalize rotation
         newRotation = ((newRotation % 360) + 360) % 360;
 
-        // Apply rotation
+        // Apply rotation - using updateNodeStyle instead of setNodeStyle
         if (Math.abs(newRotation) < 0.5 || Math.abs(newRotation - 360) < 0.5) {
-          setNodeStyle({ rotate: undefined }, [node.id], true);
+          updateNodeStyle(nodeId, { rotate: undefined });
         } else {
-          setNodeStyle({ rotate: `${newRotation}deg` }, [node.id], true);
+          updateNodeStyle(nodeId, { rotate: `${newRotation}deg` });
         }
       }
     };
@@ -190,12 +206,12 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
 
   // Don't render if this isn't the primary selected node in a group
   // Use selectedIds from the hook
-  if (isGroupSelection && node.id !== selectedIds[0]) {
+  if (isGroupSelection && nodeId !== selectedIds[0]) {
     return null;
   }
 
   // Skip for viewport nodes in single selection mode
-  if (!isGroupSelection && node.id.includes("viewport")) {
+  if (!isGroupSelection && nodeId.includes("viewport")) {
     return null;
   }
 
@@ -203,8 +219,6 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   const handleSize = 8 / transform.scale;
   const handleOffset = 20 / transform.scale;
   const borderWidth = 1 / transform.scale;
-
-  const isRotating = useIsRotating();
 
   return (
     <div
@@ -219,10 +233,10 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
         borderRadius: "50%",
         backgroundColor: "white",
         border: `${borderWidth}px solid ${
-          node.isDynamic || node.dynamicParentId
+          isDynamic || dynamicParentId
             ? "var(--accent-secondary)"
             : "var(--accent)"
-        },`,
+        }`,
         cursor: isRotating ? "grabbing" : "grab",
         zIndex: 1001,
         pointerEvents: "auto",

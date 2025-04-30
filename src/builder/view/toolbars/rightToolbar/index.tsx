@@ -120,8 +120,6 @@ const ElementToolbar = () => {
         </>
       )}
 
-      <SimpleColorPicker />
-
       {toolTypes.hasBackgroundTools && (
         <>
           <FillTool />
