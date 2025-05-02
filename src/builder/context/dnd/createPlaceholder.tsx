@@ -1,7 +1,13 @@
 import { Node } from "@/builder/reducer/nodeDispatcher";
 import { nanoid } from "nanoid";
 import { convertToNewUnit } from "@/builder/context/utils";
-import { parseSkew } from "@/builder/context/utils"; // Assuming parseSkew is here
+import { parseSkew } from "@/builder/context/utils";
+import {
+  nodeStore,
+  nodeBasicsAtom,
+  nodeStyleAtom,
+  nodeFlagsAtom,
+} from "@/builder/context/atoms/node-store";
 
 interface CreatePlaceholderParams {
   node: Node;
@@ -78,19 +84,41 @@ export const createPlaceholder = ({
     }
   }
 
-  return {
-    id: nanoid(),
+  // Create a placeholder node
+  const placeholderId = nanoid();
+  const placeholderStyle = {
+    width: placeholderWidth,
+    height: placeholderHeight,
+    backgroundColor: "rgba(0,153,255,0.8)",
+    position: "relative",
+    flex: "0 0 auto",
+    rotate: node.style.rotate,
+    borderRadius: node.style.borderRadius,
+    transform: transformValue || undefined, // Only add if there are skew values
+  };
+
+  // Register the placeholder in the node-store
+  nodeStore.set(nodeBasicsAtom(placeholderId), {
+    id: placeholderId,
     type: "placeholder",
-    style: {
-      width: placeholderWidth,
-      height: placeholderHeight,
-      backgroundColor: "rgba(0,153,255,0.8)",
-      position: "relative",
-      flex: "0 0 auto",
-      rotate: node.style.rotate,
-      borderRadius: node.style.borderRadius,
-      transform: transformValue || undefined, // Only add if there are skew values
-    },
+    customName: "Placeholder",
+  });
+
+  nodeStore.set(nodeStyleAtom(placeholderId), placeholderStyle);
+
+  nodeStore.set(nodeFlagsAtom(placeholderId), {
+    inViewport: true,
+    isLocked: false,
+    isAbsoluteInFrame: false,
+    isViewport: false,
+  });
+
+  console.log(`Created placeholder ${placeholderId} for node ${node.id}`);
+
+  return {
+    id: placeholderId,
+    type: "placeholder",
+    style: placeholderStyle,
     inViewport: true,
     parentId: node.parentId,
   };

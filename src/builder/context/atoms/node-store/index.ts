@@ -1,10 +1,15 @@
 // src/builder/context/atoms/node-store.ts
 import { atom, createStore } from "jotai/vanilla";
-import { atomFamily, selectAtom } from "jotai/utils";
+import { atomFamily } from "jotai/utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import { CSSProperties, useCallback } from "react";
 import { NodeState } from "@/builder/reducer/nodeDispatcher";
 import { unstable_batchedUpdates } from "react-dom";
+import {
+  childrenMapAtom,
+  hierarchyStore,
+  parentMapAtom,
+} from "./hierarchy-store";
 
 // Define type for node ID - can be string or number
 export type NodeId = string | number;
@@ -189,32 +194,6 @@ export const nodeDynamicInfoAtom = atomFamily((id: NodeId) =>
 // Atom family for variant information
 export const nodeVariantInfoAtom = atomFamily((id: NodeId) =>
   atom<NodeVariantInfo>({})
-);
-
-// Derived atoms for relationships and indexing
-// ==================================
-
-// Atom family for children of a node (derived from parent relationships)
-export const nodeChildrenAtom = atomFamily((parentId: NodeId | null) =>
-  selectAtom(nodeIdsAtom, (ids) => {
-    // Filter nodes that have this parent
-    return ids.filter((id) => {
-      // Access nodeParentAtom directly from store to avoid circular dependency
-      const parent = nodeStore.get(nodeParentAtom(id));
-      return parent === parentId;
-    });
-  })
-);
-
-// Index/position of a child within its parent's children
-export const nodeOrderAtom = atomFamily((id: NodeId) =>
-  atom((get) => {
-    const parentId = get(nodeParentAtom(id));
-    if (parentId === null) return 0;
-
-    const siblings = get(nodeChildrenAtom(parentId));
-    return siblings.indexOf(id);
-  })
 );
 
 // Viewports in order (desktop to mobile)
@@ -421,15 +400,6 @@ export const useUpdateNodeParent = (id: NodeId) => {
   return useSetAtom(nodeParentAtom(id), { store: nodeStore });
 };
 
-export const useNodeChildren = (parentId: NodeId | null) => {
-  return useAtomValue(nodeChildrenAtom(parentId), { store: nodeStore });
-};
-
-// Order hooks
-export const useNodeOrder = (id: NodeId) => {
-  return useAtomValue(nodeOrderAtom(id), { store: nodeStore });
-};
-
 // Shared info hooks
 export const useNodeSharedInfo = (id: NodeId) => {
   return useAtomValue(nodeSharedInfoAtom(id), { store: nodeStore });
@@ -506,12 +476,6 @@ export const useGetNodeFlags = () => {
 export const useGetNodeParent = () => {
   return useCallback((id: NodeId): NodeId | null => {
     return nodeStore.get(nodeParentAtom(id));
-  }, []);
-};
-
-export const useGetNodeChildren = () => {
-  return useCallback((parentId: NodeId | null): NodeId[] => {
-    return nodeStore.get(nodeChildrenAtom(parentId));
   }, []);
 };
 
@@ -634,11 +598,18 @@ nodeStore.set(nodeIdsAtom, []);
 nodeStore.set(changedNodesAtom, new Set());
 
 export function initNodeStateFromInitialState(initialState: NodeState) {
-  // Add node IDs to the store
+  // Add node IDs to the node store
   nodeStore.set(
     nodeIdsAtom,
     initialState.nodes.map((node) => node.id)
   );
+
+  // Initialize hierarchy maps
+  const childrenMap = new Map<NodeId | null, NodeId[]>();
+  const parentMap = new Map<NodeId, NodeId | null>();
+
+  // Initialize root nodes array (nodes with no parent)
+  childrenMap.set(null, []);
 
   // Initialize each node's atoms
   initialState.nodes.forEach((node) => {
@@ -665,7 +636,29 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
     });
 
     // Parent
-    nodeStore.set(nodeParentAtom(node.id), node.parentId || null);
+    const parentId = node.parentId || null;
+    nodeStore.set(nodeParentAtom(node.id), parentId);
+
+    // Add to parent-child hierarchy
+    parentMap.set(node.id, parentId);
+
+    // Initialize children array for this node if it doesn't exist
+    if (!childrenMap.has(node.id)) {
+      childrenMap.set(node.id, []);
+    }
+
+    // Add this node to its parent's children array
+    if (parentId === null) {
+      // Add to root nodes
+      childrenMap.get(null)!.push(node.id);
+    } else {
+      // Ensure the parent has a children array
+      if (!childrenMap.has(parentId)) {
+        childrenMap.set(parentId, []);
+      }
+      // Add to parent's children
+      childrenMap.get(parentId)!.push(node.id);
+    }
 
     // Shared info
     if (node.sharedId) {
@@ -711,4 +704,12 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
       lowerSyncProps: node.lowerSyncProps || {},
     });
   });
+
+  // Set hierarchy atoms
+  hierarchyStore.set(childrenMapAtom, childrenMap);
+  hierarchyStore.set(parentMapAtom, parentMap);
+
+  console.log(
+    `Initialized hierarchy store with ${childrenMap.size} parent entries and ${parentMap.size} nodes`
+  );
 }

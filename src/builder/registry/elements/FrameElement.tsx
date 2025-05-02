@@ -31,6 +31,7 @@ import {
   dragOps,
   useDropInfo,
   useGetDragPositions,
+  useGetDropInfo,
   useGetIsDragging,
 } from "@/builder/context/atoms/drag-store";
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
@@ -69,8 +70,7 @@ export const Frame = ({
   // Use per-node subscription for hover and selection state
   const isSelected = useNodeSelected(nodeId);
   const isHovered = useNodeHovered(nodeId);
-  const dropInfo = useDropInfo();
-
+  const getDropInfo = useGetDropInfo();
   // Use imperative getter instead of subscription for selectedIds
   const getSelectedIds = useGetSelectedIds();
   const getDragPositions = useGetDragPositions();
@@ -92,7 +92,7 @@ export const Frame = ({
   };
 
   const isDropTarget =
-    dropInfo?.targetId === nodeId && dropInfo?.position === "inside";
+    getDropInfo()?.targetId === nodeId && getDropInfo()?.position === "inside";
 
   const handleDragStart = useDragStart();
 

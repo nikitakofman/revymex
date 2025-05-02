@@ -1,5 +1,4 @@
 import {
-  useBuilder,
   useBuilderDynamic,
   useBuilderRefs,
 } from "@/builder/context/builderState";
@@ -10,7 +9,6 @@ import {
   getFilteredElementsUnderMouseDuringDrag,
   getCalibrationAdjustedPosition,
   isWithinViewport,
-  findIndexWithinParent,
   isAbsoluteInFrame,
 } from "../utils";
 import { useEffect, useRef } from "react";
@@ -20,7 +18,6 @@ import {
   useAutoScroll,
   VERTICAL_EDGE_SIZE,
 } from "../hooks/useAutoScroll";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPlaceholder } from "./createPlaceholder";
 import {
   dragOps,
@@ -35,49 +32,64 @@ import {
   useGetPlaceholderInfo,
 } from "../atoms/drag-store";
 import { visualOps } from "../atoms/visual-store";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
 import {
-  useGetTransform,
-  useTransform,
-} from "../atoms/canvas-interaction-store";
+  NodeId,
+  useGetNodeBasics,
+  useGetNodeStyle,
+  useGetNodeFlags,
+  useGetNodeDynamicInfo,
+} from "../atoms/node-store";
+import {
+  addNode,
+  insertAtIndex,
+  moveNode,
+  removeNode,
+} from "../atoms/node-store/operations/insert-operations";
+import {
+  useGetNodeParent,
+  useGetNodeChildren,
+  useRootNodes,
+} from "../atoms/node-store/hierarchy-store";
 
 // Helper to compute the furthest (root) container id for a given parent id.
 const getRootContainerId = (
-  parentId: string | number,
-  nodes: Node[]
-): string | number | null => {
-  let currentId: string | number | null = parentId;
-  let parent = nodes.find((n) => n.id === currentId);
-  // Traverse up until there is no parent.
-  while (parent && parent.parentId) {
-    currentId = parent.parentId;
-    parent = nodes.find((n) => n.id === currentId);
+  parentId: NodeId,
+  getNodeParent: (id: NodeId) => NodeId | null
+): NodeId | null => {
+  let currentId: NodeId | null = parentId;
+
+  // Traverse up until there is no parent
+  while (currentId !== null) {
+    const parent = getNodeParent(currentId);
+    if (parent === null) break;
+    currentId = parent;
   }
+
   return currentId;
 };
 
 export const useMouseMove = () => {
-  const { nodeDisp, nodeState } = useBuilderDynamic();
-
+  const { startRecording, stopRecording } = useBuilderDynamic();
   const { contentRef, containerRef, hasLeftViewportRef } = useBuilderRefs();
 
+  // Get non-reactive getters
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+  const getNodeChildren = useGetNodeChildren();
+  const getNodeDynamicInfo = useGetNodeDynamicInfo();
+
   const currentTransform = useGetTransform();
-
   const getDraggedNode = useGetDraggedNode();
-
   const getIsDragging = useGetIsDragging();
-
   const getDraggedItem = useGetDraggedItem();
-
   const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
-
   const getDropInfo = useGetDropInfo();
-
   const getDragSource = useGetDragSource();
-
   const getPlaceholderInfo = useGetPlaceholderInfo();
-
   const getNodeDimensions = useGetNodeDimensions();
-
   const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   const { startAutoScroll, updateScrollPosition, stopAutoScroll } =
@@ -91,62 +103,123 @@ export const useMouseMove = () => {
 
   // Remember the last drop info (target id & position) before leaving a container.
   const lastPlaceholderPositionRef = useRef<{
-    targetId: string | number;
+    targetId: NodeId;
     position: "before" | "after" | "inside";
   } | null>(null);
 
+  // Add reference to track the last reorder target to avoid redundant updates
+  const lastReorderRef = useRef<{
+    targetId: NodeId;
+    position: "before" | "after" | "inside";
+  } | null>(null);
+
+  // Helper to check if reorder target has changed
+  const isSameReorderTarget = (
+    result: {
+      targetId: NodeId;
+      position: "before" | "after" | "inside";
+    } | null
+  ) => {
+    if (!result || !lastReorderRef.current) return false;
+    return (
+      result.targetId === lastReorderRef.current.targetId &&
+      result.position === lastReorderRef.current.position
+    );
+  };
+
   // Original container data storage.
-  // We now store both:
-  // - originalParentId: the immediate parent of the dragged node (for correct insertion)
-  // - rootContainerId: the furthest parent in the chain.
   const originalViewportDataRef = useRef<{
-    originalParentId: string | number | null;
-    rootContainerId: string | number | null;
+    originalParentId: NodeId | null;
+    rootContainerId: NodeId | null;
     nodesToRestore: Array<{
-      nodeId: string | number;
-      parentId: string | number | null;
+      nodeId: NodeId;
+      parentId: NodeId | null;
       index: number;
-      siblings: Array<string | number>;
+      siblings: Array<NodeId>;
     }>;
   } | null>(null);
 
-  // Helper function to check if node is absolutely positioned within a frame
-
   // Helper function to check if node is absolutely positioned within a frame by ID
-  const isNodeAbsoluteInFrame = (nodeId: string | number) => {
-    const node = nodeState.nodes.find((n) => n.id === nodeId);
-    return node ? isAbsoluteInFrame(node) : false;
+  const isNodeAbsoluteInFrame = (nodeId: NodeId) => {
+    const nodeFlags = getNodeFlags(nodeId);
+    return nodeFlags.isAbsoluteInFrame === true;
+  };
+
+  // Helper function to check if a node is within a viewport
+  const isNodeWithinViewport = (nodeId: NodeId): boolean => {
+    if (!nodeId) return false;
+
+    // Get node data (using individual calls instead of the hooks directly)
+    const nodeFlags = getNodeFlags(nodeId);
+    const nodeDynamicInfo = getNodeDynamicInfo(nodeId);
+
+    // Direct checks
+    if (nodeFlags.isViewport) return true;
+    if (nodeFlags.inViewport) return true;
+
+    // Dynamic node checks
+    if (nodeDynamicInfo.dynamicViewportId) {
+      // If it has a dynamicViewportId, it's logically within that viewport
+      return true;
+    }
+
+    if (nodeDynamicInfo.originalState?.inViewport) {
+      // If it was originally in a viewport (for dynamic nodes)
+      return true;
+    }
+
+    // Check if parent is a dynamic node with viewport connection
+    const parentId = getNodeParent(nodeId);
+    if (parentId) {
+      const parentDynamicInfo = getNodeDynamicInfo(parentId);
+
+      if (
+        parentDynamicInfo.dynamicViewportId ||
+        parentDynamicInfo.originalState?.inViewport
+      ) {
+        return true;
+      }
+
+      // Recurse up the parent chain for traditional viewport relationships
+      return isNodeWithinViewport(parentId);
+    }
+
+    return false;
   };
 
   // On drag start, store the original container info.
   useEffect(() => {
     const isDragging = getIsDragging();
-
     const draggedNode = getDraggedNode();
-
     const additionalDraggedNodes = getAdditionalDraggedNodes();
 
     if (isDragging && draggedNode && !originalViewportDataRef.current) {
       const mainNode = draggedNode.node;
-      const siblings = nodeState.nodes
-        .filter((n) => n.parentId === mainNode.parentId && n.id !== mainNode.id)
-        .map((n) => n.id);
+      const parentId = getNodeParent(mainNode.id);
 
-      const originalParentId = mainNode.parentId; // immediate parent
-      const rootContainerId = getRootContainerId(
-        originalParentId,
-        nodeState.nodes
-      );
+      // Get siblings from the hierarchy store
+      const siblings = parentId
+        ? getNodeChildren(parentId).filter((id) => id !== mainNode.id)
+        : [];
+
+      // Get the root container ID
+      const rootContainerId = parentId
+        ? getRootContainerId(parentId, getNodeParent)
+        : null;
+
+      // Find index within parent (children are already ordered)
+      let index = 0;
+      if (parentId) {
+        const children = getNodeChildren(parentId);
+        index = children.indexOf(mainNode.id);
+        if (index === -1) index = 0;
+      }
 
       const nodesToRestore = [
         {
           nodeId: mainNode.id,
-          parentId: originalParentId,
-          index: findIndexWithinParent(
-            nodeState.nodes,
-            mainNode.id,
-            originalParentId
-          ),
+          parentId,
+          index,
           siblings,
         },
       ];
@@ -154,24 +227,32 @@ export const useMouseMove = () => {
       if (additionalDraggedNodes?.length) {
         additionalDraggedNodes.forEach((info) => {
           const node = info.node;
-          const nodeSiblings = nodeState.nodes
-            .filter((n) => n.parentId === node.parentId && n.id !== node.id)
-            .map((n) => n.id);
+          const nodeParentId = getNodeParent(node.id);
+
+          // Get siblings for this node too
+          const nodeSiblings = nodeParentId
+            ? getNodeChildren(nodeParentId).filter((id) => id !== node.id)
+            : [];
+
+          // Find index within parent
+          let nodeIndex = 0;
+          if (nodeParentId) {
+            const nodeChildren = getNodeChildren(nodeParentId);
+            nodeIndex = nodeChildren.indexOf(node.id);
+            if (nodeIndex === -1) nodeIndex = 0;
+          }
+
           nodesToRestore.push({
             nodeId: node.id,
-            parentId: node.parentId,
-            index: findIndexWithinParent(
-              nodeState.nodes,
-              node.id,
-              node.parentId
-            ),
+            parentId: nodeParentId,
+            index: nodeIndex,
             siblings: nodeSiblings,
           });
         });
       }
 
       originalViewportDataRef.current = {
-        originalParentId,
+        originalParentId: parentId,
         rootContainerId,
         nodesToRestore,
       };
@@ -183,12 +264,14 @@ export const useMouseMove = () => {
       hasLeftViewportRef.current = false;
       lastPlaceholderPositionRef.current = null;
       hasReenteredContainerRef.current = false;
+      lastReorderRef.current = null;
     }
   }, [
     getIsDragging,
     getDraggedNode,
-    nodeState.nodes,
     getAdditionalDraggedNodes,
+    getNodeParent,
+    getNodeChildren,
   ]);
 
   // Helper: Check if the mouse is inside an element's bounds.
@@ -203,67 +286,85 @@ export const useMouseMove = () => {
   };
 
   // Helper: Get non-absolute siblings for a parent
-  const getNonAbsoluteSiblings = (parentId: string | number | null) => {
+  const getNonAbsoluteSiblings = (parentId: NodeId | null) => {
     if (!parentId) return [];
 
-    return nodeState.nodes.filter(
-      (n) =>
-        n.parentId === parentId &&
-        // Filter out absolute positioned nodes
-        !isAbsoluteInFrame(n) &&
-        // Filter out placeholders
-        n.type !== "placeholder"
-    );
+    return getNodeChildren(parentId).filter((id) => {
+      // Skip absolute positioned nodes and placeholders
+      const nodeFlags = getNodeFlags(id);
+      const nodeBasics = getNodeBasics(id);
+
+      return !nodeFlags.isAbsoluteInFrame && nodeBasics.type !== "placeholder";
+    });
   };
 
   // Modified computeSiblingReorderResult that ignores absolute-in-frame elements
   const computeModifiedSiblingReorderResult = (
-    draggedNode: Node,
-    nodes: Node[],
+    draggedNode: { id: NodeId },
     parentElement: Element,
     mouseX: number,
     mouseY: number,
     prevMouseX: number,
     prevMouseY: number
   ) => {
+    const parentId = getNodeParent(draggedNode.id);
+
     // Only use siblings that are not absolute-in-frame
-    const siblings = getNonAbsoluteSiblings(draggedNode.parentId);
+    const siblings = getNonAbsoluteSiblings(parentId);
 
     if (siblings.length === 0) {
       // If no valid siblings, return result for parent's inside position
       return {
-        targetId: draggedNode.parentId!,
+        targetId: parentId!,
         position: "inside" as "before" | "after" | "inside",
       };
     }
 
-    // Use the existing computeSiblingReorderResult but with filtered siblings
-    return computeSiblingReorderResult(
-      draggedNode,
-      // Create modified node array with only non-absolute siblings
-      nodes.filter(
-        (n) =>
-          n.id === draggedNode.id ||
-          siblings.some((s) => s.id === n.id) ||
-          n.id === draggedNode.parentId
-      ),
-      parentElement,
-      mouseX,
-      mouseY,
-      prevMouseX,
-      prevMouseY
-    );
+    // Use DOM-based sibling positioning
+    const siblingElements = siblings
+      .map((id) => {
+        const el = document.querySelector(`[data-node-id="${id}"]`);
+        return el ? { id, element: el } : null;
+      })
+      .filter(Boolean);
+
+    // Use the DOM positions to determine before/after position
+    const mouseYDirection = mouseY - prevMouseY;
+    const mouseXDirection = mouseX - prevMouseX;
+
+    // Sort elements by their vertical position
+    const sortedElements = siblingElements.sort((a, b) => {
+      const rectA = a!.element.getBoundingClientRect();
+      const rectB = b!.element.getBoundingClientRect();
+      return rectA.top - rectB.top;
+    });
+
+    for (let i = 0; i < sortedElements.length; i++) {
+      const el = sortedElements[i]!.element;
+      const rect = el.getBoundingClientRect();
+
+      // Simple midpoint check
+      if (mouseY < rect.top + rect.height / 2) {
+        return {
+          targetId: sortedElements[i]!.id,
+          position: "before" as "before" | "after" | "inside",
+        };
+      }
+    }
+
+    // If we get here, position after the last element
+    return {
+      targetId: sortedElements[sortedElements.length - 1]!.id,
+      position: "after" as "before" | "after" | "inside",
+    };
   };
 
   return (e: MouseEvent) => {
     e.preventDefault();
 
     const isDragging = getIsDragging();
-
     const placeholderInfo = getPlaceholderInfo();
-
     const nodeDimensions = getNodeDimensions();
-
     const dynamicModeNodeId = getDynamicModeNodeId();
 
     if (isDragging) {
@@ -305,17 +406,22 @@ export const useMouseMove = () => {
       finalX = Math.round(adjustedPosition.x);
       finalY = Math.round(adjustedPosition.y);
 
-      // console.log("is over canvas?");
       dragOps.setDragPositions(finalX, finalY);
     }
 
     const dragSource = getDragSource();
 
     // Handle absolute positioning in frames
-    if (dragSource === "absolute-in-frame" || isAbsoluteInFrame(draggedNode)) {
+    if (
+      dragSource === "absolute-in-frame" ||
+      getNodeFlags(draggedNode.id).isAbsoluteInFrame
+    ) {
       // Get the parent frame element
+      const parentId = getNodeParent(draggedNode.id);
+      if (!parentId) return;
+
       const parentElement = document.querySelector(
-        `[data-node-id="${draggedNode.parentId}"]`
+        `[data-node-id="${parentId}"]`
       ) as HTMLElement | null;
 
       if (parentElement) {
@@ -327,7 +433,6 @@ export const useMouseMove = () => {
           e.clientX <= parentRect.right &&
           e.clientY >= parentRect.top &&
           e.clientY <= parentRect.bottom;
-        const transform = currentTransform();
 
         if (isOverParent) {
           // Calculate position relative to parent frame
@@ -337,11 +442,9 @@ export const useMouseMove = () => {
           // Update drag positions for visual feedback
           dragOps.setDragPositions(relativeX, relativeY);
 
-          console.log(" drop info 20 ?");
-
           // Set drop info with parent as target and "absolute-inside" position mode
           dragOps.setDropInfo(
-            draggedNode.parentId,
+            parentId,
             "absolute-inside",
             relativeX,
             relativeY
@@ -360,9 +463,6 @@ export const useMouseMove = () => {
             (e.clientY - containerRect.top - transform.y) / transform.scale;
 
           dragOps.setDragPositions(canvasX, canvasY);
-
-          console.log(" drop info 1 ?");
-
           dragOps.setDropInfo(null, null, canvasX, canvasY);
           dragOps.setIsOverCanvas(true);
 
@@ -418,14 +518,16 @@ export const useMouseMove = () => {
       ) as HTMLElement | null;
       if (!draggedElement) return;
 
+      const parentId = getNodeParent(draggedNode.id);
+      if (!parentId) return;
+
       const parentElement = document.querySelector(
-        `[data-node-id="${draggedNode.parentId}"]`
+        `[data-node-id="${parentId}"]`
       );
       if (parentElement) {
         // Use modified reorder function that ignores absolute-in-frame elements
         const reorderResult = computeModifiedSiblingReorderResult(
           draggedNode,
-          nodeState.nodes,
           parentElement,
           e.clientX,
           e.clientY,
@@ -449,53 +551,88 @@ export const useMouseMove = () => {
             position: reorderResult.position,
           };
 
-          if (placeholderInfo) {
-            const allDraggedNodes = [
-              {
-                nodeId: draggedNode.id,
-                placeholderId: placeholderInfo.mainPlaceholderId,
-              },
-              ...placeholderInfo.additionalPlaceholders,
-            ];
-            const sortedNodes = allDraggedNodes.sort((a, b) => {
-              const orderA = placeholderInfo!.nodeOrder.indexOf(a.nodeId);
-              const orderB = placeholderInfo!.nodeOrder.indexOf(b.nodeId);
-              return orderA - orderB;
-            });
-            nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
+          // Only update placeholder position if it's changed - FIX FOR JITTER
+          if (!isSameReorderTarget(reorderResult)) {
+            // Save the new reorder target
+            lastReorderRef.current = {
               targetId: reorderResult.targetId,
               position: reorderResult.position,
-            });
-            for (let i = 1; i < sortedNodes.length; i++) {
-              nodeDisp.moveNode(sortedNodes[i].placeholderId, true, {
-                targetId: sortedNodes[i - 1].placeholderId,
-                position: "after",
+            };
+
+            if (placeholderInfo) {
+              const allDraggedNodes = [
+                {
+                  nodeId: draggedNode.id,
+                  placeholderId: placeholderInfo.mainPlaceholderId,
+                },
+                ...placeholderInfo.additionalPlaceholders,
+              ];
+              const sortedNodes = allDraggedNodes.sort((a, b) => {
+                const orderA = placeholderInfo!.nodeOrder.indexOf(a.nodeId);
+                const orderB = placeholderInfo!.nodeOrder.indexOf(b.nodeId);
+                return orderA - orderB;
               });
-            }
-          } else {
-            const placeholder = nodeState.nodes.find(
-              (n) => n.type === "placeholder"
-            );
-            if (placeholder) {
-              nodeDisp.moveNode(placeholder.id, true, {
-                targetId: reorderResult.targetId,
-                position: reorderResult.position,
-              });
+
+              // Move the first placeholder to the target position
+              moveNode(
+                sortedNodes[0].placeholderId,
+                reorderResult.position === "inside"
+                  ? reorderResult.targetId
+                  : getNodeParent(reorderResult.targetId),
+                reorderResult.position === "inside"
+                  ? undefined
+                  : getNodeChildren(
+                      getNodeParent(reorderResult.targetId)!
+                    ).indexOf(reorderResult.targetId) +
+                      (reorderResult.position === "after" ? 1 : 0)
+              );
+
+              // Move additional placeholders after the first one
+              for (let i = 1; i < sortedNodes.length; i++) {
+                moveNode(
+                  sortedNodes[i].placeholderId,
+                  getNodeParent(sortedNodes[i - 1].placeholderId)!,
+                  getNodeChildren(
+                    getNodeParent(sortedNodes[i - 1].placeholderId)!
+                  ).indexOf(sortedNodes[i - 1].placeholderId) + 1
+                );
+              }
+            } else {
+              // Find placeholders using DOM query
+              const placeholderElements = document.querySelectorAll(
+                '[data-node-type="placeholder"]'
+              );
+              if (placeholderElements.length > 0) {
+                const placeholderId =
+                  placeholderElements[0].getAttribute("data-node-id");
+                if (placeholderId) {
+                  moveNode(
+                    placeholderId,
+                    reorderResult.position === "inside"
+                      ? reorderResult.targetId
+                      : getNodeParent(reorderResult.targetId),
+                    reorderResult.position === "inside"
+                      ? undefined
+                      : getNodeChildren(
+                          getNodeParent(reorderResult.targetId)!
+                        ).indexOf(reorderResult.targetId) +
+                          (reorderResult.position === "after" ? 1 : 0)
+                  );
+                }
+              }
             }
           }
         }
+
+        const dropInfo = getDropInfo();
+        dragOps.setDropInfo(
+          dropInfo.targetId,
+          dropInfo.position,
+          canvasX,
+          canvasY
+        );
+        return;
       }
-
-      console.log(" drop info 2 ?");
-
-      const dropInfo = getDropInfo();
-      dragOps.setDropInfo(
-        dropInfo.targetId,
-        dropInfo.position,
-        canvasX,
-        canvasY
-      );
-      return;
     }
 
     // --- DRAGGED ITEM (e.g. new element) handling ---
@@ -509,20 +646,15 @@ export const useMouseMove = () => {
       );
       if (dropTargetElement) {
         const targetId = dropTargetElement.getAttribute("data-node-id")!;
-        const targetNode = nodeState.nodes.find(
-          (n) => String(n.id) === targetId
-        );
         const nodeType = dropTargetElement.getAttribute("data-node-type");
-        if (targetNode?.isDynamic && !dynamicModeNodeId) {
-          console.log(" drop info 3 ?");
 
+        // Check if target is a dynamic node
+        const targetFlags = getNodeFlags(targetId);
+        if (targetFlags.isDynamic && !dynamicModeNodeId) {
           dragOps.setDropInfo(null, null, canvasX, canvasY);
           return;
         }
-        if (!targetNode) {
-          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-          return;
-        }
+
         if (nodeType === "image" || nodeType === "video") {
           const rect = dropTargetElement.getBoundingClientRect();
           const centerX = rect.left + rect.width / 2;
@@ -532,8 +664,6 @@ export const useMouseMove = () => {
           );
           const threshold = Math.min(rect.width, rect.height) * 0.4;
           if (distanceFromCenter < threshold) {
-            console.log(" drop info 4 ?");
-
             dragOps.setDropInfo(targetId, "inside", canvasX, canvasY);
             visualOps.hideLineIndicator();
           } else {
@@ -545,8 +675,6 @@ export const useMouseMove = () => {
             if (position !== "inside") {
               visualOps.setLineIndicator(lineIndicator);
             }
-            console.log(" drop info 5 ?");
-
             dragOps.setDropInfo(targetId, position, canvasX, canvasY);
           }
           prevMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -554,20 +682,21 @@ export const useMouseMove = () => {
         }
 
         // Get only non-absolute frame children for drop indicators
-        const frameChildren = nodeState.nodes.filter(
-          (child) => child.parentId === targetId && !isAbsoluteInFrame(child)
+        const children = getNodeChildren(targetId);
+        const frameChildren = children.filter(
+          (childId) => !isNodeAbsoluteInFrame(childId)
         );
 
         const childRects = frameChildren
-          .map((childNode) => {
+          .map((childId) => {
             const el = document.querySelector(
-              `[data-node-id="${childNode.id}"]`
+              `[data-node-id="${childId}"]`
             ) as HTMLElement | null;
             return el
-              ? { id: childNode.id, rect: el.getBoundingClientRect() }
+              ? { id: childId, rect: el.getBoundingClientRect() }
               : null;
           })
-          .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
+          .filter((x): x is { id: NodeId; rect: DOMRect } => !!x);
 
         const result = computeFrameDropIndicator(
           dropTargetElement,
@@ -577,8 +706,6 @@ export const useMouseMove = () => {
         );
 
         if (result) {
-          console.log(" drop info 6 ?");
-
           dragOps.setDropInfo(
             result.dropInfo.targetId,
             result.dropInfo.position,
@@ -595,9 +722,6 @@ export const useMouseMove = () => {
         return;
       } else {
         visualOps.hideLineIndicator();
-
-        console.log(" drop info 7 ?");
-
         dragOps.setDropInfo(null, null, canvasX, canvasY);
       }
     }
@@ -616,20 +740,24 @@ export const useMouseMove = () => {
     const viewportElement = elementsUnder.find((el) =>
       el.getAttribute("data-node-id")?.includes("viewport")
     );
+
+    // Check if elements are within a viewport
     const frameInViewportElements = elementsUnder.filter((el) => {
       const nodeId = el.getAttribute("data-node-id");
       if (!nodeId || nodeId.includes("viewport")) return false;
-      const node = nodeState.nodes.find((n) => n.id.toString() === nodeId);
-      return node && isWithinViewport(nodeId, nodeState.nodes);
+      return isNodeWithinViewport(nodeId);
     });
+
     const isOverViewportArea =
       viewportElement || frameInViewportElements.length > 0;
+
+    // Check if reordering a node within its parent
+    const nodeFlags = getNodeFlags(draggedNode.id);
     const isReorderingNode =
       dragSource === "viewport" &&
-      (draggedNode.inViewport || originalIndexRef.current !== null);
+      (nodeFlags.inViewport || originalIndexRef.current !== null);
 
     // --- RE-ENTERING THE ORIGINAL CONTAINER ---
-    // Now, instead of checking only the immediate parent, we check if the pointer is over the root container.
     if (
       originalViewportDataRef.current &&
       !placeholderInfo &&
@@ -637,9 +765,11 @@ export const useMouseMove = () => {
       !hasReenteredContainerRef.current &&
       hasLeftViewportRef.current
     ) {
+      const rootContainerId = originalViewportDataRef.current.rootContainerId;
       const rootContainerElement = document.querySelector(
-        `[data-node-id="${originalViewportDataRef.current.rootContainerId}"]`
+        `[data-node-id="${rootContainerId}"]`
       ) as HTMLElement | null;
+
       if (rootContainerElement && isOverContainer(e, rootContainerElement)) {
         console.log(
           "Re-entering original container (via root container) with stored placeholder data"
@@ -648,24 +778,21 @@ export const useMouseMove = () => {
         const mainNodeInfo = originalData.nodesToRestore.find(
           (info) => info.nodeId === draggedNode.id
         );
+
         if (mainNodeInfo) {
-          // Note: We still use the original immediate parent for insertion.
+          // Use the original immediate parent for insertion
           const parentId = mainNodeInfo.parentId;
-          let targetId: string | number | null = null;
+          if (!parentId) return;
+
+          let targetId: NodeId | null = null;
           let position: "before" | "after" | "inside" = "inside";
+
           if (lastPlaceholderPositionRef.current) {
             targetId = lastPlaceholderPositionRef.current.targetId;
             position = lastPlaceholderPositionRef.current.position;
           } else {
             // Get only non-absolute siblings for positioning
-            const currentSiblings = nodeState.nodes
-              .filter(
-                (n) =>
-                  n.parentId === parentId &&
-                  n.type !== "placeholder" &&
-                  !isAbsoluteInFrame(n)
-              )
-              .map((n) => n.id);
+            const currentSiblings = getNonAbsoluteSiblings(parentId);
 
             if (currentSiblings.length > 0) {
               const originalIndex = mainNodeInfo.index;
@@ -687,6 +814,7 @@ export const useMouseMove = () => {
               position = "inside";
             }
           }
+
           const mainDimensions = nodeDimensions[draggedNode.id];
           const mainPlaceholder = createPlaceholder({
             node: draggedNode,
@@ -695,15 +823,32 @@ export const useMouseMove = () => {
             finalWidth: mainDimensions?.finalWidth,
             finalHeight: mainDimensions?.finalHeight,
           });
+
+          // Insert placeholder using hierarchy operations
           if (targetId) {
-            nodeDisp.insertAtIndex(mainPlaceholder, 0, parentId);
-            nodeDisp.moveNode(mainPlaceholder.id, true, { targetId, position });
+            if (position === "inside") {
+              // Add as a child of the target
+              addNode(mainPlaceholder.id, targetId);
+            } else {
+              // Add to parent at specific position
+              const targetParentId = getNodeParent(targetId);
+              if (!targetParentId) return;
+
+              const targetIndex =
+                getNodeChildren(targetParentId).indexOf(targetId);
+              const insertIndex =
+                position === "before" ? targetIndex : targetIndex + 1;
+
+              insertAtIndex(mainPlaceholder.id, targetParentId, insertIndex);
+            }
           } else {
-            nodeDisp.insertAtIndex(mainPlaceholder, 0, parentId);
+            // Add as a child of the parent
+            addNode(mainPlaceholder.id, parentId);
           }
+
           const additionalPlaceholders: Array<{
             placeholderId: string;
-            nodeId: string | number;
+            nodeId: NodeId;
           }> = [];
 
           const additionalDraggedNodes = getAdditionalDraggedNodes();
@@ -714,10 +859,13 @@ export const useMouseMove = () => {
               const originalAdditionalInfo = originalData.nodesToRestore.find(
                 (d) => d.nodeId === additionalNode.id
               );
+
               if (!originalAdditionalInfo) return;
+
               const additionalElement = document.querySelector(
                 `[data-node-id="${additionalNode.id}"]`
               ) as HTMLElement;
+
               if (additionalElement) {
                 const dimensions = nodeDimensions[additionalNode.id];
                 const additionalPlaceholder = createPlaceholder({
@@ -727,11 +875,15 @@ export const useMouseMove = () => {
                   finalWidth: dimensions?.finalWidth,
                   finalHeight: dimensions?.finalHeight,
                 });
+
                 const additionalParentId = originalAdditionalInfo.parentId;
+                if (!additionalParentId) return;
+
                 const additionalOriginalIndex = originalAdditionalInfo.index;
-                let additionalTargetId: string | number | null = null;
+                let additionalTargetId: NodeId | null = null;
                 let additionalPosition: "before" | "after" | "inside" =
                   "inside";
+
                 if (additionalParentId === parentId) {
                   if (additionalPlaceholders.length > 0) {
                     additionalTargetId =
@@ -744,14 +896,8 @@ export const useMouseMove = () => {
                   }
                 } else {
                   // Get only non-absolute siblings
-                  const addSiblings = nodeState.nodes
-                    .filter(
-                      (n) =>
-                        n.parentId === additionalParentId &&
-                        n.type !== "placeholder" &&
-                        !isAbsoluteInFrame(n)
-                    )
-                    .map((n) => n.id);
+                  const addSiblings =
+                    getNonAbsoluteSiblings(additionalParentId);
 
                   if (addSiblings.length > 0) {
                     if (additionalOriginalIndex === 0) {
@@ -775,17 +921,37 @@ export const useMouseMove = () => {
                     additionalPosition = "inside";
                   }
                 }
-                nodeDisp.insertAtIndex(
-                  additionalPlaceholder,
-                  0,
-                  additionalParentId
-                );
+
+                // Insert additional placeholder using hierarchy operations
                 if (additionalTargetId) {
-                  nodeDisp.moveNode(additionalPlaceholder.id, true, {
-                    targetId: additionalTargetId,
-                    position: additionalPosition,
-                  });
+                  if (additionalPosition === "inside") {
+                    // Add as a child of the target
+                    addNode(additionalPlaceholder.id, additionalTargetId);
+                  } else {
+                    // Add to parent at specific position
+                    const targetParentId = getNodeParent(additionalTargetId);
+                    if (!targetParentId) return;
+
+                    const targetIndex =
+                      getNodeChildren(targetParentId).indexOf(
+                        additionalTargetId
+                      );
+                    const insertIndex =
+                      additionalPosition === "before"
+                        ? targetIndex
+                        : targetIndex + 1;
+
+                    insertAtIndex(
+                      additionalPlaceholder.id,
+                      targetParentId,
+                      insertIndex
+                    );
+                  }
+                } else {
+                  // Add as a child of the additional parent
+                  addNode(additionalPlaceholder.id, additionalParentId);
                 }
+
                 additionalPlaceholders.push({
                   placeholderId: additionalPlaceholder.id,
                   nodeId: additionalNode.id,
@@ -793,15 +959,20 @@ export const useMouseMove = () => {
               }
             });
           }
+
           const nodeOrder = [
             draggedNode.id,
             ...(additionalDraggedNodes?.map((info) => info.node.id) || []),
           ];
+
           dragOps.setPlaceholderInfo({
             mainPlaceholderId: mainPlaceholder.id,
             nodeOrder,
             additionalPlaceholders,
+            targetId: targetId || "",
+            position,
           });
+
           hasLeftViewportRef.current = false;
           hasReenteredContainerRef.current = true;
         }
@@ -809,16 +980,17 @@ export const useMouseMove = () => {
     }
 
     if (isReorderingNode) {
-      console.log(" REORDERING NODE ???");
+      const parentId = getNodeParent(draggedNode.id);
+      if (!parentId) return;
+
       const parentElement = document.querySelector(
-        `[data-node-id="${draggedNode.parentId}"]`
+        `[data-node-id="${parentId}"]`
       );
       if (!parentElement) return;
 
       // Use the modified reorder function that ignores absolute-in-frame elements
       const reorderResult = computeModifiedSiblingReorderResult(
         draggedNode,
-        nodeState.nodes,
         parentElement,
         e.clientX,
         e.clientY,
@@ -832,38 +1004,91 @@ export const useMouseMove = () => {
           position: reorderResult.position,
         };
 
-        if (placeholderInfo) {
-          const allDraggedNodes = [
-            {
-              nodeId: draggedNode.id,
-              placeholderId: placeholderInfo.mainPlaceholderId,
-            },
-            ...placeholderInfo.additionalPlaceholders,
-          ];
-          const sortedNodes = allDraggedNodes.sort((a, b) => {
-            const orderA = placeholderInfo!.nodeOrder.indexOf(a.nodeId);
-            const orderB = placeholderInfo!.nodeOrder.indexOf(b.nodeId);
-            return orderA - orderB;
-          });
-          nodeDisp.moveNode(sortedNodes[0].placeholderId, true, {
+        // Only update placeholder position if it's changed - FIX FOR JITTER
+        if (!isSameReorderTarget(reorderResult)) {
+          // Save the new reorder target
+          lastReorderRef.current = {
             targetId: reorderResult.targetId,
             position: reorderResult.position,
-          });
-          for (let i = 1; i < sortedNodes.length; i++) {
-            nodeDisp.moveNode(sortedNodes[i].placeholderId, true, {
-              targetId: sortedNodes[i - 1].placeholderId,
-              position: "after",
+          };
+
+          if (placeholderInfo) {
+            const allDraggedNodes = [
+              {
+                nodeId: draggedNode.id,
+                placeholderId: placeholderInfo.mainPlaceholderId,
+              },
+              ...placeholderInfo.additionalPlaceholders,
+            ];
+
+            const sortedNodes = allDraggedNodes.sort((a, b) => {
+              const orderA = placeholderInfo.nodeOrder.indexOf(a.nodeId);
+              const orderB = placeholderInfo.nodeOrder.indexOf(b.nodeId);
+              return orderA - orderB;
             });
-          }
-        } else {
-          const placeholder = nodeState.nodes.find(
-            (n) => n.type === "placeholder"
-          );
-          if (placeholder) {
-            nodeDisp.moveNode(placeholder.id, true, {
-              targetId: reorderResult.targetId,
-              position: reorderResult.position,
-            });
+
+            // Move the first placeholder to the target position using hierarchy operations
+            if (reorderResult.position === "inside") {
+              moveNode(sortedNodes[0].placeholderId, reorderResult.targetId);
+            } else {
+              const targetParentId = getNodeParent(reorderResult.targetId);
+              if (!targetParentId) return;
+
+              const targetChildren = getNodeChildren(targetParentId);
+              const targetIndex = targetChildren.indexOf(
+                reorderResult.targetId
+              );
+              const newIndex =
+                reorderResult.position === "before"
+                  ? targetIndex
+                  : targetIndex + 1;
+
+              moveNode(sortedNodes[0].placeholderId, targetParentId, newIndex);
+            }
+
+            // Move remaining placeholders to follow the first one
+            for (let i = 1; i < sortedNodes.length; i++) {
+              const previousId = sortedNodes[i - 1].placeholderId;
+              const previousParentId = getNodeParent(previousId);
+              if (!previousParentId) continue;
+
+              const previousChildren = getNodeChildren(previousParentId);
+              const previousIndex = previousChildren.indexOf(previousId);
+
+              moveNode(
+                sortedNodes[i].placeholderId,
+                previousParentId,
+                previousIndex + 1
+              );
+            }
+          } else {
+            // Find placeholders using DOM query
+            const placeholderElements = document.querySelectorAll(
+              '[data-node-type="placeholder"]'
+            );
+            if (placeholderElements.length > 0) {
+              const placeholderId =
+                placeholderElements[0].getAttribute("data-node-id");
+              if (placeholderId) {
+                if (reorderResult.position === "inside") {
+                  moveNode(placeholderId, reorderResult.targetId);
+                } else {
+                  const targetParentId = getNodeParent(reorderResult.targetId);
+                  if (!targetParentId) return;
+
+                  const targetChildren = getNodeChildren(targetParentId);
+                  const targetIndex = targetChildren.indexOf(
+                    reorderResult.targetId
+                  );
+                  const newIndex =
+                    reorderResult.position === "before"
+                      ? targetIndex
+                      : targetIndex + 1;
+
+                  moveNode(placeholderId, targetParentId, newIndex);
+                }
+              }
+            }
           }
         }
 
@@ -874,12 +1099,14 @@ export const useMouseMove = () => {
           canvasY
         );
       }
+
       visualOps.hideLineIndicator();
 
       // If no reorderResult, still set a default dropInfo to ensure it's never null
       if (!reorderResult) {
         dragOps.setDropInfo(null, null, canvasX, canvasY);
       }
+
       visualOps.hideLineIndicator();
     } else {
       visualOps.hideLineIndicator();
@@ -887,10 +1114,6 @@ export const useMouseMove = () => {
         const closestNode = el.closest(`[data-node-id="${draggedNode.id}"]`);
         return !closestNode;
       });
-
-      console.log("here?");
-
-      console.log("elementsUdner");
 
       const frameElement = filteredElements.find(
         (el) =>
@@ -900,9 +1123,7 @@ export const useMouseMove = () => {
       );
 
       if (frameElement) {
-        if (draggedNode.isViewport) {
-          console.log(" drop info 8 ?");
-
+        if (nodeFlags.isViewport) {
           dragOps.setDropInfo(null, null, canvasX, canvasY);
           visualOps.hideLineIndicator();
           return;
@@ -922,8 +1143,6 @@ export const useMouseMove = () => {
           const threshold = Math.min(rect.width, rect.height) * 0.4;
 
           if (distanceFromCenter < threshold) {
-            console.log(" drop info 9 ?");
-
             dragOps.setDropInfo(frameId, "inside", canvasX, canvasY);
             visualOps.hideLineIndicator();
           } else {
@@ -936,8 +1155,6 @@ export const useMouseMove = () => {
               visualOps.setLineIndicator(lineIndicator);
             }
 
-            console.log(" drop info 10 ?");
-
             dragOps.setDropInfo(frameId, position, canvasX, canvasY);
           }
           prevMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -945,38 +1162,38 @@ export const useMouseMove = () => {
         }
 
         // Get only non-absolute frame children
-        const frameChildren = nodeState.nodes.filter(
-          (child) => child.parentId === frameId && !isAbsoluteInFrame(child)
+        const frameChildren = getNodeChildren(frameId).filter(
+          (childId) => !isNodeAbsoluteInFrame(childId)
         );
-        const frameNode = nodeState.nodes.find((n) => n.id === frameId);
-        if (frameNode?.isDynamic && !dynamicModeNodeId) {
-          console.log(" drop info 11 ?");
 
+        const frameNodeFlags = getNodeFlags(frameId);
+        if (frameNodeFlags.isDynamic && !dynamicModeNodeId) {
           dragOps.setDropInfo(null, null, canvasX, canvasY);
           visualOps.hideLineIndicator();
           return;
         }
+
         const hasChildren = frameChildren.length > 0;
         if (hasChildren) {
           const childRects = frameChildren
-            .map((childNode) => {
+            .map((childId) => {
               const el = document.querySelector(
-                `[data-node-id="${childNode.id}"]`
+                `[data-node-id="${childId}"]`
               ) as HTMLElement | null;
               return el
-                ? { id: childNode.id, rect: el.getBoundingClientRect() }
+                ? { id: childId, rect: el.getBoundingClientRect() }
                 : null;
             })
-            .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
+            .filter((x): x is { id: NodeId; rect: DOMRect } => !!x);
+
           const result = computeFrameDropIndicator(
             frameElement,
             childRects,
             e.clientX,
             e.clientY
           );
-          if (result && result.lineIndicator.show) {
-            console.log(" drop info 12 ?");
 
+          if (result && result.lineIndicator.show) {
             dragOps.setDropInfo(
               result.dropInfo.targetId,
               result.dropInfo.position,
@@ -985,8 +1202,6 @@ export const useMouseMove = () => {
             );
             visualOps.setLineIndicator(result.lineIndicator);
           } else {
-            console.log(" drop info 13 ?");
-
             dragOps.setDropInfo(null, null, canvasX, canvasY);
             visualOps.hideLineIndicator();
           }
@@ -998,8 +1213,6 @@ export const useMouseMove = () => {
             e.clientY
           );
           if (result) {
-            console.log(" drop info 14 ?");
-
             dragOps.setDropInfo(
               result.dropInfo.targetId,
               result.dropInfo.position,
@@ -1040,12 +1253,8 @@ export const useMouseMove = () => {
           visualOps.setLineIndicator(lineIndicator);
         }
 
-        console.log(" drop info 15 ?");
-
         dragOps.setDropInfo(siblingId, position, canvasX, canvasY);
       } else {
-        console.log(" drop info 16 ?");
-
         dragOps.setDropInfo(null, null, canvasX, canvasY);
       }
     }
@@ -1056,13 +1265,13 @@ export const useMouseMove = () => {
         console.log("Dragging over canvas from viewport");
         hasLeftViewportRef.current = true;
 
-        // Only clear placeholders when dragging over canvas
-        const allPlaceholders = nodeState.nodes.filter(
-          (n) => n.type === "placeholder"
+        // Find and remove all placeholders using DOM query
+        const placeholderElements = document.querySelectorAll(
+          '[data-node-type="placeholder"]'
         );
-
-        allPlaceholders.forEach((placeholder) => {
-          nodeDisp.removeNode(placeholder.id);
+        placeholderElements.forEach((el) => {
+          const nodeId = el.getAttribute("data-node-id");
+          if (nodeId) removeNode(nodeId);
         });
 
         if (placeholderInfo) {
@@ -1073,17 +1282,9 @@ export const useMouseMove = () => {
         hasReenteredContainerRef.current = false;
       }
 
-      // Move the node to follow the cursor on the canvas
-      nodeDisp.moveNode(draggedNode.id, false);
       visualOps.hideLineIndicator();
-
-      console.log(" drop info 19 ?");
-
       dragOps.setDropInfo(null, null, canvasX, canvasY);
       prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-
-      // Disable viewport syncing since we've left the viewport
-      // but don't delete counterparts yet
       return;
     }
 

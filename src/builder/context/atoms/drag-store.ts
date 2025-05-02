@@ -406,6 +406,12 @@ export const useGetDragState = () => {
   }, []);
 };
 
+export const useGetIsOverCanvas = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).isOverCanvas;
+  }, []);
+};
+
 export const useGetDragSource = () => {
   return useCallback(() => {
     return dragStore.get(_internalDragStateAtom).dragSource;

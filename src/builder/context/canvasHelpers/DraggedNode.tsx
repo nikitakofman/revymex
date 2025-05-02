@@ -1,5 +1,3 @@
-// DraggedNode.tsx
-
 import React, {
   ReactElement,
   CSSProperties,
@@ -9,27 +7,31 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Node } from "../../reducer/nodeDispatcher";
 import { useBuilderRefs } from "../builderState";
 import { useSnapGrid, SnapResult } from "./SnapGrid";
 import { isAbsoluteInFrame, parseRotation } from "../utils";
 import { visualOps } from "@/builder/context/atoms/visual-store";
 import {
-  useAdditionalDraggedNodes,
-  useDragSource,
-  useIsOverCanvas,
-  useNodeDimensions,
+  useGetDraggedNode,
+  useGetAdditionalDraggedNodes,
+  useGetDragSource,
+  useGetIsOverCanvas,
+  useGetNodeDimensions,
   useGetIsDragging,
-  useDragPositions,
-  dragOps,
+  useGetDragPositions,
 } from "../atoms/drag-store";
-import { useDynamicModeNodeId } from "../atoms/dynamic-store";
-import { useTransform } from "../atoms/canvas-interaction-store";
+import { useGetDynamicModeNodeId } from "../atoms/dynamic-store";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
 import {
-  useGetAllNodes,
+  NodeId,
+  useGetNodeBasics,
+  useGetNodeStyle,
   useGetNodeFlags,
-  useGetNodeParent,
 } from "../atoms/node-store";
+import {
+  useGetNodeParent,
+  useGetNodeChildren,
+} from "../atoms/node-store/hierarchy-store";
 
 export interface VirtualReference {
   getBoundingClientRect: () => {
@@ -50,42 +52,50 @@ interface ContentProps {
 }
 
 interface DraggedNodeProps {
-  node: Node;
+  node: {
+    id: NodeId;
+    [key: string]: any;
+  };
   content: ReactElement<ContentProps>;
-  offset: { mouseX: number; mouseY: number };
+  offset: { mouseX: number; mouseY: number; x: number; y: number };
 }
 
 const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
   const { containerRef } = useBuilderRefs();
+  console.log("Rendering DraggedNode for", node.id, "with offset", offset);
 
-  // Get transform directly from atoms
-  const transform = useTransform();
-
-  // Get all the getters for node data
-  const getAllNodes = useGetAllNodes();
+  // Get non-reactive getters for nodes
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeStyle = useGetNodeStyle();
   const getNodeFlags = useGetNodeFlags();
   const getNodeParent = useGetNodeParent();
+  const getNodeChildren = useGetNodeChildren();
+
+  // Get transform and drag state directly from atoms
+  const getTransform = useGetTransform();
+  const transform = getTransform();
+
+  const getIsDragging = useGetIsDragging();
+  const getDraggedNode = useGetDraggedNode();
+  const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
+  const getDragSource = useGetDragSource();
+  const getIsOverCanvas = useGetIsOverCanvas();
+  const getNodeDimensions = useGetNodeDimensions();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+  const getDragPositions = useGetDragPositions();
 
   // Virtual reference state
   const [virtualReference, setVirtualReference] =
     useState<VirtualReference | null>(null);
 
-  const getIsDragging = useGetIsDragging();
-
-  // Use atoms for state
-  const dynamicModeNodeId = useDynamicModeNodeId();
-  const additionalDraggedNodes = useAdditionalDraggedNodes();
-  const dragSource = useDragSource();
-  const isOverCanvas = useIsOverCanvas();
-
-  // Get drag positions from the store - this comes from the rules system
-  const dragPositions = useDragPositions();
-
+  // Local state and refs
   const initialDimensionsRef = useRef<{ width: number; height: number } | null>(
     null
   );
 
-  const nodeDimensions = useNodeDimensions();
+  // Keep track of the last used SnapResult so we don't re‐dispatch identical guides
+  const lastSnapRef = useRef<SnapResult | null>(null);
+  const finalSnapResultRef = useRef<SnapResult | null>(null);
 
   // Set up mouse move listener for virtual reference
   useEffect(() => {
@@ -113,40 +123,6 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
     };
   }, [getIsDragging]);
 
-  // Get all nodes from the node store
-  const nodes = getAllNodes();
-
-  // figure out which nodes to show using node store data
-  const getFilteredNodes = (
-    nodes: Node[],
-    filter: string,
-    dynamicId?: string | number
-  ) => {
-    switch (filter) {
-      case "dynamicMode":
-        return nodes.filter(
-          (n) => !n.inViewport || (dynamicId && n.dynamicParentId === dynamicId)
-        );
-      case "outOfViewport":
-        return nodes.filter((n) => !n.inViewport);
-      default:
-        return nodes;
-    }
-  };
-
-  const activeFilter = dynamicModeNodeId ? "dynamicMode" : "outOfViewport";
-  const filteredNodes = getFilteredNodes(
-    nodes,
-    activeFilter,
-    dynamicModeNodeId
-  );
-
-  const snapGrid = useSnapGrid(filteredNodes);
-
-  // Keep track of the last used SnapResult so we don't re‐dispatch identical guides
-  const lastSnapRef = useRef<SnapResult | null>(null);
-  const finalSnapResultRef = useRef<SnapResult | null>(null);
-
   // Effect to update snap guides
   useEffect(() => {
     const currentFinalSnapResult = finalSnapResultRef.current;
@@ -170,24 +146,42 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
     }
   }, [finalSnapResultRef.current]);
 
-  // Keep original node width/height while dragging
-  useEffect(() => {
-    if ((node.parentId || node.inViewport) && initialDimensionsRef.current) {
-      const el = document.querySelector(
-        `[data-node-id="${node.id}"]`
-      ) as HTMLElement;
-      if (el) {
-        el.style.width = `${initialDimensionsRef.current.width}px`;
-        el.style.height = `${initialDimensionsRef.current.height}px`;
-      }
-    }
-  }, [node.id, node.inViewport, node.parentId]);
+  // Build filtered nodes list for snap grid
+  const buildFilteredNodesList = () => {
+    // Get the active filter
+    const dynamicModeNodeId = getDynamicModeNodeId();
+    const activeFilter = dynamicModeNodeId ? "dynamicMode" : "outOfViewport";
+
+    // Get nodes that should be considered for snapping
+    let filteredNodes: any[] = [];
+
+    // This is where we would gather nodes from your node store
+    // For now, we'll use an empty array as a placeholder
+    return filteredNodes;
+  };
+
+  // Setup snap grid
+  const snapGrid = useSnapGrid(buildFilteredNodesList());
 
   // If no virtual reference, we can't position the dragged node
   if (!virtualReference || !containerRef.current) return null;
 
-  // Use drag positions from the store if available (coming from rules)
+  // Get current state from getters
+  const dragPositions = getDragPositions();
+  const dragSource = getDragSource();
+  const isOverCanvas = getIsOverCanvas();
+  const dynamicModeNodeId = getDynamicModeNodeId();
+  const additionalDraggedNodes = getAdditionalDraggedNodes();
+  const nodeDimensions = getNodeDimensions();
+
+  // Get the node style
+  const nodeStyle = getNodeStyle(node.id);
+  const nodeFlags = getNodeFlags(node.id);
+
+  // Calculate positions
   let finalLeft, finalTop;
+
+  // Use drag positions from the store if available (coming from rules)
   if (dragPositions) {
     // Get the positions directly from the drag store, already calculated by rules
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -216,11 +210,11 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
       };
     }
 
-    const nodeWidth = parseFloat(node.style.width as string) || 0;
-    const nodeHeight = parseFloat(node.style.height as string) || 0;
+    const nodeWidth = parseFloat(nodeStyle.width as string) || 0;
+    const nodeHeight = parseFloat(nodeStyle.height as string) || 0;
 
     // rotation
-    const rotationDeg = parseRotation(node.style.rotate as string);
+    const rotationDeg = parseRotation(nodeStyle.rotate as string);
     const rotationRad = (rotationDeg * Math.PI) / 180;
 
     const effectiveWidth =
@@ -241,7 +235,10 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
     let rawLeft: number;
     let rawTop: number;
 
-    if (dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)) {
+    // Check if node is absolutely positioned in a frame
+    const isNodeAbsoluteInFrame = nodeFlags.isAbsoluteInFrame;
+
+    if (dragSource === "absolute-in-frame" || isNodeAbsoluteInFrame) {
       // For absolute-in-frame, position directly based on mouse position
       const mouseX = baseRect.left;
       const mouseY = baseRect.top;
@@ -250,8 +247,8 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
       rawTop = mouseY - offset.mouseY * transform.scale - containerRect.top;
     } else if (isAdditionalDraggedNode) {
       // Standard logic for additional dragged nodes
-      const currentLeft = parseFloat(node.style.left as string) || 0;
-      const currentTop = parseFloat(node.style.top as string) || 0;
+      const currentLeft = parseFloat(nodeStyle.left as string) || 0;
+      const currentTop = parseFloat(nodeStyle.top as string) || 0;
 
       rawLeft =
         baseRect.left -
@@ -282,10 +279,10 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
     // Handle "grip handle" in flex layouts
     if (dragSource === "gripHandle") {
       // Find parent node
-      const parentNode = nodes.find((n) => n.id === node.parentId);
-      if (parentNode) {
+      const parentId = getNodeParent(node.id);
+      if (parentId) {
         const parentEl = document.querySelector(
-          `[data-node-id="${parentNode.id}"]`
+          `[data-node-id="${parentId}"]`
         ) as HTMLElement;
         if (parentEl) {
           const { display, flexDirection } = window.getComputedStyle(parentEl);
@@ -406,19 +403,29 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
     finalSnapResultRef.current = finalSnapResult;
   }
 
-  const nodeWidth = parseFloat(node.style.width as string) || 0;
-  const nodeHeight = parseFloat(node.style.height as string) || 0;
+  // Get dimensions of the node
+  const nodeWidth = parseFloat(nodeStyle.width as string) || 0;
+  const nodeHeight = parseFloat(nodeStyle.height as string) || 0;
+
+  // Check if node is absolutely positioned in a frame
+  const isNodeAbsoluteInFrame = nodeFlags.isAbsoluteInFrame;
+
+  console.log("Positioned DraggedNode at", finalLeft, finalTop);
 
   return createPortal(
     <div
       data-node-dragged={node.id}
       style={{
         position: "absolute",
-        left: isAbsoluteInFrame(node)
-          ? `${finalLeft - parseFloat(node.style.left) * transform.scale}px`
+        left: isNodeAbsoluteInFrame
+          ? `${
+              finalLeft - parseFloat(nodeStyle.left as string) * transform.scale
+            }px`
           : `${finalLeft}px`,
-        top: isAbsoluteInFrame(node)
-          ? `${finalTop - parseFloat(node.style.top) * transform.scale}px`
+        top: isNodeAbsoluteInFrame
+          ? `${
+              finalTop - parseFloat(nodeStyle.top as string) * transform.scale
+            }px`
           : `${finalTop}px`,
         transform: `scale(${transform.scale})`,
         transformOrigin: "top left",
@@ -433,11 +440,11 @@ const DraggedNode: React.FC<DraggedNodeProps> = ({ node, content, offset }) => {
           transformOrigin: "top left",
           pointerEvents: "none",
           left:
-            dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)
+            dragSource === "absolute-in-frame" || isNodeAbsoluteInFrame
               ? "0px" // Force to zero instead of undefined
               : undefined,
           top:
-            dragSource === "absolute-in-frame" || isAbsoluteInFrame(node)
+            dragSource === "absolute-in-frame" || isNodeAbsoluteInFrame
               ? "0px" // Force to zero instead of undefined
               : undefined,
           width: `${nodeWidth}px`,

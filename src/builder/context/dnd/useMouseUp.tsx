@@ -1,21 +1,14 @@
-import {
-  useBuilder,
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
+import { useRef } from "react";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import {
   findIndexWithinParent,
   findParentViewport,
   isAbsoluteInFrame,
   isWithinViewport,
 } from "../utils";
-import { useRef, useEffect } from "react";
-import { nanoid } from "nanoid";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import { useAutoScroll } from "../hooks/useAutoScroll";
-import { handleMediaToFrameTransformation } from "../utils";
-import produce from "immer";
-import { selectOps } from "../atoms/select-store";
+import { nanoid } from "nanoid";
+import { createPlaceholder } from "./createPlaceholder";
 import {
   dragOps,
   useGetAdditionalDraggedNodes,
@@ -32,17 +25,45 @@ import {
 import { visualOps } from "../atoms/visual-store";
 import { useGetTransform } from "../atoms/canvas-interaction-store";
 import { useGetActiveViewportInDynamicMode } from "../atoms/dynamic-store";
+import {
+  NodeId,
+  useGetNodeBasics,
+  useGetNodeStyle,
+  useGetNodeFlags,
+  useGetNodeDynamicInfo,
+  useGetNodeSharedInfo,
+} from "../atoms/node-store";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
+import {
+  updateNodeFlags,
+  updateNodeDynamicInfo,
+  updateNodeSharedInfo,
+} from "../atoms/node-store/operations/update-operations";
+import {
+  addNode,
+  insertAtIndex,
+  moveNode,
+  removeNode,
+  reorderChildren,
+} from "../atoms/node-store/operations/insert-operations";
+import {
+  hierarchyStore,
+  childrenMapAtom,
+  useGetNodeChildren,
+  useGetNodeParent,
+} from "../atoms/node-store/hierarchy-store";
+import { selectOps } from "../atoms/select-store";
 
 export const useMouseUp = () => {
-  const { nodeDisp, nodeState, setNodeStyle, stopRecording } =
-    useBuilderDynamic();
   const { hasLeftViewportRef, containerRef } = useBuilderRefs();
 
   const originalIndexRef = useRef<number | null>(null);
   const { stopAutoScroll } = useAutoScroll();
 
-  // Store last added node ID for post-processing (used to store ordering info in NodeDispatcher)
+  // Store last added node ID for post-processing
   const lastAddedNodeIdRef = useRef<string | null>(null);
+
+  // Use non-reactive getters
   const getIsDragging = useGetIsDragging();
   const getDraggedNode = useGetDraggedNode();
   const getDraggedItem = useGetDraggedItem();
@@ -56,6 +77,39 @@ export const useMouseUp = () => {
   const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
   const getRecordingSessionId = useGetRecordingSessionId();
 
+  // Add node state getters
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+  const getNodeChildren = useGetNodeChildren();
+  const getNodeDynamicInfo = useGetNodeDynamicInfo();
+  const getNodeSharedInfo = useGetNodeSharedInfo();
+
+  // Helper function to check if a node is within a viewport
+  const checkIsWithinViewport = (nodeId: NodeId): boolean => {
+    const parentId = getNodeParent(nodeId);
+    if (!parentId) return false;
+
+    const parentFlags = getNodeFlags(parentId);
+    if (parentFlags.isViewport) return true;
+
+    // Recursively check parent
+    return checkIsWithinViewport(parentId);
+  };
+
+  // Helper function to find parent viewport ID
+  const findParentViewportId = (nodeId: NodeId): NodeId | null => {
+    const parentId = getNodeParent(nodeId);
+    if (!parentId) return null;
+
+    const parentFlags = getNodeFlags(parentId);
+    if (parentFlags.isViewport) return parentId;
+
+    // Recursively check parent
+    return findParentViewportId(parentId);
+  };
+
   return () => {
     const dragSource = getDragSource();
     const isDragging = getIsDragging();
@@ -68,6 +122,7 @@ export const useMouseUp = () => {
     const activeViewportInDynamicMode = getActiveViewportInDynamicMode();
     const recordingSessionId = getRecordingSessionId();
 
+    console.log(" FAMM????", isDragging, currentDraggedNode);
     if (!isDragging || !currentDraggedNode) {
       return;
     }
@@ -82,14 +137,18 @@ export const useMouseUp = () => {
     const realNodeId = draggedNode.id;
     const sharedId = nanoid();
 
-    const dropWidth = draggedNode.style.width;
+    // Get styles and dimensions
+    const nodeStyle = getNodeStyle(realNodeId);
+    const dropWidth = nodeStyle.width;
+    const dropHeight = nodeStyle.height;
 
-    const dropHeight = draggedNode.style.height;
+    // Get node information
+    const nodeFlags = getNodeFlags(realNodeId);
+    const nodeDynamicInfo = getNodeDynamicInfo(realNodeId);
+    const nodeSharedInfo = getNodeSharedInfo(realNodeId);
 
-    const sourceViewportId: string | number | null = findParentViewport(
-      draggedNode.parentId,
-      nodeState.nodes
-    );
+    // Find parent viewport ID
+    const sourceViewportId = findParentViewportId(realNodeId);
 
     // Determine if we're adding a new element or repositioning an existing one
     const isNewElement = !!draggedItem;
@@ -99,109 +158,85 @@ export const useMouseUp = () => {
     // ============================================
     // Absolute positioning (inside frames or canvas)
     // ============================================
-    if (dragSource === "absolute-in-frame" || isAbsoluteInFrame(draggedNode)) {
+    if (dragSource === "absolute-in-frame" || nodeFlags.isAbsoluteInFrame) {
       // If dropped with target and position "absolute-inside", update the node inside its frame
       if (dropInfo.targetId && dropInfo.position === "absolute-inside") {
         const parentId = dropInfo.targetId;
-        const parentNode = nodeState.nodes.find((n) => n.id === parentId);
+        const parentFlags = getNodeFlags(parentId);
 
-        if (parentNode) {
-          // Calculate the position adjusted by the grab offset
-          const relativeX = dropInfo.dropX || 0;
-          const relativeY = dropInfo.dropY || 0;
-          const finalX = relativeX - currentDraggedNode.offset.mouseX;
-          const finalY = relativeY - currentDraggedNode.offset.mouseY;
+        // Calculate the position adjusted by the grab offset
+        const relativeX = dropInfo.dropX || 0;
+        const relativeY = dropInfo.dropY || 0;
+        const finalX = relativeX - currentDraggedNode.offset.mouseX;
+        const finalY = relativeY - currentDraggedNode.offset.mouseY;
 
-          setNodeStyle(
-            {
+        // Update style with absolute positioning
+        updateNodeStyle(realNodeId, {
+          position: "absolute",
+          left: `${finalX}px`,
+          top: `${finalY}px`,
+        });
+
+        // Move the node to the new parent
+        moveNode(realNodeId, parentId);
+
+        // Update flags
+        updateNodeFlags(realNodeId, {
+          isAbsoluteInFrame: true,
+          inViewport: checkIsWithinViewport(parentId),
+        });
+
+        // Handle any additional dragged nodes similarly
+        if (additionalDraggedNodes?.length) {
+          additionalDraggedNodes.forEach((info) => {
+            const offsetX = info.offset.x - currentDraggedNode.offset.x || 0;
+            const offsetY = info.offset.y - currentDraggedNode.offset.y || 0;
+
+            updateNodeStyle(info.node.id, {
               position: "absolute",
-              left: `${finalX}px`,
-              top: `${finalY}px`,
-            },
-            [draggedNode.id],
-            false
-          );
-
-          // Update node properties for absolute positioning inside a frame
-          nodeDisp.updateNode(draggedNode.id, {
-            parentId: parentId,
-            isAbsoluteInFrame: true,
-            inViewport: isWithinViewport(parentId, nodeState.nodes),
-          });
-
-          // If the parent is dynamic, mark the node for later syncing
-          const isDynamicParent =
-            parentNode.isDynamic ||
-            (parentNode.isVariant && parentNode.dynamicParentId);
-          if (isDynamicParent) {
-            lastAddedNodeIdRef.current = draggedNode.id;
-          }
-
-          // Handle any additional dragged nodes similarly
-          if (additionalDraggedNodes?.length) {
-            additionalDraggedNodes.forEach((info, index) => {
-              const offsetX = info.offset.x - currentDraggedNode.offset.x || 0;
-              const offsetY = info.offset.y - currentDraggedNode.offset.y || 0;
-
-              setNodeStyle(
-                {
-                  position: "absolute",
-                  left: `${finalX + offsetX}px`,
-                  top: `${finalY + offsetY}px`,
-                },
-                [info.node.id],
-                false
-              );
-
-              nodeDisp.updateNode(info.node.id, {
-                parentId: parentId,
-                isAbsoluteInFrame: true,
-                inViewport: isWithinViewport(parentId, nodeState.nodes),
-              });
+              left: `${finalX + offsetX}px`,
+              top: `${finalY + offsetY}px`,
             });
-          }
 
-          visualOps.hideLineIndicator();
-          dragOps.resetDragState();
-          stopRecording(recordingSessionId);
+            moveNode(info.node.id, parentId);
 
-          // Always sync new elements to all viewports
-          if (isNewElement && !dynamicModeNodeId) {
-            setTimeout(() => {
-              nodeDisp.syncDroppedNodeWithChildren(realNodeId);
-            }, 0);
-          }
-          return;
+            updateNodeFlags(info.node.id, {
+              isAbsoluteInFrame: true,
+              inViewport: checkIsWithinViewport(parentId),
+            });
+          });
         }
+
+        visualOps.hideLineIndicator();
+        dragOps.resetDragState();
+
+        // Always sync new elements to all viewports
+        if (isNewElement && !dynamicModeNodeId) {
+          // Since we can't sync using nodeDisp, mark for future implementation
+          console.log("Element needs syncing:", realNodeId);
+        }
+        return;
       } else {
         // Dropped outside the frame on canvas: convert to regular canvas element
         const { dropX, dropY } = dropInfo;
-
-        console.log("HERE2");
 
         if (dropX !== undefined && dropY !== undefined) {
           const finalX = dropX - currentDraggedNode.offset.mouseX;
           const finalY = dropY - currentDraggedNode.offset.mouseY;
 
-          setNodeStyle(
-            {
-              position: "absolute",
-              left: `${finalX}px`,
-              top: `${finalY}px`,
-            },
-            [draggedNode.id],
-            false
-          );
-
-          nodeDisp.updateNode(draggedNode.id, {
-            parentId: null,
-            isAbsoluteInFrame: false,
-            inViewport: false,
+          updateNodeStyle(realNodeId, {
+            position: "absolute",
+            left: `${finalX}px`,
+            top: `${finalY}px`,
           });
 
-          nodeDisp.updateNodePosition(draggedNode.id, {
-            x: finalX,
-            y: finalY,
+          // Move to root (no parent)
+          moveNode(realNodeId, null);
+
+          // Update flags
+          updateNodeFlags(realNodeId, {
+            isAbsoluteInFrame: false,
+            inViewport: false,
           });
 
           if (additionalDraggedNodes?.length) {
@@ -211,37 +246,27 @@ export const useMouseUp = () => {
               const additionalX = finalX + offsetX;
               const additionalY = finalY + offsetY;
 
-              setNodeStyle(
-                {
-                  position: "absolute",
-                  left: `${additionalX}px`,
-                  top: `${additionalY}px`,
-                },
-                [info.node.id],
-                false
-              );
-
-              nodeDisp.updateNode(info.node.id, {
-                parentId: null,
-                isAbsoluteInFrame: false,
-                inViewport: false,
+              updateNodeStyle(info.node.id, {
+                position: "absolute",
+                left: `${additionalX}px`,
+                top: `${additionalY}px`,
               });
 
-              nodeDisp.updateNodePosition(info.node.id, {
-                x: additionalX,
-                y: additionalY,
+              moveNode(info.node.id, null);
+
+              updateNodeFlags(info.node.id, {
+                isAbsoluteInFrame: false,
+                inViewport: false,
               });
             });
           }
 
           visualOps.hideLineIndicator();
           dragOps.resetDragState();
-          stopRecording(recordingSessionId);
 
           if (isNewElement && !dynamicModeNodeId) {
-            setTimeout(() => {
-              nodeDisp.syncDroppedNodeWithChildren(realNodeId);
-            }, 0);
+            // Since we can't sync using nodeDisp, mark for future implementation
+            console.log("Element needs syncing:", realNodeId);
           }
           return;
         }
@@ -252,268 +277,222 @@ export const useMouseUp = () => {
     // Handling drops onto a target container
     // ============================================
     if (dropInfo.targetId) {
-      console.log("HERE3");
-
       const { targetId, position } = dropInfo;
-      const targetNode = nodeState.nodes.find((n) => n.id === targetId);
+      const targetFlags = getNodeFlags(targetId);
+      const targetDynamicInfo = getNodeDynamicInfo(targetId);
 
-      // First, handle media transformation for image or video nodes
-      if (targetNode?.type === "image" || targetNode?.type === "video") {
-        const newNode = {
-          ...draggedNode,
-          sharedId,
-          style: {
-            ...draggedNode.style,
-            width: dropWidth,
-            height: dropHeight,
-            gap: "0px",
-            color: "black",
-          } as Node["style"],
-        };
-
-        const transformed = handleMediaToFrameTransformation(
-          targetNode,
-          newNode,
-          nodeDisp,
-          position
-        );
-
-        if (transformed) {
-          if (isNewElement && !dynamicModeNodeId) {
-            setTimeout(() => {
-              nodeDisp.syncDroppedNodeWithChildren(realNodeId);
-            }, 0);
-          }
-          visualOps.hideLineIndicator();
-          dragOps.resetDragState();
-          stopRecording(recordingSessionId);
-          return;
-        }
-      }
-
-      console.log("HERE4");
-
-      // Regular drop handling onto a target container
-      const shouldBeInViewport = isWithinViewport(targetId, nodeState.nodes);
-
-      console.log("isWithinViewport:", shouldBeInViewport);
-      const targetFrame = nodeState.nodes.find((n) => n.id === targetId);
-      const activeViewportId = activeViewportInDynamicMode;
+      // Check if target is within viewport
+      const shouldBeInViewport = checkIsWithinViewport(targetId);
 
       if (draggedItem) {
         // Adding a new element from the toolbar or canvas
-        const newNode = {
-          ...draggedNode,
-          sharedId: nanoid(), // always generate a new sharedId
-          style: {
-            ...draggedNode.style,
-            position: "relative",
-            zIndex: "",
-            left: "",
-            top: "",
-            width: dropWidth,
-            height: dropHeight,
-            display: "flex",
-            flexDirection: "row",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: "0px",
-            color: "black",
-          } as Node["style"],
-        };
+
+        // Update style for new element
+        updateNodeStyle(realNodeId, {
+          position: "relative",
+          zIndex: "",
+          left: "",
+          top: "",
+          width: dropWidth,
+          height: dropHeight,
+          display: "flex",
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: "0px",
+          color: "black",
+        });
+
+        // Generate new shared ID
+        const newSharedId = nanoid();
+        updateNodeSharedInfo(realNodeId, {
+          sharedId: newSharedId,
+        });
 
         // Store the new node's ID for later sync
-        lastAddedNodeIdRef.current = newNode.id;
+        lastAddedNodeIdRef.current = realNodeId;
 
-        // Add the node - the enhanced addNode method will handle dynamic properties
-        // and call syncVariants when appropriate
-        nodeDisp.addNode(newNode, targetId, position, shouldBeInViewport);
-        selectOps.setSelectedIds([newNode.id]);
+        // Add to target
+        if (position === "inside") {
+          addNode(realNodeId, targetId);
+        } else {
+          const targetParentId = getNodeParent(targetId);
+          if (!targetParentId) return;
 
-        // Still sync with standard viewports if not in dynamic mode
+          const targetIndex = getNodeChildren(targetParentId).indexOf(targetId);
+          const insertIndex =
+            position === "after" ? targetIndex + 1 : targetIndex;
+
+          insertAtIndex(realNodeId, targetParentId, insertIndex);
+        }
+
+        // Update viewport flag
+        updateNodeFlags(realNodeId, {
+          inViewport: shouldBeInViewport,
+        });
+
+        // Select the new node
+        selectOps.setSelectedIds([realNodeId]);
+
+        // Sync with standard viewports if not in dynamic mode
         if (!dynamicModeNodeId) {
-          setTimeout(() => {
-            // Enhanced sync for non-dynamic mode
-            nodeDisp.syncDroppedNodeWithChildren(realNodeId);
-          }, 0);
+          // Since we can't sync using nodeDisp, mark for future implementation
+          console.log("Element needs syncing with children:", realNodeId);
         }
       } else {
-        console.log("HERE6");
-
         // Repositioning an existing element
-        const targetNode = nodeState.nodes.find((n) => n.id === targetId);
-        const isTargetDynamic =
-          (targetNode?.isDynamic ||
-            targetNode?.dynamicFamilyId ||
-            targetNode?.dynamicParentId) !== undefined;
 
-        // Detect different types of moves that need special handling
+        // Check if target has dynamic parent
+        const isTargetDynamic = !!(
+          targetFlags.isDynamic ||
+          targetDynamicInfo.dynamicFamilyId ||
+          targetDynamicInfo.dynamicParentId
+        );
+
+        // Detect different types of moves
         const draggedFromCanvas =
-          !draggedNode.inViewport && draggedNode.parentId === null;
-        const movingToViewport = isWithinViewport(targetId, nodeState.nodes);
+          !nodeFlags.inViewport && !getNodeParent(realNodeId);
+        const movingToViewport = checkIsWithinViewport(targetId);
         const isCanvasToViewportMove = draggedFromCanvas && movingToViewport;
+        const movingToViewportComponent = checkIsWithinViewport(targetId);
 
-        // Also detect moves to any component within a viewport
-        const movingToViewportComponent = isWithinViewport(
-          targetId,
-          nodeState.nodes
-        );
+        // Move the node to the target
+        if (position === "inside") {
+          moveNode(realNodeId, targetId);
+        } else {
+          const targetParentId = getNodeParent(targetId);
+          if (!targetParentId) return;
 
-        nodeDisp.moveNode(
-          realNodeId,
-          true,
-          { targetId, position },
-          isTargetDynamic
-        );
+          const targetIndex = getNodeChildren(targetParentId).indexOf(targetId);
+          const insertIndex =
+            position === "after" ? targetIndex + 1 : targetIndex;
+
+          moveNode(realNodeId, targetParentId, insertIndex);
+        }
+
+        // Move additional nodes
         if (additionalDraggedNodes?.length) {
           additionalDraggedNodes.forEach((info, index) => {
             if (index === 0) {
-              nodeDisp.moveNode(info.node.id, true, {
-                targetId: realNodeId,
-                position: "after",
-              });
+              // First additional node goes after the main node
+              const mainNodeParentId = getNodeParent(realNodeId);
+              if (!mainNodeParentId) return;
+
+              const mainNodeIndex =
+                getNodeChildren(mainNodeParentId).indexOf(realNodeId);
+              moveNode(info.node.id, mainNodeParentId, mainNodeIndex + 1);
             } else {
-              const previousNodeId = additionalDraggedNodes[index - 1].node.id;
-              nodeDisp.moveNode(info.node.id, true, {
-                targetId: previousNodeId,
-                position: "after",
-              });
+              // Subsequent nodes go after the previous one
+              const prevNodeId = additionalDraggedNodes[index - 1].node.id;
+              const prevNodeParentId = getNodeParent(prevNodeId);
+              if (!prevNodeParentId) return;
+
+              const prevNodeIndex =
+                getNodeChildren(prevNodeParentId).indexOf(prevNodeId);
+              moveNode(info.node.id, prevNodeParentId, prevNodeIndex + 1);
             }
 
-            if (
-              targetFrame?.dynamicParentId &&
-              dynamicModeNodeId &&
-              activeViewportId
-            ) {
-              nodeDisp.updateNode(info.node.id, {
-                dynamicParentId: targetFrame.dynamicParentId,
-                dynamicViewportId: activeViewportId,
-              });
-            } else if (targetFrame?.dynamicParentId) {
-              nodeDisp.updateNode(info.node.id, {
-                dynamicParentId: targetFrame.dynamicParentId,
-              });
-            }
-
-            // Apply updated viewport styles to additional nodes
-            setNodeStyle(
-              {
-                position: "relative",
-                zIndex: "",
-                left: "",
-                top: "",
-                ...(info.node.style.flex === "1 0 0px" && { flex: "1 0 0px" }),
-              },
-              [info.node.id],
-              false
-            );
-
-            if (targetFrame?.dynamicParentId) {
-              nodeDisp.updateNode(info.node.id, {
-                dynamicParentId: targetFrame.dynamicParentId,
-              });
-
-              // If target is dynamic or variant, mark for synchronization
-              if (
-                targetFrame.isDynamic ||
-                (targetFrame.isVariant && targetFrame.dynamicParentId)
-              ) {
-                lastAddedNodeIdRef.current = info.node.id;
+            // Update dynamic parent if needed
+            if (targetDynamicInfo.dynamicParentId) {
+              if (dynamicModeNodeId && activeViewportInDynamicMode) {
+                updateNodeDynamicInfo(info.node.id, {
+                  dynamicParentId: targetDynamicInfo.dynamicParentId,
+                  dynamicViewportId: activeViewportInDynamicMode,
+                });
+              } else {
+                updateNodeDynamicInfo(info.node.id, {
+                  dynamicParentId: targetDynamicInfo.dynamicParentId,
+                });
               }
             }
+
+            // Reset style to relative
+            updateNodeStyle(info.node.id, {
+              position: "relative",
+              zIndex: "",
+              left: "",
+              top: "",
+              ...(info.node.style.flex === "1 0 0px" && { flex: "1 0 0px" }),
+            });
+
+            // Update flags
+            updateNodeFlags(info.node.id, {
+              inViewport: shouldBeInViewport,
+            });
           });
         }
 
-        console.log("HERE7?");
-
-        if (targetFrame?.dynamicParentId) {
-          nodeDisp.updateNode(realNodeId, {
-            dynamicParentId: targetFrame.dynamicParentId,
+        // Update dynamic parent if needed
+        if (targetDynamicInfo.dynamicParentId) {
+          updateNodeDynamicInfo(realNodeId, {
+            dynamicParentId: targetDynamicInfo.dynamicParentId,
           });
-
-          if (
-            targetFrame.isDynamic ||
-            (targetFrame.isVariant && targetFrame.dynamicParentId)
-          ) {
-            lastAddedNodeIdRef.current = realNodeId;
-          }
         }
 
-        setNodeStyle(
-          {
-            position: "relative",
-            zIndex: "",
-            left: "",
-            top: "",
-            ...(draggedNode?.style.flex === "1 0 0px"
-              ? { flex: "1 0 0px" }
-              : {}),
-          },
-          [realNodeId],
-          false
-        );
+        // Reset main node style to relative
+        updateNodeStyle(realNodeId, {
+          position: "relative",
+          zIndex: "",
+          left: "",
+          top: "",
+          ...(nodeStyle.flex === "1 0 0px" ? { flex: "1 0 0px" } : {}),
+        });
 
-        // ENHANCED SYNC LOGIC: Use syncDroppedNodeWithChildren for ALL moves to viewport components
+        // Update flags
+        updateNodeFlags(realNodeId, {
+          inViewport: shouldBeInViewport,
+        });
+
+        // Sync logic for viewport components
         if (movingToViewportComponent && !dynamicModeNodeId) {
-          // Get the moved node with its updated parent
-          const movedNode = nodeState.nodes.find((n) => n.id === realNodeId);
+          // Ensure the node has a sharedId for syncing
+          if (!nodeSharedInfo.sharedId) {
+            const newSharedId = nanoid();
+            updateNodeSharedInfo(realNodeId, {
+              sharedId: newSharedId,
+            });
 
-          if (movedNode) {
-            // Ensure the node has a sharedId for syncing
-            if (!movedNode.sharedId) {
-              const newSharedId = nanoid();
-              nodeDisp.updateNode(realNodeId, {
-                sharedId: newSharedId,
-                inViewport: true,
-              });
-            }
-
-            // Collect IDs of any additional nodes that were moved
-            const additionalNodeIds = [];
-            if (additionalDraggedNodes?.length) {
-              additionalNodeIds.push(
-                ...additionalDraggedNodes.map((info) => info.node.id)
-              );
-
-              // Ensure all additional nodes have sharedIds
-              additionalDraggedNodes.forEach((info) => {
-                if (!info.node.sharedId) {
-                  const newSharedId = nanoid();
-                  nodeDisp.updateNode(info.node.id, {
-                    sharedId: newSharedId,
-                    inViewport: true,
-                  });
-                }
-              });
-            }
-
-            // Sync immediately instead of using setTimeout
-            nodeDisp.syncDroppedNodeWithChildren(realNodeId, additionalNodeIds);
+            updateNodeFlags(realNodeId, {
+              inViewport: true,
+            });
           }
+
+          // Ensure all additional nodes have sharedIds
+          if (additionalDraggedNodes?.length) {
+            additionalDraggedNodes.forEach((info) => {
+              const additionalSharedInfo = getNodeSharedInfo(info.node.id);
+              if (!additionalSharedInfo.sharedId) {
+                const newSharedId = nanoid();
+                updateNodeSharedInfo(info.node.id, {
+                  sharedId: newSharedId,
+                });
+
+                updateNodeFlags(info.node.id, {
+                  inViewport: true,
+                });
+              }
+            });
+          }
+
+          // Since we can't sync using nodeDisp, mark for future implementation
+          console.log("Element needs syncing with children:", realNodeId);
         }
-        // For repositioning on canvas, only sync the position changes
-        else if (!isNewElement && !dynamicModeNodeId) {
-          nodeDisp.syncNodePosition(realNodeId);
-          nodeDisp.removePlaceholders();
-        }
+        // For repositioning on canvas, no need to sync
       }
-      console.log("HERE7");
 
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
-      stopRecording(recordingSessionId as string);
       return;
     }
 
     // ============================================
     // Handling placeholder-based drops
     // ============================================
-    const placeholderIndex = nodeState.nodes.findIndex(
-      (node) => node.type === "placeholder"
+    const placeholderElements = document.querySelectorAll(
+      '[data-node-type="placeholder"]'
     );
-
-    if (placeholderIndex !== -1) {
+    if (placeholderElements.length > 0) {
       if (placeholderInfo) {
         const allDraggedNodes = [
           {
@@ -522,149 +501,152 @@ export const useMouseUp = () => {
           },
           ...placeholderInfo.additionalPlaceholders,
         ].sort((a, b) => {
-          const orderA = placeholderInfo!.nodeOrder.indexOf(a.nodeId);
-          const orderB = placeholderInfo!.nodeOrder.indexOf(b.nodeId);
+          const orderA = placeholderInfo.nodeOrder.indexOf(a.nodeId);
+          const orderB = placeholderInfo.nodeOrder.indexOf(b.nodeId);
           return orderA - orderB;
         });
 
-        const nodeDimensions = new Map();
+        // Create dimensions map for all nodes
+        const nodeDimensionsMap = new Map();
         allDraggedNodes.forEach((info) => {
-          const node = nodeState.nodes.find((n) => n.id === info.nodeId);
-          if (node) {
-            nodeDimensions.set(info.nodeId, {
-              width: node.style.width,
-              height: node.style.height,
-              isFillMode: node.style.flex === "1 0 0px",
-            });
-          }
+          const nodeStyle = getNodeStyle(info.nodeId);
+          nodeDimensionsMap.set(info.nodeId, {
+            width: nodeStyle.width,
+            height: nodeStyle.height,
+            isFillMode: nodeStyle.flex === "1 0 0px",
+          });
         });
 
-        const firstPlaceholder = nodeState.nodes.find(
-          (n) => n.id === allDraggedNodes[0].placeholderId
+        // Get first placeholder
+        const firstPlaceholderParent = getNodeParent(
+          allDraggedNodes[0].placeholderId
         );
+        if (!firstPlaceholderParent) return;
 
-        console.log("HERE9");
-
-        if (!firstPlaceholder) return;
-
-        const parentId = firstPlaceholder.parentId;
-        const currentNodes = nodeState.nodes.filter(
-          (n) => n.parentId === parentId
-        );
-        const placeholderIndex = findIndexWithinParent(
-          nodeState.nodes,
-          firstPlaceholder.id,
-          parentId
-        );
-
-        console.log("HERE8");
+        const placeholderIndex = getNodeChildren(
+          firstPlaceholderParent
+        ).indexOf(allDraggedNodes[0].placeholderId);
 
         // Remove all placeholders
         allDraggedNodes.forEach((info) => {
-          const placeholder = nodeState.nodes.find(
-            (n) => n.id === info.placeholderId
-          );
-          if (placeholder) {
-            nodeDisp.removeNode(placeholder.id);
-            nodeDisp.removePlaceholders();
-          }
+          removeNode(info.placeholderId);
         });
 
         if (placeholderIndex === 0) {
-          // Get all non-placeholder siblings first
-          const siblings = nodeState.nodes.filter(
-            (n) => n.parentId === parentId && n.type !== "placeholder"
+          // Get all non-placeholder siblings
+          const siblings = getNodeChildren(firstPlaceholderParent).filter(
+            (id) => {
+              const nodeType = getNodeBasics(id).type;
+              return (
+                nodeType !== "placeholder" &&
+                !allDraggedNodes.some((d) => d.nodeId === id)
+              );
+            }
           );
 
-          // Find the first non-dragged sibling
-          const firstSibling = siblings.find(
-            (n) => !allDraggedNodes.some((d) => d.nodeId === n.id)
-          );
+          if (siblings.length > 0) {
+            // First sibling exists, move before it
+            const firstSiblingId = siblings[0];
 
-          if (firstSibling) {
-            // Move nodes sequentially before the first non-dragged sibling
+            // Move nodes sequentially
             allDraggedNodes.forEach((info, index) => {
               if (index === 0) {
-                nodeDisp.moveNode(info.nodeId, true, {
-                  targetId: firstSibling.id,
-                  position: "before",
-                });
+                // Move before first sibling
+                moveNode(
+                  info.nodeId,
+                  firstPlaceholderParent,
+                  getNodeChildren(firstPlaceholderParent).indexOf(
+                    firstSiblingId
+                  )
+                );
               } else {
-                nodeDisp.moveNode(info.nodeId, true, {
-                  targetId: allDraggedNodes[index - 1].nodeId,
-                  position: "after",
-                });
+                // Move after previous node
+                const prevNodeParent = getNodeParent(
+                  allDraggedNodes[index - 1].nodeId
+                );
+                if (!prevNodeParent) return;
+
+                const prevIndex = getNodeChildren(prevNodeParent).indexOf(
+                  allDraggedNodes[index - 1].nodeId
+                );
+                moveNode(info.nodeId, prevNodeParent, prevIndex + 1);
               }
 
-              const dimensions = nodeDimensions[info.nodeId];
-              setNodeStyle(
-                {
-                  position: "relative",
-                  zIndex: "",
-                  left: "",
-                  top: "",
-                  ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
-                  width: dimensions?.width || dropWidth,
-                  height: dimensions?.height || dropHeight,
-                },
-                [info.nodeId],
-                false
-              );
+              // Update style
+              const dimensions = nodeDimensionsMap.get(info.nodeId);
+              updateNodeStyle(info.nodeId, {
+                position: "relative",
+                zIndex: "",
+                left: "",
+                top: "",
+                ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
+                width: dimensions?.width || dropWidth,
+                height: dimensions?.height || dropHeight,
+              });
             });
           } else {
-            console.log("HERE10");
-
-            // If no siblings exist, move as first children
+            // No siblings, move as first children
             allDraggedNodes.forEach((info, index) => {
               if (index === 0) {
-                nodeDisp.moveNode(info.nodeId, true, {
-                  targetId: parentId,
-                  position: "inside",
-                });
+                // Add as first child
+                moveNode(info.nodeId, firstPlaceholderParent, 0);
               } else {
-                nodeDisp.moveNode(info.nodeId, true, {
-                  targetId: allDraggedNodes[index - 1].nodeId,
-                  position: "after",
-                });
+                // Move after previous node
+                const prevNodeParent = getNodeParent(
+                  allDraggedNodes[index - 1].nodeId
+                );
+                if (!prevNodeParent) return;
+
+                const prevIndex = getNodeChildren(prevNodeParent).indexOf(
+                  allDraggedNodes[index - 1].nodeId
+                );
+                moveNode(info.nodeId, prevNodeParent, prevIndex + 1);
               }
 
-              const dimensions = nodeDimensions[info.nodeId];
-              setNodeStyle(
-                {
-                  position: "relative",
-                  zIndex: "",
-                  left: "",
-                  top: "",
-                  ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
-                  width: dimensions?.width || dropWidth,
-                  height: dimensions?.height || dropHeight,
-                },
-                [info.nodeId],
-                false
-              );
+              // Update style
+              const dimensions = nodeDimensionsMap.get(info.nodeId);
+              updateNodeStyle(info.nodeId, {
+                position: "relative",
+                zIndex: "",
+                left: "",
+                top: "",
+                ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
+                width: dimensions?.width || dropWidth,
+                height: dimensions?.height || dropHeight,
+              });
             });
           }
         } else {
-          console.log("HERE11");
-
           // For non-first positions
-          const targetNode = currentNodes[placeholderIndex - 1];
-          allDraggedNodes.forEach((info, index) => {
-            if (index === 0) {
-              nodeDisp.moveNode(info.nodeId, true, {
-                targetId: targetNode.id,
-                position: "after",
-              });
-            } else {
-              nodeDisp.moveNode(info.nodeId, true, {
-                targetId: allDraggedNodes[index - 1].nodeId,
-                position: "after",
-              });
-            }
+          const firstPlaceholderChildren = getNodeChildren(
+            firstPlaceholderParent
+          );
+          if (
+            placeholderIndex > 0 &&
+            placeholderIndex <= firstPlaceholderChildren.length
+          ) {
+            const targetNode = firstPlaceholderChildren[placeholderIndex - 1];
 
-            const dimensions = nodeDimensions[info.nodeId];
-            setNodeStyle(
-              {
+            allDraggedNodes.forEach((info, index) => {
+              if (index === 0) {
+                // Move after target
+                moveNode(info.nodeId, firstPlaceholderParent, placeholderIndex);
+              } else {
+                // Move after previous node
+                const prevNodeParent = getNodeParent(
+                  allDraggedNodes[index - 1].nodeId
+                );
+                if (!prevNodeParent) return;
+
+                const prevIndex = getNodeChildren(prevNodeParent).indexOf(
+                  allDraggedNodes[index - 1].nodeId
+                );
+                moveNode(info.nodeId, prevNodeParent, prevIndex + 1);
+              }
+
+              // Update style
+              const dimensions = nodeDimensionsMap.get(info.nodeId);
+              updateNodeStyle(info.nodeId, {
                 position: "relative",
                 zIndex: "",
                 left: "",
@@ -672,126 +654,81 @@ export const useMouseUp = () => {
                 ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
                 width: dimensions?.width,
                 height: dimensions?.height,
-              },
-              [info.nodeId],
-              false
-            );
-          });
+              });
+            });
+          }
         }
 
-        console.log("HERE112");
-
-        // For repositioning via placeholders, only sync the position changes
+        // Sync positions if needed (for nodes that came from viewports)
         if (sourceViewportId) {
+          // Since we can't sync using nodeDisp, mark for future implementation
           allDraggedNodes.forEach((info) => {
-            nodeDisp.syncNodePosition(info.nodeId);
+            console.log("Node position needs syncing:", info.nodeId);
           });
         }
       } else {
-        console.log("HERE1132");
+        // Simple single placeholder case
+        const placeholderId =
+          placeholderElements[0].getAttribute("data-node-id");
+        if (!placeholderId) return;
 
-        const placeholderId = nodeState.nodes[placeholderIndex].id;
-        const placeholderNode = nodeState.nodes[placeholderIndex];
+        const placeholderParent = getNodeParent(placeholderId);
+        if (!placeholderParent) return;
 
-        // NEW: Check if element is being dropped in the same position
-        const originalNode = nodeState.nodes.find(
-          (n) => n.id === draggedNode.id
-        );
-        const originalParentId = originalNode?.parentId;
-        const originalIndex = findIndexWithinParent(
-          nodeState.nodes,
-          draggedNode.id,
-          originalParentId
-        );
+        // Get position in parent
+        const placeholderIndex =
+          getNodeChildren(placeholderParent).indexOf(placeholderId);
 
-        const targetIndex = findIndexWithinParent(
-          nodeState.nodes.filter((n) => n.id !== draggedNode.id),
-          placeholderNode.id,
-          placeholderNode.parentId
-        );
+        // Check for same position drop
+        const originalParentId = getNodeParent(realNodeId);
+        const originalIndex = originalParentId
+          ? getNodeChildren(originalParentId).indexOf(realNodeId)
+          : -1;
 
-        // Check if we're dropping in the same place
-        const isSameParent = originalParentId === placeholderNode.parentId;
-
-        // Get original index of placeholderNode without filtering the array
-        const placeholderOriginalIndex = findIndexWithinParent(
-          nodeState.nodes,
-          placeholderNode.id,
-          placeholderNode.parentId
-        );
-
-        // Compare original index with placeholder index
-        // When placeholder replaces the node, its index is the same as the original node's index
+        const isSameParent = originalParentId === placeholderParent;
+        const placeholderOriginalIndex = placeholderIndex;
         const isSamePosition =
           isSameParent && originalIndex === placeholderOriginalIndex;
 
-        // Always remove placeholder
-        nodeDisp.removeNode(placeholderId);
+        // Remove placeholder
+        removeNode(placeholderId);
 
-        nodeDisp.removePlaceholders();
+        console.log("WE HERE???");
 
-        console.log("moussing up here ? ");
-
-        window.dispatchEvent(new Event("resize"));
-
-        // Get dimensions we need to restore
+        // Get dimensions to restore
         const dimensions = nodeDimensions[realNodeId];
 
         if (isSamePosition) {
-          // Instead of using setNodeStyle which adds unsync flags,
-          // update ONLY the dimensions directly
+          // Just restore dimensions if position didn't change
           if (dimensions) {
-            // Create a style update with just the dimension properties
-            const styleUpdates = {
+            updateNodeStyle(realNodeId, {
               ...(dimensions.width && { width: dimensions.width }),
               ...(dimensions.height && { height: dimensions.height }),
               ...(dimensions.isFillMode && { flex: "1 0 0px" }),
-            };
-
-            if (Object.keys(styleUpdates).length > 0) {
-              // Pass preventUnsync=true as the final parameter to avoid adding flags
-              setNodeStyle(
-                styleUpdates,
-                [realNodeId],
-                false, // Don't sync viewports
-                true // Prevent adding unsync flags
-              );
-            }
+            });
           }
         } else {
-          // Position actually changed, do regular reordering and style changes
-          nodeDisp.reorderNode(
-            draggedNode.id,
-            placeholderNode.parentId,
-            targetIndex
-          );
+          // Position changed, move node and update style
+          moveNode(realNodeId, placeholderParent, placeholderIndex);
 
-          console.log("reodering?");
-          // Apply full style with unsync flags since position changed
-
-          setNodeStyle(
-            {
-              position: "relative",
-              ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
-              width: dimensions?.width,
-              height: dimensions?.height,
-            },
-            [realNodeId],
-            false,
-            true // Always prevent adding unsync flags when restoring after drag
-          );
+          updateNodeStyle(realNodeId, {
+            position: "relative",
+            ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
+            width: dimensions?.width,
+            height: dimensions?.height,
+          });
         }
 
+        // Sync position if from viewport
         if (sourceViewportId) {
-          console.log("syncing nodes?");
-          nodeDisp.syncNodePosition(realNodeId);
+          // Since we can't sync using nodeDisp, mark for future implementation
+          console.log("Node position needs syncing:", realNodeId);
         }
       }
 
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
-      stopRecording(recordingSessionId);
       return;
     }
 
@@ -801,113 +738,48 @@ export const useMouseUp = () => {
     if (
       hasLeftViewportRef.current &&
       dragSource === "viewport" &&
-      draggedNode.sharedId &&
+      nodeSharedInfo.sharedId &&
       !dropInfo.targetId // Confirm we're dropping directly on canvas, not on a target
     ) {
-      // Find and remove all shared ID counterparts
-      const sharedIdCounterparts = nodeState.nodes.filter(
-        (n) => n.sharedId === draggedNode.sharedId && n.id !== draggedNode.id
-      );
-
-      console.log("BROOO???");
-
-      // Remove all counterparts
-      sharedIdCounterparts.forEach((counterpart) => {
-        // First find and remove any children of these counterparts
-        const childrenToRemove = nodeState.nodes.filter(
-          (n) => n.parentId === counterpart.id
-        );
-
-        // Remove children first (to avoid orphaned nodes)
-        childrenToRemove.forEach((child) => {
-          nodeDisp.removeNode(child.id);
-        });
-
-        // Then remove the counterpart itself
-        nodeDisp.removeNode(counterpart.id);
-      });
-
-      if (dynamicModeNodeId) {
-        console.log("indynamicmode");
-        console.log("activeViewportInDynamicMode", dynamicModeNodeId);
-        console.log("draggedNode.id", activeViewportInDynamicMode);
-        // Update the node to be a direct child of the current active viewport
-
-        nodeDisp.updateNode(draggedNode.id, {
-          dynamicParentId: dynamicModeNodeId,
-          dynamicFamilyId: null,
-          // Keep it in the dynamic environment
-          dynamicViewportId: activeViewportInDynamicMode,
-        });
-      } else {
-        // Clear sharedId from the dragged node to make it a standalone element
-        nodeDisp.updateNode(draggedNode.id, {
-          sharedId: undefined,
-          inViewport: false,
-          dynamicViewportId: null,
-          dynamicParentId: null,
-          variantResponsiveId: null,
-        });
-      }
-
-      // Handle additional dragged nodes if needed
-      if (additionalDraggedNodes?.length) {
-        additionalDraggedNodes.forEach((info) => {
-          const additionalNode = info.node;
-
-          // Clear shared IDs for additional nodes too
-          if (additionalNode.sharedId) {
-            const additionalCounterparts = nodeState.nodes.filter(
-              (n) =>
-                n.sharedId === additionalNode.sharedId &&
-                n.id !== additionalNode.id
-            );
-
-            // Remove counterparts of additional nodes
-            additionalCounterparts.forEach((counterpart) => {
-              const childrenToRemove = nodeState.nodes.filter(
-                (n) => n.parentId === counterpart.id
-              );
-              childrenToRemove.forEach((child) => {
-                nodeDisp.removeNode(child.id);
-              });
-              nodeDisp.removeNode(counterpart.id);
-            });
-
-            // Clear shared ID and other properties
-            nodeDisp.updateNode(additionalNode.id, {
-              sharedId: undefined,
-              inViewport: false,
-              dynamicViewportId: null,
-              dynamicParentId: null,
-              variantResponsiveId: null,
-            });
-          }
-        });
-      }
-
       // Position the node at its current drag position
       const { dropX, dropY } = dropInfo;
       if (dropX !== undefined && dropY !== undefined) {
         const finalX = dropX - currentDraggedNode.offset.mouseX;
         const finalY = dropY - currentDraggedNode.offset.mouseY;
 
-        setNodeStyle(
-          {
-            position: "absolute",
-            left: `${finalX}px`,
-            top: `${finalY}px`,
-          },
-          [draggedNode.id],
-          false
-        );
-
-        nodeDisp.updateNodePosition(draggedNode.id, {
-          x: finalX,
-          y: finalY,
+        updateNodeStyle(realNodeId, {
+          position: "absolute",
+          left: `${finalX}px`,
+          top: `${finalY}px`,
         });
 
-        // Position additional nodes based on their offset from the main node
+        moveNode(realNodeId, null);
+
+        // Update flags and clear shared ID
+        updateNodeFlags(realNodeId, {
+          inViewport: false,
+        });
+
+        if (!dynamicModeNodeId) {
+          updateNodeSharedInfo(realNodeId, {
+            sharedId: undefined,
+          });
+
+          updateNodeDynamicInfo(realNodeId, {
+            dynamicViewportId: null,
+            dynamicParentId: null,
+            variantResponsiveId: null,
+          });
+        } else {
+          // In dynamic mode
+          updateNodeDynamicInfo(realNodeId, {
+            dynamicParentId: dynamicModeNodeId,
+            dynamicFamilyId: null,
+            dynamicViewportId: activeViewportInDynamicMode,
+          });
+        }
+
+        // Position additional nodes
         if (additionalDraggedNodes?.length) {
           additionalDraggedNodes.forEach((info) => {
             const offsetX = info.offset.x - currentDraggedNode.offset.x || 0;
@@ -916,20 +788,38 @@ export const useMouseUp = () => {
             const additionalX = finalX + offsetX;
             const additionalY = finalY + offsetY;
 
-            setNodeStyle(
-              {
-                position: "absolute",
-                left: `${additionalX}px`,
-                top: `${additionalY}px`,
-              },
-              [info.node.id],
-              false
-            );
-
-            nodeDisp.updateNodePosition(info.node.id, {
-              x: additionalX,
-              y: additionalY,
+            updateNodeStyle(info.node.id, {
+              position: "absolute",
+              left: `${additionalX}px`,
+              top: `${additionalY}px`,
             });
+
+            moveNode(info.node.id, null);
+
+            // Update flags and clear shared ID
+            updateNodeFlags(info.node.id, {
+              inViewport: false,
+            });
+
+            const additionalSharedInfo = getNodeSharedInfo(info.node.id);
+            if (additionalSharedInfo.sharedId && !dynamicModeNodeId) {
+              updateNodeSharedInfo(info.node.id, {
+                sharedId: undefined,
+              });
+
+              updateNodeDynamicInfo(info.node.id, {
+                dynamicViewportId: null,
+                dynamicParentId: null,
+                variantResponsiveId: null,
+              });
+            } else if (dynamicModeNodeId) {
+              // In dynamic mode
+              updateNodeDynamicInfo(info.node.id, {
+                dynamicParentId: dynamicModeNodeId,
+                dynamicFamilyId: null,
+                dynamicViewportId: activeViewportInDynamicMode,
+              });
+            }
           });
         }
       }
@@ -940,56 +830,54 @@ export const useMouseUp = () => {
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
-      stopRecording(recordingSessionId);
       return;
     }
 
     // ============================================
     // Handling drops on the canvas for new elements
     // ============================================
-    else if (draggedItem && !draggedNode.dynamicParentId) {
+    else if (draggedItem) {
       const { dropX, dropY } = dropInfo;
-      const itemWidth = parseInt(draggedNode.style.width as string) || 150;
-      const itemHeight = parseInt(draggedNode.style.height as string) || 150;
+      if (dropX === undefined || dropY === undefined) return;
 
-      const centeredX = dropX! - itemWidth / 2;
-      const centeredY = dropY! - itemHeight / 2;
+      const itemWidth = parseInt(String(nodeStyle.width)) || 150;
+      const itemHeight = parseInt(String(nodeStyle.height)) || 150;
 
-      const newNode = {
-        ...draggedNode,
-        style: {
-          ...draggedNode.style,
-          position: "absolute",
-          left: `${centeredX}px`,
-          top: `${centeredY}px`,
-        } as Node["style"],
-      };
+      const centeredX = dropX - itemWidth / 2;
+      const centeredY = dropY - itemHeight / 2;
 
+      // Update style with absolute positioning
+      updateNodeStyle(realNodeId, {
+        position: "absolute",
+        left: `${centeredX}px`,
+        top: `${centeredY}px`,
+      });
+
+      // Add dynamic position if in dynamic mode
       if (dynamicModeNodeId) {
-        newNode.dynamicPosition = { x: centeredX, y: centeredY };
-        newNode.dynamicParentId = dynamicModeNodeId;
-
-        if (activeViewportInDynamicMode) {
-          newNode.dynamicViewportId = activeViewportInDynamicMode;
-        }
-
-        lastAddedNodeIdRef.current = newNode.id;
+        updateNodeDynamicInfo(realNodeId, {
+          dynamicPosition: { x: centeredX, y: centeredY },
+          dynamicParentId: dynamicModeNodeId,
+          dynamicViewportId: activeViewportInDynamicMode,
+        });
       }
 
-      nodeDisp.addNode(newNode, null, null, false);
-      selectOps.setSelectedIds([newNode.id]);
+      // Move to root (no parent)
+      moveNode(realNodeId, null);
 
+      // Select the new node
+      selectOps.setSelectedIds([realNodeId]);
+
+      // Sync if not in dynamic mode
       if (!dynamicModeNodeId) {
-        setTimeout(() => {
-          nodeDisp.syncDroppedNodeWithChildren(realNodeId);
-        }, 0);
+        // Since we can't sync using nodeDisp, mark for future implementation
+        console.log("Element needs syncing with children:", realNodeId);
       }
 
       visualOps.hideLineIndicator();
       dragOps.resetDragState();
       originalIndexRef.current = null;
       hasLeftViewportRef.current = false;
-      stopRecording(recordingSessionId);
       return;
     }
 
@@ -1016,42 +904,24 @@ export const useMouseUp = () => {
         // Get stored dimensions from drag start
         const dimensions = nodeDimensions[draggedNode.id];
 
-        // Create style update with position and restored dimensions
-        const styleUpdate = {
+        // Update style with absolute positioning and restore dimensions
+        updateNodeStyle(realNodeId, {
           position: "absolute",
           left: `${mainNodeX}px`,
           top: `${mainNodeY}px`,
-        };
-
-        // Restore flex if it was a flex-fill element
-        if (dimensions?.isFillMode) {
-          styleUpdate.flex = "1 0 0px";
-        }
-
-        // Restore percentage width/height if applicable
-        if (
-          typeof dimensions?.width === "string" &&
-          dimensions.width.includes("%")
-        ) {
-          styleUpdate.width = dimensions.width;
-        }
-
-        if (
-          typeof dimensions?.height === "string" &&
-          dimensions.height.includes("%")
-        ) {
-          styleUpdate.height = dimensions.height;
-        }
-
-        setNodeStyle(styleUpdate, [draggedNode.id], false);
-
-        nodeDisp.moveNode(draggedNode.id, false, {
-          newPosition: {
-            x: mainNodeX,
-            y: mainNodeY,
-          },
+          ...(dimensions?.isFillMode && { flex: "1 0 0px" }),
+          ...(dimensions?.width?.includes && dimensions.width.includes("%")
+            ? { width: dimensions.width }
+            : {}),
+          ...(dimensions?.height?.includes && dimensions.height.includes("%")
+            ? { height: dimensions.height }
+            : {}),
         });
 
+        // Move to root (no parent)
+        moveNode(realNodeId, null);
+
+        // Handle additional dragged nodes
         if (additionalDraggedNodes?.length) {
           additionalDraggedNodes.forEach((info) => {
             const additionalElement = document.querySelector(
@@ -1061,7 +931,10 @@ export const useMouseUp = () => {
             if (additionalElement) {
               const additionalRect = additionalElement.getBoundingClientRect();
 
-              if (info.node.inViewport || info.node.parentId) {
+              // Calculate position
+              const additionalFlags = getNodeFlags(info.node.id);
+
+              if (additionalFlags.inViewport || getNodeParent(info.node.id)) {
                 const additionalX =
                   (additionalRect.left - containerRect.left - transform.x) /
                   transform.scale;
@@ -1072,50 +945,36 @@ export const useMouseUp = () => {
                 // Get dimensions for additional node
                 const addDimensions = nodeDimensions[info.node.id];
 
-                // Create style update for additional node
-                const addStyleUpdate = {
+                // Update style with absolute positioning
+                updateNodeStyle(info.node.id, {
                   position: "absolute",
                   left: `${additionalX}px`,
                   top: `${additionalY}px`,
-                };
-
-                // Restore flex if it was flex-fill
-                if (addDimensions?.isFillMode) {
-                  addStyleUpdate.flex = "1 0 0px";
-                }
-
-                // Restore percentage dimensions
-                if (
-                  typeof addDimensions?.width === "string" &&
+                  ...(addDimensions?.isFillMode && { flex: "1 0 0px" }),
+                  ...(addDimensions?.width?.includes &&
                   addDimensions.width.includes("%")
-                ) {
-                  addStyleUpdate.width = addDimensions.width;
-                }
-
-                if (
-                  typeof addDimensions?.height === "string" &&
+                    ? { width: addDimensions.width }
+                    : {}),
+                  ...(addDimensions?.height?.includes &&
                   addDimensions.height.includes("%")
-                ) {
-                  addStyleUpdate.height = addDimensions.height;
-                }
-
-                setNodeStyle(addStyleUpdate, [info.node.id], false);
-
-                nodeDisp.moveNode(info.node.id, false, {
-                  newPosition: {
-                    x: additionalX,
-                    y: additionalY,
-                  },
+                    ? { height: addDimensions.height }
+                    : {}),
                 });
+
+                // Move to root
+                moveNode(info.node.id, null);
               } else {
+                // Calculate relative position from main node
+                const additionalStyle = getNodeStyle(info.node.id);
+                const mainNodeStyle = getNodeStyle(realNodeId);
+
                 const originalLeft =
-                  parseFloat(info.node.style.left as string) || 0;
+                  parseFloat(String(additionalStyle.left)) || 0;
                 const originalTop =
-                  parseFloat(info.node.style.top as string) || 0;
+                  parseFloat(String(additionalStyle.top)) || 0;
                 const mainNodeLeft =
-                  parseFloat(draggedNode.style.left as string) || 0;
-                const mainNodeTop =
-                  parseFloat(draggedNode.style.top as string) || 0;
+                  parseFloat(String(mainNodeStyle.left)) || 0;
+                const mainNodeTop = parseFloat(String(mainNodeStyle.top)) || 0;
 
                 const distanceX = originalLeft - mainNodeLeft;
                 const distanceY = originalTop - mainNodeTop;
@@ -1126,41 +985,24 @@ export const useMouseUp = () => {
                 // Get dimensions for additional node
                 const addDimensions = nodeDimensions[info.node.id];
 
-                // Create style update for additional node
-                const addStyleUpdate = {
+                // Update style with absolute positioning
+                updateNodeStyle(info.node.id, {
                   position: "absolute",
                   left: `${finalX}px`,
                   top: `${finalY}px`,
-                };
-
-                // Restore flex if it was flex-fill
-                if (addDimensions?.isFillMode) {
-                  addStyleUpdate.flex = "1 0 0px";
-                }
-
-                // Restore percentage dimensions
-                if (
-                  typeof addDimensions?.width === "string" &&
+                  ...(addDimensions?.isFillMode && { flex: "1 0 0px" }),
+                  ...(addDimensions?.width?.includes &&
                   addDimensions.width.includes("%")
-                ) {
-                  addStyleUpdate.width = addDimensions.width;
-                }
-
-                if (
-                  typeof addDimensions?.height === "string" &&
+                    ? { width: addDimensions.width }
+                    : {}),
+                  ...(addDimensions?.height?.includes &&
                   addDimensions.height.includes("%")
-                ) {
-                  addStyleUpdate.height = addDimensions.height;
-                }
-
-                setNodeStyle(addStyleUpdate, [info.node.id], false);
-
-                nodeDisp.moveNode(info.node.id, false, {
-                  newPosition: {
-                    x: finalX,
-                    y: finalY,
-                  },
+                    ? { height: addDimensions.height }
+                    : {}),
                 });
+
+                // Move to root
+                moveNode(info.node.id, null);
               }
             }
           });
@@ -1171,7 +1013,30 @@ export const useMouseUp = () => {
       dragOps.resetDragState();
       originalIndexRef.current = null;
       hasLeftViewportRef.current = false;
-      stopRecording(recordingSessionId);
     }
+
+    (() => {
+      // Remove any remaining placeholders
+      const placeholderElements = document.querySelectorAll(
+        '[data-node-type="placeholder"]'
+      );
+      console.log(
+        "Cleanup - removing placeholders:",
+        placeholderElements.length
+      );
+
+      placeholderElements.forEach((el) => {
+        const placeholderId = el.getAttribute("data-node-id");
+        if (placeholderId) {
+          console.log("Removing placeholder:", placeholderId);
+          removeNode(placeholderId);
+        }
+      });
+
+      visualOps.hideLineIndicator();
+      dragOps.resetDragState();
+      originalIndexRef.current = null;
+      hasLeftViewportRef.current = false;
+    })();
   };
 };

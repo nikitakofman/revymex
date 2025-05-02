@@ -1,3 +1,4 @@
+// Modified Canvas.tsx
 import React, { useEffect, useState, useRef } from "react";
 import InterfaceToolbar from "../toolbars/leftToolbar";
 import { RenderNodes } from "../../registry/renderNodes";
@@ -8,8 +9,6 @@ import {
 } from "@/builder/context/builderState";
 import { ViewportDevTools } from "../../dev/ViewportDevTools";
 import ElementToolbar from "../toolbars/rightToolbar";
-import { useMouseMove } from "@/builder/context/dnd/useMouseMove";
-import { useMouseUp } from "@/builder/context/dnd/useMouseUp";
 import { LineIndicator } from "@/builder/context/canvasHelpers/LineIndicator";
 import SnapGuides from "@/builder/context/canvasHelpers/SnapGuides";
 import { ToolbarDragPreview } from "@/builder/context/canvasHelpers/toolbarDragPreview";
@@ -18,9 +17,7 @@ import { ArrowConnectors } from "../../context/canvasHelpers/ArrowConnectors";
 import { ContextMenu } from "@/builder/context/canvasHelpers/ContextMenu";
 import Header from "../header";
 import SelectionBox from "@/builder/context/canvasHelpers/SelectionBox";
-import { useKeyboardDrag } from "@/builder/context/hooks/useKeyboardDrag";
 import FrameCreator from "../toolbars/bottomToolbar/FrameCreator";
-import { useImageDrop } from "@/builder/context/hooks/useImageDrop";
 import LeftMenu from "../toolbars/leftToolbar/leftMenu";
 import TextCreator from "../toolbars/bottomToolbar/TextCreator";
 import "react-tooltip/dist/react-tooltip.css";
@@ -32,6 +29,7 @@ import IframePreview from "../preview/iframePreview";
 import AddViewportModal from "@/builder/context/canvasHelpers/AddViewportModal";
 import EditViewportModal from "@/builder/context/canvasHelpers/EditViewportModal";
 import ViewportContextMenu from "@/builder/context/canvasHelpers/ViewportContextMenu";
+import MouseHandlers from "@/builder/context/dnd/MouseHandlers";
 import { selectOps } from "@/builder/context/atoms/select-store";
 import {
   useIsPreviewOpen,
@@ -51,10 +49,14 @@ import {
   nodeIdsAtom,
 } from "@/builder/context/atoms/node-store";
 import { nodeInitialState } from "@/builder/reducer/state";
+import {
+  childrenMapAtom,
+  hierarchyStore,
+  parentMapAtom,
+} from "@/builder/context/atoms/node-store/hierarchy-store";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
-  const eventHandlersAttached = useRef(false);
   const hasInitializedAtoms = useRef(false);
 
   const { nodeState } = useBuilderDynamic();
@@ -72,8 +74,28 @@ const Canvas = () => {
   // Initialize Jotai atoms with the initial node state on first render
   useEffect(() => {
     if (!hasInitializedAtoms.current) {
-      console.log("Initializing Jotai node state from initial state");
+      console.log("------- INITIALIZATION STARTS -------");
+      console.log(
+        "Initializing Jotai node state from initial state",
+        nodeInitialState
+      );
+
+      // Log the nodes with their parent-child relationships
+      const parentChildMap = {};
+      nodeInitialState.nodes.forEach((node) => {
+        if (!parentChildMap[node.parentId || "root"]) {
+          parentChildMap[node.parentId || "root"] = [];
+        }
+        parentChildMap[node.parentId || "root"].push(node.id);
+      });
+      console.log(
+        "Parent-child relationships in initial state:",
+        parentChildMap
+      );
+
+      // Call the initialize function
       initNodeStateFromInitialState(nodeInitialState);
+
       console.log(
         `Initialized ${nodeInitialState.nodes.length} nodes in Jotai store`
       );
@@ -82,64 +104,47 @@ const Canvas = () => {
       const nodeIds = nodeStore.get(nodeIdsAtom);
       console.log(`Verified nodeIds in store: ${nodeIds.length} nodes`);
 
+      // Check the hierarchy store
+      try {
+        // Log children map
+        const childrenMap = hierarchyStore.get(childrenMapAtom);
+        console.log("Children map from hierarchy store:", childrenMap);
+
+        // Log parent map
+        const parentMap = hierarchyStore.get(parentMapAtom);
+        console.log("Parent map from hierarchy store:", parentMap);
+
+        // Log root nodes
+        const rootNodeIds = childrenMap.get(null) || [];
+        console.log("Root nodes:", rootNodeIds);
+
+        // Check viewport children
+        console.log(
+          "Viewport-1440 children:",
+          childrenMap.get("viewport-1440") || []
+        );
+        console.log(
+          "Viewport-768 children:",
+          childrenMap.get("viewport-768") || []
+        );
+        console.log(
+          "Viewport-375 children:",
+          childrenMap.get("viewport-375") || []
+        );
+      } catch (error) {
+        console.error("Error checking hierarchy store:", error);
+      }
+
+      console.log("------- INITIALIZATION COMPLETE -------");
+
       // Mark as initialized so we don't do it again
       hasInitializedAtoms.current = true;
     }
   }, []);
 
-  // With this approach:
-  const handleMouseMove = useMouseMove();
-  const handleMouseUp = useMouseUp();
-
-  // Use our extracted image drop hook
-  const { handleDragOver, handleDrop } = useImageDrop({
-    containerRef,
-  });
-
-  useEffect(() => {
-    if (
-      document.activeElement?.tagName === "INPUT" ||
-      document.activeElement?.tagName === "TEXTAREA" ||
-      document.activeElement?.isContentEditable
-    ) {
-      return;
-    }
-  });
-
-  // Function to attach event listeners
-  const attachEventListeners = () => {
-    if (!eventHandlersAttached.current) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      eventHandlersAttached.current = true;
-    }
-  };
-
-  // Function to detach event listeners
-  const detachEventListeners = () => {
-    if (eventHandlersAttached.current) {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      eventHandlersAttached.current = false;
-    }
-  };
-
-  // Attach event listeners when not in preview mode
-  useEffect(() => {
-    if (!isPreviewOpen) {
-      attachEventListeners();
-    } else {
-      detachEventListeners();
-    }
-
-    return () => {
-      detachEventListeners();
-    };
-  }, [isPreviewOpen, handleMouseMove, handleMouseUp]);
-
   // Reset any necessary state when switching back from preview mode
   useEffect(() => {
-    if (!isPreviewOpen && eventHandlersAttached.current) {
+    if (!isPreviewOpen) {
       // Reset any necessary state when returning from preview mode
       canvasOps.setIsMovingCanvas(false);
 
@@ -205,6 +210,9 @@ const Canvas = () => {
     <>
       <LoadingScreen isLoading={isLoading} />
 
+      {/* Add MouseHandlers component */}
+      <MouseHandlers />
+
       <Header />
       <div
         className={`fixed inset-0 pt-12 flex overflow-hidden bg-[var(--bg-canvas)] ${
@@ -230,8 +238,6 @@ const Canvas = () => {
               }}
               className="w-full h-full canvas relative"
               onClick={handleCanvasClick}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
               onContextMenu={handleContextMenu}
             >
               <CanvasController
