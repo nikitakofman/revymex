@@ -27,6 +27,7 @@ import {
   useGetNodeParent,
 } from "@/builder/context/atoms/node-store";
 import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { useIsDragging } from "../atoms/drag-store";
 
 /**
  * If SHIFT + direct edge, we snap movement to multiples of SHIFT_INCREMENT.
@@ -124,6 +125,8 @@ export const ResizableWrapper = ({
 
   // Extract flags
   const { isLocked = false } = flags;
+
+  const isDragging = useIsDragging();
 
   // For debugging
   // console.log(`Resizable Wrapper re-rendering: ${nodeId}`, new Date().getTime());
@@ -575,6 +578,7 @@ export const ResizableWrapper = ({
         !isFontSizeHandleActive &&
         !isMiddleMouseDown &&
         !isDraggingChevrons &&
+        !isDragging &&
         (isSelected || isHovered || isNodeTempSelected) && (
           <VisualHelpers
             key={nodeId}

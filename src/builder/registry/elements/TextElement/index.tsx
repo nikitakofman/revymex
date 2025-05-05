@@ -37,6 +37,15 @@ import {
   useTransform,
 } from "@/builder/context/atoms/canvas-interaction-store";
 import { dynamicOps } from "@/builder/context/atoms/dynamic-store";
+import {
+  NodeId,
+  useNodeBasics,
+  useNodeStyle,
+  useNodeFlags,
+  useNodeParent,
+  useUpdateNodeStyle,
+  useGetAllNodes,
+} from "@/builder/context/atoms/node-store";
 
 // Add this extension to your list of extensions in TextElement.jsx
 
@@ -355,7 +364,7 @@ const BubbleMenuPortal = ({ children }: { children: React.ReactNode }) => {
 // -----------------------
 // TextElement Component
 // -----------------------
-const TextElement = ({ node }: ElementProps) => {
+const TextElement = ({ nodeId }: { nodeId: NodeId }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const [initialEditComplete, setInitialEditComplete] = useState(false);
@@ -369,7 +378,15 @@ const TextElement = ({ node }: ElementProps) => {
     show: false,
   });
 
-  console.log(`Text re-rendering: ${node.id}`, new Date().getTime());
+  // Use Jotai atoms for node data
+  const nodeBasics = useNodeBasics(nodeId);
+  const nodeStyle = useNodeStyle(nodeId);
+  const nodeFlags = useNodeFlags(nodeId);
+  const parentId = useNodeParent(nodeId);
+  const setNodeStyle = useUpdateNodeStyle(nodeId);
+  const getAllNodes = useGetAllNodes();
+
+  console.log(`Text re-rendering: ${nodeId}`, new Date().getTime());
 
   const lastSelectionRef = useRef(null);
   const toolbarInteractionRef = useRef(false);
@@ -384,20 +401,20 @@ const TextElement = ({ node }: ElementProps) => {
 
   const getIsDragging = useGetIsDragging();
   const connect = useConnect();
-  const { setNodeStyle, nodeState } = useBuilderDynamic();
   const { contentRef } = useBuilderRefs();
 
-  const isNodeSelected = useNodeSelected(node.id);
+  const isNodeSelected = useNodeSelected(nodeId);
   const getTransform = useGetTransform();
   const getIsMovingCanvas = useGetIsMovingCanvas();
   const getResizing = useGetIsResizing();
   const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   const getParentViewportWidth = useCallback(() => {
-    const parentViewportId = findParentViewport(node.parentId, nodeState.nodes);
-    const viewportNode = nodeState.nodes.find((n) => n.id === parentViewportId);
+    const nodes = getAllNodes();
+    const parentViewportId = findParentViewport(parentId, nodes);
+    const viewportNode = nodes.find((n) => n.id === parentViewportId);
     return viewportNode?.viewportWidth || window.innerWidth;
-  }, [node.parentId, nodeState.nodes]);
+  }, [parentId, getAllNodes]);
 
   // Extract VW value from text element for UI display
   const extractVwValue = useCallback((html) => {
@@ -503,8 +520,8 @@ const TextElement = ({ node }: ElementProps) => {
       SpacePreservingExtension,
     ],
     content:
-      node.style.text && node.style.text.trim() !== ""
-        ? node.style.text
+      nodeStyle.text && nodeStyle.text.trim() !== ""
+        ? nodeStyle.text
         : '<p class="text-inherit"><span>Text</span></p>',
     editable: false,
     editorProps: {
@@ -567,15 +584,15 @@ const TextElement = ({ node }: ElementProps) => {
 
   // Check if node has VW units when first rendering
   useEffect(() => {
-    if (node.style.text) {
-      const hasVwUnits = node.style.text.includes("vw");
+    if (nodeStyle.text) {
+      const hasVwUnits = nodeStyle.text.includes("vw");
       hasVwUnitsRef.current = hasVwUnits;
 
       if (hasVwUnits) {
         setDisplayUnit("vw");
 
         // Extract VW value for UI display
-        const vwValue = extractVwValue(node.style.text);
+        const vwValue = extractVwValue(nodeStyle.text);
         if (vwValue !== null) {
           setFontSize(vwValue.toFixed(2));
         }
@@ -583,13 +600,13 @@ const TextElement = ({ node }: ElementProps) => {
         setDisplayUnit("px");
 
         // Extract PX value for UI display
-        const pxMatch = node.style.text.match(/font-size:\s*([0-9.]+)px/);
+        const pxMatch = nodeStyle.text?.match(/font-size:\s*([0-9.]+)px/);
         if (pxMatch && pxMatch[1]) {
           setFontSize(pxMatch[1]);
         }
       }
     }
-  }, [node.style.text, extractVwValue]);
+  }, [nodeStyle.text, extractVwValue]);
 
   // Mark the initial edit as complete after a delay.
   useEffect(() => {
@@ -620,7 +637,7 @@ const TextElement = ({ node }: ElementProps) => {
 
         // Update node style WITHOUT exiting edit mode
         preventExitRef.current = true;
-        setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+        setNodeStyle({ text: finalHtml });
       } catch (error) {
         console.error("Error in safeUpdateNodeContent:", error);
       }
@@ -642,23 +659,23 @@ const TextElement = ({ node }: ElementProps) => {
       const currentContent = editor.getHTML();
       if (
         currentContent !== lastUpdatedContentRef.current &&
-        currentContent !== node.style.text
+        currentContent !== nodeStyle.text
       ) {
         safeUpdateNodeContent(currentContent);
       }
     }, 2000); // Save every 2 seconds
 
     return () => clearInterval(saveInterval);
-  }, [isEditing, editor, node.style.text, safeUpdateNodeContent]);
+  }, [isEditing, editor, nodeStyle.text, safeUpdateNodeContent]);
 
   // When loading node content into the editor
   useEffect(() => {
-    if (editor && node.style.text && !isEditing) {
+    if (editor && nodeStyle.text && !isEditing) {
       try {
         // Reset the content tracking ref
         lastUpdatedContentRef.current = null;
 
-        const hasVwUnits = node.style.text.includes("vw");
+        const hasVwUnits = nodeStyle.text.includes("vw");
         hasVwUnitsRef.current = hasVwUnits;
 
         if (hasVwUnits) {
@@ -666,36 +683,36 @@ const TextElement = ({ node }: ElementProps) => {
           setDisplayUnit("vw");
 
           // Extract the VW value for UI display
-          const vwValue = extractVwValue(node.style.text);
+          const vwValue = extractVwValue(nodeStyle.text);
           if (vwValue !== null) {
             setFontSize(vwValue.toFixed(2));
           }
 
           // Convert to pixels for editing
           const viewportWidth = getParentViewportWidth();
-          const pxContent = convertHtmlVwToPx(node.style.text, viewportWidth);
+          const pxContent = convertHtmlVwToPx(nodeStyle.text, viewportWidth);
 
           // Set content with pixels but data-vw-size attributes
           editor.commands.setContent(pxContent);
         } else {
           // For PX content, just load as is
           setDisplayUnit("px");
-          editor.commands.setContent(node.style.text);
+          editor.commands.setContent(nodeStyle.text);
 
           // Extract PX value for UI display
-          const pxMatch = node.style.text.match(/font-size:\s*([0-9.]+)px/);
+          const pxMatch = nodeStyle.text?.match(/font-size:\s*([0-9.]+)px/);
           if (pxMatch && pxMatch[1]) {
             setFontSize(pxMatch[1]);
           }
         }
       } catch (error) {
         console.error("Error loading node content:", error);
-        editor.commands.setContent(node.style.text);
+        editor.commands.setContent(nodeStyle.text);
       }
     }
   }, [
     editor,
-    node.style.text,
+    nodeStyle.text,
     isEditing,
     convertHtmlVwToPx,
     getParentViewportWidth,
@@ -709,7 +726,7 @@ const TextElement = ({ node }: ElementProps) => {
       if (editor) {
         try {
           const currentHtml = editor.getHTML();
-          if (currentHtml !== node.style.text) {
+          if (currentHtml !== nodeStyle.text) {
             let finalHtml = currentHtml;
 
             // Convert to VW if that's the display unit
@@ -723,7 +740,7 @@ const TextElement = ({ node }: ElementProps) => {
             finalHtml = preserveSpaces(finalHtml);
 
             // Update node with final HTML
-            setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+            setNodeStyle({ text: finalHtml });
           }
         } catch (error) {
           console.error("Error saving content on deselect:", error);
@@ -750,7 +767,7 @@ const TextElement = ({ node }: ElementProps) => {
     convertHtmlPxToVw,
     getParentViewportWidth,
     setNodeStyle,
-    node.style.text,
+    nodeStyle.text,
   ]);
 
   const handleToolbarInteractionStart = useCallback(() => {
@@ -837,7 +854,7 @@ const TextElement = ({ node }: ElementProps) => {
 
           // Save updates
           if (finalUnit === "vw") {
-            setNodeStyle({ text: htmlContent }, undefined, true, false, false);
+            setNodeStyle({ text: htmlContent });
           }
 
           if (finalUnit !== "vw") {
@@ -863,7 +880,7 @@ const TextElement = ({ node }: ElementProps) => {
 
           // Update node content
           const updatedHtml = editor.getHTML();
-          setNodeStyle({ text: updatedHtml }, undefined, true, false, false);
+          setNodeStyle({ text: updatedHtml });
         }
       } catch (error) {
         console.error("Error in handleFontSizeChange:", error);
@@ -915,7 +932,7 @@ const TextElement = ({ node }: ElementProps) => {
           );
 
           // Set node style directly
-          setNodeStyle({ text: updatedHtml }, undefined, true, false, false);
+          setNodeStyle({ text: updatedHtml });
 
           // Update editor content
           if (isEditing) {
@@ -968,7 +985,7 @@ const TextElement = ({ node }: ElementProps) => {
           // Update node style
           setTimeout(() => {
             const updatedHtml = editor.getHTML();
-            setNodeStyle({ text: updatedHtml }, undefined, true, false, false);
+            setNodeStyle({ text: updatedHtml });
           }, 10);
 
           // Update UI state
@@ -1115,7 +1132,7 @@ const TextElement = ({ node }: ElementProps) => {
       const target = e.target as HTMLElement;
 
       // Check if click is inside the text node
-      const isClickInside = target.closest(`[data-node-id="${node.id}"]`);
+      const isClickInside = target.closest(`[data-node-id="${nodeId}"]`);
 
       // If we're inside the element and edit mode was just activated, don't process this event
       if (isClickInside && preventExitRef.current) {
@@ -1157,7 +1174,7 @@ const TextElement = ({ node }: ElementProps) => {
           if (isEditing) {
             const currentHtml = editor.getHTML();
 
-            if (currentHtml !== node.style.text) {
+            if (currentHtml !== nodeStyle.text) {
               // If display unit is VW, convert to VW before saving
               let finalHtml = currentHtml;
               if (displayUnit === "vw") {
@@ -1170,7 +1187,7 @@ const TextElement = ({ node }: ElementProps) => {
               finalHtml = preserveSpaces(finalHtml);
 
               // Update the node content
-              setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+              setNodeStyle({ text: finalHtml });
             }
           }
         } catch (error) {
@@ -1188,8 +1205,8 @@ const TextElement = ({ node }: ElementProps) => {
     },
     [
       editor,
-      node.id,
-      node.style.text,
+      nodeId,
+      nodeStyle.text,
       setNodeStyle,
       canvasOps.setIsEditingText,
       isEditing,
@@ -1215,7 +1232,7 @@ const TextElement = ({ node }: ElementProps) => {
     const isResizing = getResizing();
 
     const isDragging = getIsDragging();
-    const isTextNode = node.type === "text";
+    const isTextNode = nodeBasics.type === "text";
     return (
       isNodeSelected &&
       isTextNode &&
@@ -1226,7 +1243,7 @@ const TextElement = ({ node }: ElementProps) => {
     );
   }, [
     isNodeSelected,
-    node.type,
+    nodeBasics.type,
     getIsMovingCanvas,
     getResizing,
     getIsDragging,
@@ -1238,7 +1255,7 @@ const TextElement = ({ node }: ElementProps) => {
     const transform = getTransform();
 
     if (!contentRef.current) return { x: 0, y: 0, show: false };
-    const elementNode = document.querySelector(`[data-node-id="${node.id}"]`);
+    const elementNode = document.querySelector(`[data-node-id="${nodeId}"]`);
     if (!elementNode) return { x: 0, y: 0, show: false };
     const elementRect = elementNode.getBoundingClientRect();
     const containerRect = contentRef.current.getBoundingClientRect();
@@ -1252,7 +1269,7 @@ const TextElement = ({ node }: ElementProps) => {
       (elementRect.top - 100 - containerRect.top - transform.y) /
       transform.scale;
     return { x: canvasX, y: canvasY - 10, show: true };
-  }, [node.id, getTransform, contentRef]);
+  }, [nodeId, getTransform, contentRef]);
 
   useEffect(() => {
     if (shouldShowMenu()) {
@@ -1360,7 +1377,7 @@ const TextElement = ({ node }: ElementProps) => {
 
     // Add events to editor DOM element
     const editorElement = document.querySelector(
-      `[data-node-id="${node.id}"] .ProseMirror`
+      `[data-node-id="${nodeId}"] .ProseMirror`
     );
     if (editorElement) {
       editorElement.addEventListener("keydown", handleKeyDown);
@@ -1371,13 +1388,13 @@ const TextElement = ({ node }: ElementProps) => {
         editorElement.removeEventListener("keyup", handleKeyUp);
       };
     }
-  }, [editor, isEditing, node.id, safeUpdateNodeContent]);
+  }, [editor, isEditing, nodeId, safeUpdateNodeContent]);
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       const dynamicModeNodeId = getDynamicModeNodeId();
-      if (node.isDynamic && dynamicModeNodeId === null) {
-        dynamicOps.setDynamicModeNodeId(node.id);
+      if (nodeFlags.isDynamic && dynamicModeNodeId === null) {
+        dynamicOps.setDynamicModeNodeId(nodeId);
       } else {
         if (isNodeSelected) {
           e.stopPropagation();
@@ -1400,7 +1417,7 @@ const TextElement = ({ node }: ElementProps) => {
 
               // Check if the text has VW units
               const hasVwUnits =
-                node.style.text && node.style.text.includes("vw");
+                nodeStyle.text && nodeStyle.text.includes("vw");
               hasVwUnitsRef.current = hasVwUnits;
 
               if (editor) {
@@ -1409,7 +1426,7 @@ const TextElement = ({ node }: ElementProps) => {
                   setDisplayUnit("vw");
 
                   // Extract the VW value for the UI
-                  const vwValue = extractVwValue(node.style.text);
+                  const vwValue = extractVwValue(nodeStyle.text);
                   if (vwValue !== null) {
                     setFontSize(vwValue.toFixed(2));
                   }
@@ -1417,19 +1434,19 @@ const TextElement = ({ node }: ElementProps) => {
                   // Convert VW to PX for editing
                   const viewportWidth = getParentViewportWidth();
                   const pxContent = convertHtmlVwToPx(
-                    node.style.text,
+                    nodeStyle.text,
                     viewportWidth
                   );
 
                   // Set editor content with PX values + data attributes
                   editor.commands.setContent(pxContent);
-                } else if (node.style.text && node.style.text.trim() !== "") {
+                } else if (nodeStyle.text && nodeStyle.text.trim() !== "") {
                   // For regular PX content
                   setDisplayUnit("px");
-                  editor.commands.setContent(node.style.text);
+                  editor.commands.setContent(nodeStyle.text);
 
                   // Extract PX value for UI
-                  const pxMatch = node.style.text.match(
+                  const pxMatch = nodeStyle.text.match(
                     /font-size:\s*([0-9.]+)px/
                   );
                   if (pxMatch && pxMatch[1]) {
@@ -1476,7 +1493,7 @@ const TextElement = ({ node }: ElementProps) => {
               // Fallback to basic edit mode
               if (editor) {
                 editor.commands.setContent(
-                  node.style.text ||
+                  nodeStyle.text ||
                     '<p class="text-inherit"><span>Text</span></p>'
                 );
                 editor.setEditable(true);
@@ -1494,7 +1511,7 @@ const TextElement = ({ node }: ElementProps) => {
       }
     },
     [
-      node,
+      nodeFlags.isDynamic,
       isNodeSelected,
       isEditing,
       initialEditComplete,
@@ -1505,6 +1522,8 @@ const TextElement = ({ node }: ElementProps) => {
       getParentViewportWidth,
       canvasOps.setIsEditingText,
       safeSimulateSelection,
+      nodeId,
+      nodeStyle.text,
     ]
   );
 
@@ -1524,7 +1543,7 @@ const TextElement = ({ node }: ElementProps) => {
       ) {
         const currentHtml = editor?.getHTML();
 
-        if (currentHtml !== node.style.text) {
+        if (currentHtml !== nodeStyle.text) {
           try {
             // Process HTML based on display unit
             let finalHtml = currentHtml;
@@ -1537,7 +1556,7 @@ const TextElement = ({ node }: ElementProps) => {
 
             // Update node style WITHOUT exiting edit mode
             preventExitRef.current = true;
-            setNodeStyle({ text: finalHtml }, undefined, true, false, false);
+            setNodeStyle({ text: finalHtml });
           } catch (error) {
             console.error("Error in handleBlur:", error);
           }
@@ -1546,7 +1565,7 @@ const TextElement = ({ node }: ElementProps) => {
     },
     [
       editor,
-      node.style.text,
+      nodeStyle.text,
       setNodeStyle,
       isEditing,
       displayUnit,
@@ -1562,7 +1581,7 @@ const TextElement = ({ node }: ElementProps) => {
     cursor: isEditing && isNodeSelected ? "text" : "default",
     minWidth: "1px",
     minHeight: "1em",
-    ...node.style,
+    ...nodeStyle,
   };
 
   // Adjust the VW display for proper viewport visualization
@@ -1582,7 +1601,7 @@ const TextElement = ({ node }: ElementProps) => {
 
       // Get the editor element DOM node
       const editorElement = document.querySelector(
-        `[data-node-id="${node.id}"] .ProseMirror`
+        `[data-node-id="${nodeId}"] .ProseMirror`
       );
 
       if (!editorElement) return;
@@ -1633,7 +1652,7 @@ const TextElement = ({ node }: ElementProps) => {
     } catch (err) {
       console.error("Error in adjustTextForViewport:", err);
     }
-  }, [editor, isEditing, node.id, getParentViewportWidth]);
+  }, [editor, isEditing, nodeId, getParentViewportWidth]);
 
   // Setup DOM observer to adjust viewport when content changes
   useEffect(() => {
@@ -1648,7 +1667,7 @@ const TextElement = ({ node }: ElementProps) => {
       });
 
       const editorElement = document.querySelector(
-        `[data-node-id="${node.id}"] .ProseMirror`
+        `[data-node-id="${nodeId}"] .ProseMirror`
       );
 
       if (editorElement) {
@@ -1662,7 +1681,7 @@ const TextElement = ({ node }: ElementProps) => {
 
       return () => observer.disconnect();
     }
-  }, [isEditing, displayUnit, node.id, adjustTextForViewport]);
+  }, [isEditing, displayUnit, nodeId, adjustTextForViewport]);
 
   // ===== ADD THIS TO TextElement.jsx =====
 
@@ -1714,7 +1733,7 @@ const TextElement = ({ node }: ElementProps) => {
         // For partial selection, use DOM-based approach
         // This is the key to fixing the "bouncing" issue
         const editorElement = document.querySelector(
-          `[data-node-id="${node.id}"] .ProseMirror`
+          `[data-node-id="${nodeId}"] .ProseMirror`
         );
         if (!editorElement) return;
 
@@ -1799,7 +1818,7 @@ const TextElement = ({ node }: ElementProps) => {
         }, 100);
       }
     },
-    [editor, node.id, displayUnit, directUpdateFontSize, safeUpdateNodeContent]
+    [editor, nodeId, displayUnit, directUpdateFontSize, safeUpdateNodeContent]
   );
 
   const applyFontSizeToSelection = useCallback(
@@ -1883,9 +1902,24 @@ const TextElement = ({ node }: ElementProps) => {
     [editor, safeUpdateNodeContent]
   );
 
+  // Create a node object for ResizableWrapper and other components
+  const nodeObject = {
+    id: nodeId,
+    type: nodeBasics.type,
+    style: nodeStyle,
+    parentId: parentId,
+    isDynamic: nodeFlags.isDynamic,
+    isAbsoluteInFrame: nodeFlags.isAbsoluteInFrame,
+    // Add any other properties that are needed by components that expect a node object
+  };
+
   return (
-    <ResizableWrapper node={node}>
-      <div {...connect(node)} style={style} onDoubleClick={handleDoubleClick}>
+    <ResizableWrapper node={nodeObject}>
+      <div
+        {...connect(nodeObject)}
+        style={style}
+        onDoubleClick={handleDoubleClick}
+      >
         {editor && menuPosition.show && shouldShowMenu() && (
           <TextMenu
             BubbleMenuPortal={BubbleMenuPortal}
@@ -1905,7 +1939,7 @@ const TextElement = ({ node }: ElementProps) => {
             directUpdateFontSize={directUpdateFontSize}
             handleLineHeightChange={handleLineHeightChange} // Add this line
             handleLetterSpacingChange={handleLetterSpacingChange} // Add this line
-            node={node}
+            node={nodeObject}
           />
         )}
         <div

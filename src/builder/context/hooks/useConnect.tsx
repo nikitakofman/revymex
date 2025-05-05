@@ -206,6 +206,7 @@ export const useConnect = () => {
         const isMoveCanvasMode = getIsMoveCanvasMode();
         const isTextModeActive = getIsTextModeActive();
         const isEditingText = getIsEditingText();
+
         // Skip all drag handling if in move canvas mode
         if (isMoveCanvasMode) {
           return;
@@ -226,6 +227,7 @@ export const useConnect = () => {
         e.stopPropagation();
 
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+        let isDragStarted = false; // Track if drag has been started
 
         const isAlreadySelected = selectOps.getSelectedIds().includes(nodeId);
 
@@ -254,8 +256,8 @@ export const useConnect = () => {
 
         // Only set up drag handler if node is not locked
         if (!isLocked) {
-          mouseMoveHandlerRef.current = (moveEvent: MouseEvent) => {
-            if (mouseDownPosRef.current) {
+          const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (mouseDownPosRef.current && !isDragStarted) {
               const dx = Math.abs(
                 moveEvent.clientX - mouseDownPosRef.current.x
               );
@@ -263,18 +265,9 @@ export const useConnect = () => {
                 moveEvent.clientY - mouseDownPosRef.current.y
               );
 
-              if (dx > 1 || dy > 1) {
-                if (timeoutRef.current) {
-                  clearTimeout(timeoutRef.current);
-                }
-
-                if (mouseMoveHandlerRef.current) {
-                  window.removeEventListener(
-                    "mousemove",
-                    mouseMoveHandlerRef.current
-                  );
-                  mouseMoveHandlerRef.current = null;
-                }
+              // Increase threshold to prevent accidental dragging
+              if (dx > 2 || dy > 2) {
+                isDragStarted = true;
 
                 // Check for resize handle and edges
                 const currentTarget = document.elementFromPoint(
@@ -296,14 +289,26 @@ export const useConnect = () => {
                     parentId,
                     style,
                   };
-                  // Use the new rules-based drag start instead
+                  // Use the new rules-based drag start
                   handleDragStart(e, undefined, nodeData);
                 }
+
+                // Remove this listener once drag is started
+                window.removeEventListener("mousemove", handleMouseMove);
               }
             }
           };
 
-          window.addEventListener("mousemove", mouseMoveHandlerRef.current);
+          const handleMouseUp = () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            window.removeEventListener("mouseup", handleMouseUp);
+            mouseDownPosRef.current = null;
+            isDragStarted = false;
+          };
+
+          mouseMoveHandlerRef.current = handleMouseMove;
+          window.addEventListener("mousemove", handleMouseMove);
+          window.addEventListener("mouseup", handleMouseUp);
         }
       };
 
@@ -314,6 +319,7 @@ export const useConnect = () => {
 
         if (mouseMoveHandlerRef.current) {
           window.removeEventListener("mousemove", mouseMoveHandlerRef.current);
+          window.removeEventListener("mouseup", handleMouseUp);
           mouseMoveHandlerRef.current = null;
         }
 

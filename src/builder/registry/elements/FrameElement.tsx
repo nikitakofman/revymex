@@ -512,9 +512,6 @@ export const Frame = ({
         data-is-viewport={isViewport ? "true" : "false"}
         data-is-variant={isVariant ? "true" : "false"}
         data-is-dynamic={isDynamic ? "true" : "false"}
-        className={`${isSelected ? "outline outline-2 outline-blue-500" : ""} ${
-          isHovered ? "hover-highlight" : ""
-        }`}
         style={{
           ...style,
           cursor: getIsDragging() ? "grabbing" : "auto",

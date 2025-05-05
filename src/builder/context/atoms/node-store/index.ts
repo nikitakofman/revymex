@@ -599,10 +599,8 @@ nodeStore.set(changedNodesAtom, new Set());
 
 export function initNodeStateFromInitialState(initialState: NodeState) {
   // Add node IDs to the node store
-  nodeStore.set(
-    nodeIdsAtom,
-    initialState.nodes.map((node) => node.id)
-  );
+  const nodeIds = initialState.nodes.map((node) => node.id);
+  nodeStore.set(nodeIdsAtom, nodeIds);
 
   // Initialize hierarchy maps
   const childrenMap = new Map<NodeId | null, NodeId[]>();
@@ -611,8 +609,11 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
   // Initialize root nodes array (nodes with no parent)
   childrenMap.set(null, []);
 
+  // First pass: Log all nodes and their parents
+  initialState.nodes.forEach((node) => {});
+
   // Initialize each node's atoms
-  initialState.nodes.forEach((node) => {
+  initialState.nodes.forEach((node, index) => {
     // Basics
     nodeStore.set(nodeBasicsAtom(node.id), {
       id: node.id,
@@ -624,7 +625,7 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
     nodeStore.set(nodeStyleAtom(node.id), node.style || {});
 
     // Flags
-    nodeStore.set(nodeFlagsAtom(node.id), {
+    const flags = {
       isLocked: node.isLocked,
       inViewport: node.inViewport !== false,
       isViewport: node.isViewport,
@@ -633,7 +634,8 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
       isDynamic: node.isDynamic,
       isAbsoluteInFrame: node.isAbsoluteInFrame,
       isVariant: node.isVariant,
-    });
+    };
+    nodeStore.set(nodeFlagsAtom(node.id), flags);
 
     // Parent
     const parentId = node.parentId || null;
@@ -709,7 +711,39 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
   hierarchyStore.set(childrenMapAtom, childrenMap);
   hierarchyStore.set(parentMapAtom, parentMap);
 
-  console.log(
-    `Initialized hierarchy store with ${childrenMap.size} parent entries and ${parentMap.size} nodes`
-  );
+  // Debug output: Current state of hierarchy
+  childrenMap.forEach((children, parent) => {
+    if (parent !== null) {
+      const parentNode = initialState.nodes.find((n) => n.id === parent);
+      const parentType = parentNode?.type || "unknown";
+      children.forEach((childId) => {
+        const childNode = initialState.nodes.find((n) => n.id === childId);
+        const childType = childNode?.type || "unknown";
+      });
+    }
+  });
+  // Verify a few specific relationships
+  const testCases = [
+    {
+      parent: "viewport-1440",
+      expectedChildren: [
+        "ez4VLzf45AS_tp7IoalXo",
+        "gmzB5qAqsN86mljbgWz5D",
+        "ThirdFrame_1440",
+        "FourthFrame_1440",
+      ],
+    },
+    { parent: "ThirdFrame_1440", expectedChildren: ["ThirdFrameImage_1440"] },
+    { parent: "FourthFrame_1440", expectedChildren: ["NestedFrame_1440"] },
+    { parent: "NestedFrame_1440", expectedChildren: ["NestedFrameImage_1440"] },
+  ];
+
+  testCases.forEach((testCase) => {
+    const actualChildren = childrenMap.get(testCase.parent) || [];
+    const matching = testCase.expectedChildren.every((child) =>
+      actualChildren.includes(child)
+    );
+    if (!matching) {
+    }
+  });
 }

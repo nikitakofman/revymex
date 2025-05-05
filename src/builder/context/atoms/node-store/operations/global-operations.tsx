@@ -14,6 +14,11 @@ import {
   changedNodesAtom,
   batchNodeUpdates,
 } from "../";
+import {
+  hierarchyStore,
+  childrenMapAtom,
+  parentMapAtom,
+} from "../hierarchy-store";
 
 /**
  * Completely replace the entire node tree with a new set of nodes
@@ -93,5 +98,44 @@ export function pushNodes(nodes: Node[]) {
 
     // Mark all nodes as changed
     nodeStore.set(changedNodesAtom, new Set(nodes.map((node) => node.id)));
+
+    // ============ HIERARCHY STORE UPDATES ============
+
+    // Build new children map
+    const newChildrenMap = new Map<NodeId | null, NodeId[]>();
+
+    // Initialize with empty root nodes
+    newChildrenMap.set(null, []);
+
+    // Build new parent map
+    const newParentMap = new Map<NodeId, NodeId | null>();
+
+    // Group nodes by parent
+    nodes.forEach((node) => {
+      const parentId = node.parentId;
+
+      // Add to parent map
+      newParentMap.set(node.id, parentId);
+
+      // Add to children map
+      if (!newChildrenMap.has(parentId)) {
+        newChildrenMap.set(parentId, []);
+      }
+      newChildrenMap.get(parentId)!.push(node.id);
+    });
+
+    // Find root nodes (nodes with no parent or parent not in the tree)
+    const rootNodes = nodes
+      .filter(
+        (node) => !node.parentId || !nodes.some((n) => n.id === node.parentId)
+      )
+      .map((node) => node.id);
+
+    // Set root nodes
+    newChildrenMap.set(null, rootNodes);
+
+    // Update hierarchy store
+    hierarchyStore.set(childrenMapAtom, newChildrenMap);
+    hierarchyStore.set(parentMapAtom, newParentMap);
   });
 }

@@ -54,6 +54,7 @@ import {
   hierarchyStore,
   parentMapAtom,
 } from "@/builder/context/atoms/node-store/hierarchy-store";
+import DragOverlay from "@/builder/context/dnd/DragOverlay";
 
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -276,6 +277,7 @@ const Canvas = () => {
             <AddViewportModal />
             <EditViewportModal />
             <ViewportContextMenu />
+            <DragOverlay />
           </>
         )}
       </div>

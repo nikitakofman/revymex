@@ -32,12 +32,14 @@ interface RenderNodesProps {
 }
 
 // Inside NodeComponent function
-const NodeComponent = ({
+export const NodeComponent = ({
   nodeId,
   filter,
+  preview = false, // Add a prop to indicate if this is a preview in DragOverlay
 }: {
   nodeId: NodeId;
   filter: RenderNodesProps["filter"];
+  preview?: boolean;
 }) => {
   // Get getter functions (non-reactive)
   const getNodeBasics = useGetNodeBasics();
@@ -60,7 +62,31 @@ const NodeComponent = ({
   // Check if this node is a child of a viewport
   const parentId = getNodeParent(nodeId);
   const parentFlags = parentId ? getNodeFlags(parentId) : null;
-  const isViewportChild = parentFlags?.isViewport === true;
+
+  // Check if node is being dragged - DO THIS AFTER ALL HOOKS ARE CALLED
+  const isDragging = getIsDragging();
+  const draggedNode = getDraggedNode();
+  const additionalDraggedNodes = getAdditionalDraggedNodes();
+  const isDragged = isDragging && draggedNode?.node.id === nodeId;
+
+  const isViewportDescendant = () => {
+    let currentId = nodeId;
+    let currentParentId = getNodeParent(currentId);
+
+    while (currentParentId !== null) {
+      const parentFlags = getNodeFlags(currentParentId);
+      if (parentFlags?.isViewport === true) {
+        return true;
+      }
+      currentId = currentParentId;
+      currentParentId = getNodeParent(currentId);
+    }
+
+    return false;
+  };
+
+  // Keep all viewport descendants visible regardless of filter
+  const isViewportChild = isViewportDescendant();
 
   // Use hierarchy store to get children
   const children = useNodeChildren(nodeId);
@@ -97,6 +123,19 @@ const NodeComponent = ({
 
   // Skip rendering hidden nodes
   if (node.style.display === "none") {
+    return null;
+  }
+
+  // Skip rendering this node if it's being dragged and this isn't a preview
+  if (isDragged && !preview) {
+    return null;
+  }
+
+  // Skip rendering non-dragged versions of additional dragged nodes
+  if (
+    !preview &&
+    additionalDraggedNodes?.some((info) => info.node.id === nodeId)
+  ) {
     return null;
   }
 
@@ -148,20 +187,6 @@ const NodeComponent = ({
     if (filter === "outOfViewport" && node.inViewport) {
       return null;
     }
-  }
-
-  // Check if node is being dragged
-  const isDragging = getIsDragging();
-  const draggedNode = getDraggedNode();
-  const additionalDraggedNodes = getAdditionalDraggedNodes();
-  const isDragged = isDragging && draggedNode?.node.id === node.id;
-
-  // Skip rendering non-dragged versions of additional dragged nodes
-  if (
-    !isDragged &&
-    additionalDraggedNodes?.some((info) => info.node.id === node.id)
-  ) {
-    return null;
   }
 
   // Add shared-id attribute for DOM consistency across variants
@@ -249,9 +274,16 @@ const NodeComponent = ({
             {...sharedIdAttr}
             {...viewportAttr}
           >
-            {children.map((childId) => (
-              <NodeComponent key={childId} nodeId={childId} filter={filter} />
-            ))}
+            {children.map((childId) => {
+              return (
+                <NodeComponent
+                  key={childId}
+                  nodeId={childId}
+                  filter={filter}
+                  preview={preview}
+                />
+              );
+            })}
           </Frame>
         );
 
@@ -262,7 +294,7 @@ const NodeComponent = ({
         const imageComponent = (
           <ImageElement
             key={node.id}
-            node={{ ...node, style: adjustedStyle }}
+            nodeId={nodeId}
             {...sharedIdAttr}
             {...viewportAttr}
           />
@@ -275,7 +307,7 @@ const NodeComponent = ({
         const textComponent = (
           <TextElement
             key={node.id}
-            node={{ ...node, style: adjustedStyle }}
+            nodeId={node.id}
             {...sharedIdAttr}
             {...viewportAttr}
           />
@@ -313,30 +345,6 @@ const NodeComponent = ({
       }
     }
   };
-
-  if (isDragged) {
-    const content = renderContent();
-    return (
-      <>
-        <DraggedNode
-          key={`dragged-${node.id}`}
-          node={node}
-          content={content}
-          offset={draggedNode!.offset}
-        />
-        {isDragging &&
-          additionalDraggedNodes?.map((info) => (
-            <DraggedNode
-              key={`dragged-${info.node.id}`}
-              node={info.node}
-              content={<NodeComponent nodeId={info.node.id} filter={filter} />}
-              offset={info.offset}
-            />
-          ))}
-      </>
-    );
-  }
-
   return renderContent();
 };
 
