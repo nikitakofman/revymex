@@ -50,14 +50,13 @@ export const Frame = ({
   children?: React.ReactNode;
   nodeId: string;
 }) => {
-  console.log(`Frame re-rendering: ${nodeId}`, new Date().getTime());
+  // console.log(`Frame re-rendering: ${nodeId}`, new Date().getTime());
 
   // Read style directly from the atom - this will make the component reactive to style changes
   const style = useNodeStyle(nodeId);
   const getNodeFlags = useGetNodeFlags();
   const flags = getNodeFlags(nodeId);
 
-  const { nodeDisp } = useBuilderDynamic();
   const { containerRef, contentRef } = useBuilderRefs();
 
   const getIsDragging = useGetIsDragging();
@@ -176,7 +175,6 @@ export const Frame = ({
             });
 
             // Update node position data
-            nodeDisp.updateNodePosition(nodeId, finalPos);
           } else {
             // Fallback - try to get the position directly from the DOM
             const draggedEl = document.querySelector(
@@ -205,8 +203,6 @@ export const Frame = ({
                 left: `${elX}px`,
                 top: `${elY}px`,
               });
-
-              nodeDisp.updateNodePosition(nodeId, { x: elX, y: elY });
             } else {
               // Hard fallback - manually set a position to avoid resetting to origin
               console.log("Using hard fallback position");

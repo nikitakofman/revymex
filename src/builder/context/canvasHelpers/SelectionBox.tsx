@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import {
-  useBuilder,
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import { interfaceOps } from "../atoms/interface-store";
 import { selectOps, useGetTempSelectedIds } from "../atoms/select-store";
 import {
@@ -19,6 +15,11 @@ import {
   useIsTextModeActive,
   canvasOps,
 } from "../atoms/canvas-interaction-store";
+import {
+  useGetNodeIds,
+  useGetNodeFlags,
+  useGetNodeBasics,
+} from "../atoms/node-store";
 
 interface SelectionBoxState {
   startX: number;
@@ -29,9 +30,14 @@ interface SelectionBoxState {
 }
 
 export const SelectionBox: React.FC = () => {
-  const { nodeState } = useBuilderDynamic();
-
   const { containerRef } = useBuilderRefs();
+
+  // Get non-reactive getters for node data
+  const getNodeIds = useGetNodeIds();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeBasics = useGetNodeBasics();
+  const getTempIds = useGetTempSelectedIds();
+
   // Subscribe to all states that affect whether we should show the selection box
   const transform = useTransform();
   const isMiddleMouseDown = useIsMiddleMouseDown();
@@ -39,7 +45,6 @@ export const SelectionBox: React.FC = () => {
   const isFrameModeActive = useIsFrameModeActive();
   const isTextModeActive = useIsTextModeActive();
   const isDragging = useIsDragging();
-  const getTempIds = useGetTempSelectedIds();
 
   // Calculate isDrawingMode from frame mode and text mode
   const isDrawingMode = isFrameModeActive || isTextModeActive;
@@ -49,25 +54,12 @@ export const SelectionBox: React.FC = () => {
   const getDragSource = useGetDragSource();
   const [box, setBox] = useState<SelectionBoxState | null>(null);
 
-  // Store nodes in a ref to avoid re-computation
-  const nodesRef = useRef(nodeState.nodes);
-
-  // Update nodes ref only when needed
-  useEffect(() => {
-    nodesRef.current = nodeState.nodes;
-  }, [nodeState.nodes]);
-
   // Note: this should be below all hook calls
   const shouldRender =
     !isDrawingMode && !isMoveCanvasMode && !isDragging && !isMiddleMouseDown;
 
   // Cache node elements to avoid repeated DOM queries
   const nodeElementsRef = useRef(new Map());
-
-  // Clear cache when nodes change
-  useEffect(() => {
-    nodeElementsRef.current.clear();
-  }, [nodeState.nodes]);
 
   // Get node element with caching
   const getNodeElement = useCallback((nodeId) => {
@@ -76,6 +68,11 @@ export const SelectionBox: React.FC = () => {
       nodeElementsRef.current.set(nodeId, element);
     }
     return nodeElementsRef.current.get(nodeId);
+  }, []);
+
+  // Clear cache when needed - we'll do this on selection start
+  const clearNodeElementCache = useCallback(() => {
+    nodeElementsRef.current.clear();
   }, []);
 
   const updateSelection = useCallback(
@@ -98,17 +95,18 @@ export const SelectionBox: React.FC = () => {
           transform.scale,
       };
 
-      // Use the cached nodes from ref instead of nodeState.nodes directly
-      const selectableNodes = nodesRef.current.filter(
-        (node) => !node.isViewport && !node.isLocked
-      );
-
-      // Use a Set for faster lookups
+      // Get all node IDs and filter for selectable nodes
+      const nodeIds = getNodeIds();
       const selectedIds = new Set<string | number>();
 
-      // Only do DOM work for nodes that could be in the selection box
-      for (const node of selectableNodes) {
-        const element = getNodeElement(node.id);
+      // Loop through each node to check if it should be selected
+      for (const id of nodeIds) {
+        const flags = getNodeFlags(id);
+
+        // Skip viewport nodes and locked nodes
+        if (flags.isViewport || flags.isLocked) continue;
+
+        const element = getNodeElement(id);
         if (!element) continue;
 
         const rect = element.getBoundingClientRect();
@@ -131,16 +129,16 @@ export const SelectionBox: React.FC = () => {
             elementInCanvas.bottom < selectionInCanvas.top
           )
         ) {
-          selectedIds.add(node.id);
+          selectedIds.add(id);
         }
       }
 
       // Convert Set to Array
-      const nodeIds = Array.from(selectedIds);
-      selectOps.setTempSelectedIds(nodeIds);
-      return nodeIds;
+      const selectedIdsArray = Array.from(selectedIds);
+      selectOps.setTempSelectedIds(selectedIdsArray);
+      return selectedIdsArray;
     },
-    [containerRef, transform, getNodeElement]
+    [containerRef, transform, getNodeElement, getNodeIds, getNodeFlags]
   );
 
   // Use throttling for selection updates
@@ -177,23 +175,32 @@ export const SelectionBox: React.FC = () => {
 
       // Get the frame element if it exists
       const frameEl = target.closest('[data-node-type="frame"]');
-      const node = frameEl
-        ? nodesRef.current.find(
-            (n) => n.id === frameEl.getAttribute("data-node-id")
-          )
-        : null;
+      let isViewportFrame = false;
+
+      if (frameEl) {
+        const nodeId = frameEl.getAttribute("data-node-id");
+        if (nodeId) {
+          const flags = getNodeFlags(nodeId);
+          isViewportFrame = !!flags.isViewport;
+        }
+      }
 
       // Check if we're clicking on any non-viewport node
       const clickedNode = target.closest("[data-node-id]");
       if (clickedNode) {
         const nodeId = clickedNode.getAttribute("data-node-id");
-        const clickedNodeData = nodesRef.current.find((n) => n.id === nodeId);
-        // If it's not a viewport and not the canvas, return
-        if (!clickedNodeData?.isViewport) return;
+        if (nodeId) {
+          const flags = getNodeFlags(nodeId);
+          // If it's not a viewport and not the canvas, return
+          if (!flags.isViewport) return;
+        }
       }
 
       // Only proceed if target is canvas or a viewport frame
-      if (target !== canvas && !node?.isViewport) return;
+      if (target !== canvas && !isViewportFrame) return;
+
+      // Clear the node element cache on selection start
+      clearNodeElementCache();
 
       canvasOps.setIsSelectionBoxActive(true);
       const rect = canvas.getBoundingClientRect();
@@ -299,6 +306,8 @@ export const SelectionBox: React.FC = () => {
     getTempIds,
     getIsDragging,
     getDragSource,
+    getNodeFlags,
+    clearNodeElementCache,
   ]);
 
   // Only render the box if all conditions are met

@@ -1,4 +1,3 @@
-// Modified Canvas.tsx
 import React, { useEffect, useState, useRef } from "react";
 import InterfaceToolbar from "../toolbars/leftToolbar";
 import { RenderNodes } from "../../registry/renderNodes";
@@ -10,7 +9,6 @@ import {
 import { ViewportDevTools } from "../../dev/ViewportDevTools";
 import ElementToolbar from "../toolbars/rightToolbar";
 import { LineIndicator } from "@/builder/context/canvasHelpers/LineIndicator";
-import SnapGuides from "@/builder/context/canvasHelpers/SnapGuides";
 import { ToolbarDragPreview } from "@/builder/context/canvasHelpers/toolbarDragPreview";
 import { StyleUpdateHelper } from "@/builder/context/canvasHelpers/StyleUpdateHelper";
 import { ArrowConnectors } from "../../context/canvasHelpers/ArrowConnectors";
@@ -55,7 +53,8 @@ import {
   parentMapAtom,
 } from "@/builder/context/atoms/node-store/hierarchy-store";
 import DragOverlay from "@/builder/context/dnd/DragOverlay";
-
+import TextEditor from "@/builder/registry/elements/TextElement/TextEditor";
+import SnapGuides from "@/builder/context/canvasHelpers/snapGrids/snapGuides";
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const hasInitializedAtoms = useRef(false);
@@ -63,25 +62,14 @@ const Canvas = () => {
   const { nodeState } = useBuilderDynamic();
   const { containerRef, contentRef } = useBuilderRefs();
 
-  // Get isPreviewOpen from interface store instead of interfaceState
   const isPreviewOpen = useIsPreviewOpen();
 
   const getIsSelectionBoxActive = useGetIsSelectionBoxActive();
 
   const { clearSelection } = selectOps;
 
-  console.log(`Canvas re rendering`, new Date().getTime());
-
-  // Initialize Jotai atoms with the initial node state on first render
   useEffect(() => {
     if (!hasInitializedAtoms.current) {
-      console.log("------- INITIALIZATION STARTS -------");
-      console.log(
-        "Initializing Jotai node state from initial state",
-        nodeInitialState
-      );
-
-      // Log the nodes with their parent-child relationships
       const parentChildMap = {};
       nodeInitialState.nodes.forEach((node) => {
         if (!parentChildMap[node.parentId || "root"]) {
@@ -89,87 +77,39 @@ const Canvas = () => {
         }
         parentChildMap[node.parentId || "root"].push(node.id);
       });
-      console.log(
-        "Parent-child relationships in initial state:",
-        parentChildMap
-      );
 
-      // Call the initialize function
       initNodeStateFromInitialState(nodeInitialState);
 
-      console.log(
-        `Initialized ${nodeInitialState.nodes.length} nodes in Jotai store`
-      );
-
-      // Check initialization was successful by reading the store
       const nodeIds = nodeStore.get(nodeIdsAtom);
-      console.log(`Verified nodeIds in store: ${nodeIds.length} nodes`);
 
-      // Check the hierarchy store
       try {
-        // Log children map
-        const childrenMap = hierarchyStore.get(childrenMapAtom);
-        console.log("Children map from hierarchy store:", childrenMap);
-
-        // Log parent map
-        const parentMap = hierarchyStore.get(parentMapAtom);
-        console.log("Parent map from hierarchy store:", parentMap);
-
-        // Log root nodes
-        const rootNodeIds = childrenMap.get(null) || [];
-        console.log("Root nodes:", rootNodeIds);
-
-        // Check viewport children
-        console.log(
-          "Viewport-1440 children:",
-          childrenMap.get("viewport-1440") || []
-        );
-        console.log(
-          "Viewport-768 children:",
-          childrenMap.get("viewport-768") || []
-        );
-        console.log(
-          "Viewport-375 children:",
-          childrenMap.get("viewport-375") || []
-        );
       } catch (error) {
         console.error("Error checking hierarchy store:", error);
       }
 
-      console.log("------- INITIALIZATION COMPLETE -------");
-
-      // Mark as initialized so we don't do it again
       hasInitializedAtoms.current = true;
     }
   }, []);
 
-  // Reset any necessary state when switching back from preview mode
   useEffect(() => {
     if (!isPreviewOpen) {
-      // Reset any necessary state when returning from preview mode
       canvasOps.setIsMovingCanvas(false);
 
-      // Force a redraw of the canvas by triggering a window resize event
       window.dispatchEvent(new Event("resize"));
     }
   }, [isPreviewOpen]);
 
-  // Loading state detection based on critical refs and a minimum time
   useEffect(() => {
-    // Minimum loading time for UX purposes
     const minLoadTime = 800;
     const minLoadTimer = setTimeout(() => {
       setIsLoading(false);
     }, minLoadTime);
 
-    // Set up a reference to track when critical components have mounted
     if (containerRef.current && contentRef.current) {
-      // Critical refs exist, we can consider the app "loaded"
-      // But still respect the minimum load time
       const appLoadedTimer = setTimeout(() => {
         clearTimeout(minLoadTimer);
         setIsLoading(false);
-      }, 100); // Small buffer to ensure rendering is complete
+      }, 100);
 
       return () => {
         clearTimeout(appLoadedTimer);
@@ -190,7 +130,6 @@ const Canvas = () => {
     }
 
     if (e.target === containerRef.current || e.target === contentRef.current) {
-      console.log("clicked on canvas");
       clearSelection();
       interfaceOps.toggleLayers();
     }
@@ -199,7 +138,6 @@ const Canvas = () => {
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
 
-    // Only show context menu if clicking directly on canvas or content
     if (e.target === containerRef.current || e.target === contentRef.current) {
       contextMenuOps.setContextMenu(e.clientX, e.clientY, null);
     }
@@ -245,8 +183,9 @@ const Canvas = () => {
                 containerRef={containerRef}
                 contentRef={contentRef}
               />
-
               <SnapGuides />
+
+              {/* Add this line temporarily for debugging */}
               <StyleUpdateHelper />
               <SelectionBox />
               <FrameCreator />
@@ -266,6 +205,7 @@ const Canvas = () => {
                 ) : (
                   <RenderNodes filter="outOfViewport" />
                 )}
+                <TextEditor />
 
                 <LineIndicator />
                 <ContextMenu />

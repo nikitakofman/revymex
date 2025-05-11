@@ -539,6 +539,8 @@ export const ColorPicker = ({
 
   const { selectedIdsRef } = useBuilderRefs();
 
+  const { popupRef } = useBuilderRefs();
+
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");
   const [hsv, setHsv] = useState({ h: 0, s: 100, v: 100 });

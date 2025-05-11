@@ -22,6 +22,7 @@ interface ToolbarSegmentedControlProps {
   currentValue?: string; // Added explicit currentValue prop
   columnLayout?: boolean; // New prop for column layout
   noPadding?: boolean;
+  onMouseDown?: (e: React.MouseEvent) => void; // Add onMouseDown prop
 }
 
 export function ToolbarSegmentedControl({
@@ -36,6 +37,7 @@ export function ToolbarSegmentedControl({
   currentValue, // Use this if provided
   columnLayout = false, // Default to row layout
   noPadding,
+  onMouseDown, // Accept onMouseDown prop
 }: ToolbarSegmentedControlProps) {
   // Use selectedIds from Jotai store
   const selectedIds = useSelectedIds();
@@ -83,6 +85,7 @@ export function ToolbarSegmentedControl({
       className={`flex ${
         columnLayout ? "flex-col" : "flex-row"
       } bg-[var(--control-bg)] rounded-md ${!noPadding ? "p-0.5" : ""}`}
+      onMouseDown={onMouseDown} // Apply onMouseDown to the container
     >
       {finalOptions.map((option) => {
         const isActive = option.value === activeValue;
@@ -90,6 +93,7 @@ export function ToolbarSegmentedControl({
           <button
             key={option.value}
             onClick={() => handleSegmentClick(option.value)}
+            onMouseDown={onMouseDown} // Also apply to each button to ensure it's captured
             className={`
               ${columnLayout ? "w-full" : "flex-1"} 
               flex items-center justify-center gap-2

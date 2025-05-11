@@ -221,6 +221,7 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     const isDirectBorderResize = ["top", "right", "bottom", "left"].includes(
       direction
     );
+
     handleResizeStart(e, direction, isDirectBorderResize);
   };
 

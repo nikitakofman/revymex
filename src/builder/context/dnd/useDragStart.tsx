@@ -10,12 +10,14 @@ import {
   addNode,
   moveNode,
 } from "../atoms/node-store/operations/insert-operations";
+import { useGetNodeFlags } from "../atoms/node-store";
 
 export const useDragStart = () => {
   const getNode = useGetNode();
   const getNodeParent = useGetNodeParent();
   const getNodeChildren = useGetNodeChildren();
   const getTransform = useGetTransform();
+  const getNodeFlags = useGetNodeFlags();
 
   return (
     e: React.MouseEvent,
@@ -30,6 +32,24 @@ export const useDragStart = () => {
     const nodeId = nodeObj.id;
     const node = getNode(nodeId);
     const nodeType = nodeObj.type || node.type; // Get node type
+
+    // Determine drag source
+    const parentId = getNodeParent(nodeId);
+    const nodeFlags = getNodeFlags(nodeId);
+    const isOnCanvas = !parentId && !nodeFlags.inViewport;
+
+    // Set appropriate drag source
+    if (isOnCanvas) {
+      dragOps.setDragSource("canvas");
+    } else if (nodeFlags.inViewport) {
+      dragOps.setDragSource("viewport");
+    } else if (fromToolbarType) {
+      dragOps.setDragSource("toolbar");
+    } else if (nodeFlags.isAbsoluteInFrame) {
+      dragOps.setDragSource("absolute-in-frame");
+    } else {
+      dragOps.setDragSource("parent");
+    }
 
     // Get the element that was clicked
     const element = document.querySelector(`[data-node-id="${nodeId}"]`);
@@ -57,6 +77,8 @@ export const useDragStart = () => {
     }
 
     const elementRect = element.getBoundingClientRect();
+
+    // Store the grab-offset in screen pixels
     const mouseOffsetX = e.clientX - elementRect.left;
     const mouseOffsetY = e.clientY - elementRect.top;
 
@@ -69,7 +91,6 @@ export const useDragStart = () => {
     });
 
     // Find the parent and position of the dragged node
-    const parentId = getNodeParent(nodeId);
     if (parentId) {
       const siblings = getNodeChildren(parentId);
       const index = siblings.indexOf(nodeId);

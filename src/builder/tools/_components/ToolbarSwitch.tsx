@@ -15,6 +15,7 @@ interface ToolbarSwitchProps {
   onChange?: (value: string) => void;
   className?: string;
   currentValue?: string;
+  onMouseDown?: (e: React.MouseEvent) => void; // Add this prop
 }
 
 export function ToolbarSwitch({
@@ -28,6 +29,7 @@ export function ToolbarSwitch({
   onChange,
   className = "",
   currentValue,
+  onMouseDown, // Accept the prop
 }: ToolbarSwitchProps) {
   const { setNodeStyle } = useBuilderDynamic();
   const [internalValue, setInternalValue] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function ToolbarSwitch({
   const isOn = activeValue === onValue;
   const isMixed = computedStyle?.mixed;
 
-  const handleToggle = () => {
+  const handleToggle = (e: React.MouseEvent) => {
     if (isMixed) return;
 
     // Explicitly check if we're toggling ON or OFF
@@ -88,6 +90,13 @@ export function ToolbarSwitch({
 
       <button
         onClick={handleToggle}
+        onMouseDown={(e) => {
+          // Prevent default browser behavior to maintain selection
+          e.preventDefault();
+
+          // Call the passed onMouseDown handler if provided
+          if (onMouseDown) onMouseDown(e);
+        }}
         disabled={isMixed}
         className={`
           relative inline-flex h-5 w-12 flex-shrink-0 cursor-pointer rounded-full 

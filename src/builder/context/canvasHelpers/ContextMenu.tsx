@@ -1,6 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import {
   Copy,
   Trash2,
@@ -17,12 +16,24 @@ import {
   Settings,
 } from "lucide-react";
 import { useNodeActions } from "../hooks/useNodeActions";
-import { useGetSelectedIds } from "../atoms/select-store";
+import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 import {
   useNodeContextMenu,
   contextMenuOps,
 } from "../atoms/context-menu-store";
 import { modalOps } from "../atoms/modal-store";
+import {
+  NodeId,
+  useGetAllNodes,
+  useGetNode,
+} from "@/builder/context/atoms/node-store";
+import { updateNodeFlags } from "../atoms/node-store/operations/update-operations";
+import {
+  duplicateNode,
+  duplicateNodes,
+  duplicateSubtree,
+} from "../atoms/node-store/operations/insert-operations";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 const Separator = () => (
   <div className="h-[1px] bg-[var(--border-light)] mx-2 my-1" />
@@ -69,9 +80,6 @@ const MenuItemComponent = ({
 };
 
 export const ContextMenu = () => {
-  const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
-  const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
-    useNodeActions();
   const isWindows = navigator.platform.includes("Win");
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState({
@@ -84,8 +92,11 @@ export const ContextMenu = () => {
   // Use the subscription hook since we need to re-render when context menu changes
   const nodeContextMenu = useNodeContextMenu();
 
-  // Imperative getter for selected IDs (used in event handlers)
+  // Get node actions and getter functions from the new store structure
+  const { handleDelete, handleCopy, handlePaste } = useNodeActions();
   const getSelectedIds = useGetSelectedIds();
+  const getAllNodes = useGetAllNodes();
+  const getNode = useGetNode();
 
   // Using useLayoutEffect to position the menu before browser paint
   useLayoutEffect(() => {
@@ -150,11 +161,35 @@ export const ContextMenu = () => {
 
   const isViewportHeaderMenu = nodeContextMenu?.isViewportHeader;
 
+  // Helper for toggling node lock state
+  const toggleNodeLock = useCallback(
+    (nodeIds: NodeId[]) => {
+      if (!nodeIds.length) return;
+
+      nodeIds.forEach((id) => {
+        const node = getNode(id);
+        if (node) {
+          // Toggle the lock state
+          updateNodeFlags(id, { isLocked: !node.isLocked });
+        }
+      });
+    },
+    [getNode]
+  );
+
+  // Helper for making a node dynamic
+  const makeNodeDynamic = useCallback((nodeId: NodeId) => {
+    // Update node flags to set isDynamic to true
+    updateNodeFlags(nodeId, { isDynamic: true });
+
+    // Any additional dynamic processing can be handled here
+    // For now, we've removed the dynamic family logic as requested
+  }, []);
+
   const getMenuItems = useCallback(() => {
     if (isViewportHeaderMenu) {
-      const node = nodeState.nodes.find(
-        (n) => n.id === nodeContextMenu?.nodeId
-      );
+      const nodeId = nodeContextMenu?.nodeId as NodeId;
+      const node = nodeId ? getNode(nodeId) : null;
 
       return [
         {
@@ -186,7 +221,9 @@ export const ContextMenu = () => {
           icon: Lock,
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
-            nodeDisp.toggleNodeLock([node.id]);
+            if (nodeId) {
+              toggleNodeLock([nodeId]);
+            }
             contextMenuOps.hideContextMenu();
           },
         },
@@ -253,18 +290,18 @@ export const ContextMenu = () => {
     const menuItems = [];
 
     // Get the right-clicked node
-    const node = nodeState.nodes.find((n) => n.id === nodeContextMenu?.nodeId);
+    const nodeId = nodeContextMenu?.nodeId as NodeId;
+    const node = nodeId ? getNode(nodeId) : null;
 
     // Add "Make Dynamic" option only for frame nodes
-    if (node) {
+    if (node && node.type === "frame") {
       menuItems.push(
         {
           label: "Make Dynamic",
           icon: Zap,
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
-            nodeDisp.updateNode(node.id, { isDynamic: true });
-            nodeDisp.updateNodeDynamicStatus(node.id);
+            makeNodeDynamic(node.id);
             contextMenuOps.hideContextMenu();
           },
         },
@@ -319,7 +356,23 @@ export const ContextMenu = () => {
         windowsShortcut: "Ctrl+D",
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
-          handleDuplicate(true);
+
+          // Get the node to duplicate (selected or right-clicked)
+          const selectedIds = getSelectedIds();
+          const nodeToDuplicate =
+            selectedIds.length > 0
+              ? selectedIds[0]
+              : (nodeContextMenu?.nodeId as NodeId);
+
+          if (nodeToDuplicate) {
+            // Duplicate the subtree and get the new root node ID
+            const newNodeId = duplicateNode(nodeToDuplicate);
+
+            // Select the new node
+            selectOps.clearSelection();
+            selectOps.addToSelection(newNodeId);
+          }
+
           contextMenuOps.hideContextMenu();
         },
       },
@@ -381,9 +434,11 @@ export const ContextMenu = () => {
           const nodesToLock =
             currentSelectedIds.length > 0
               ? currentSelectedIds
-              : [nodeContextMenu?.nodeId].filter(Boolean);
+              : nodeContextMenu?.nodeId
+              ? [nodeContextMenu.nodeId as NodeId]
+              : [];
 
-          nodeDisp.toggleNodeLock(nodesToLock);
+          toggleNodeLock(nodesToLock);
           contextMenuOps.hideContextMenu();
         },
       },
@@ -394,15 +449,19 @@ export const ContextMenu = () => {
         windowsShortcut: "Ctrl+H",
         onClick: (e: React.MouseEvent) => {
           e.stopPropagation();
-          // Handle hide
+          const currentSelectedIds = getSelectedIds();
+          const nodesToHide =
+            currentSelectedIds.length > 0
+              ? currentSelectedIds
+              : nodeContextMenu?.nodeId
+              ? [nodeContextMenu.nodeId as NodeId]
+              : [];
+
+          nodesToHide.forEach((id) => {
+            updateNodeStyle(id, { display: "none" });
+          });
+
           contextMenuOps.hideContextMenu();
-          setNodeStyle(
-            {
-              display: "none",
-            },
-            undefined,
-            true
-          );
         },
       },
       {
@@ -422,14 +481,14 @@ export const ContextMenu = () => {
   }, [
     isViewportHeaderMenu,
     isCanvasMenu,
-    nodeState.nodes,
     nodeContextMenu,
+    getNode,
     handleDelete,
     handleCopy,
     handlePaste,
-    handleDuplicate,
-    nodeDisp,
-    setNodeStyle,
+
+    toggleNodeLock,
+    makeNodeDynamic,
     getSelectedIds,
   ]);
 

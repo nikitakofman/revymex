@@ -3,6 +3,7 @@ import { atom, createStore } from "jotai/vanilla";
 import { selectAtom } from "jotai/utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback } from "react";
+import { Editor } from "@tiptap/react";
 
 // Create a separate store for canvas interaction state
 export const canvasInteractionStore = createStore();
@@ -39,6 +40,12 @@ export interface CanvasInteractionState {
 
   // Selection box state
   isSelectionBoxActive: boolean;
+
+  // Text editing state
+  editingTextNodeId: string | null;
+
+  // Editor state
+  tiptapEditor: Editor | null;
 }
 
 // Initial state
@@ -62,6 +69,8 @@ const initialCanvasInteractionState: CanvasInteractionState = {
   isFontSizeHandleActive: false,
 
   isSelectionBoxActive: false,
+  editingTextNodeId: null,
+  tiptapEditor: null,
 };
 
 // Base atom for canvas interaction state
@@ -197,6 +206,13 @@ const canvasInteractionOperations = {
     }));
   },
 
+  setTiptapEditor: (tiptapEditor: Editor | null) => {
+    canvasInteractionStore.set(_internalCanvasInteractionStateAtom, (prev) => ({
+      ...prev,
+      tiptapEditor,
+    }));
+  },
+
   // Element manipulation operations
   setIsResizing: (isResizing: boolean) => {
     canvasInteractionStore.set(_internalCanvasInteractionStateAtom, (prev) => ({
@@ -292,6 +308,13 @@ const canvasInteractionOperations = {
       _internalCanvasInteractionStateAtom,
       initialCanvasInteractionState
     );
+  },
+
+  setEditingTextNodeId: (editingTextNodeId: string | null) => {
+    canvasInteractionStore.set(_internalCanvasInteractionStateAtom, (prev) => ({
+      ...prev,
+      editingTextNodeId,
+    }));
   },
 
   resetInteractionStates: () => {
@@ -522,4 +545,41 @@ export const debugCanvasInteractionStore = () => {
     "Canvas Interaction Store State:",
     canvasInteractionStore.get(_internalCanvasInteractionStateAtom)
   );
+};
+
+// Add a new selector atom
+export const editingTextNodeIdAtom = selectAtom(
+  _internalCanvasInteractionStateAtom,
+  (state) => state.editingTextNodeId
+);
+
+// Add a new hook
+export const useEditingTextNodeId = () => {
+  return useAtomValue(editingTextNodeIdAtom, { store: canvasInteractionStore });
+};
+
+// Add a new getter hook
+export const useGetEditingTextNodeId = () => {
+  return useCallback(() => {
+    return canvasInteractionStore.get(_internalCanvasInteractionStateAtom)
+      .editingTextNodeId;
+  }, []);
+};
+
+export const tiptapEditorAtom = selectAtom(
+  _internalCanvasInteractionStateAtom,
+  (state) => state.tiptapEditor
+);
+
+// Add a hook to access the editor
+export const useTiptapEditor = () => {
+  return useAtomValue(tiptapEditorAtom, { store: canvasInteractionStore });
+};
+
+// Add a getter hook
+export const useGetTiptapEditor = () => {
+  return useCallback(() => {
+    return canvasInteractionStore.get(_internalCanvasInteractionStateAtom)
+      .tiptapEditor;
+  }, []);
 };

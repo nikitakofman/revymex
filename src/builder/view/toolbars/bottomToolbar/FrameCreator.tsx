@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  useBuilder,
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import { nanoid } from "nanoid";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import {
   computeFrameDropIndicator,
   handleMediaToFrameTransformation,
@@ -20,10 +15,40 @@ import {
   useGetIsRotating,
   useGetTransform,
   useIsFrameModeActive,
-  useTransform,
 } from "@/builder/context/atoms/canvas-interaction-store";
 import { useGetDynamicModeNodeId } from "@/builder/context/atoms/drag-store";
 import { useGetActiveViewportInDynamicMode } from "@/builder/context/atoms/dynamic-store";
+
+// Import the new store operations
+import {
+  NodeId,
+  getCurrentNodes,
+  useGetAllNodes,
+  useGetNodeParent,
+  batchNodeUpdates,
+  nodeStore,
+  nodeIdsAtom,
+  nodeBasicsAtom,
+  nodeStyleAtom,
+  nodeFlagsAtom,
+  nodeSharedInfoAtom,
+  nodeDynamicInfoAtom,
+  nodeParentAtom,
+} from "@/builder/context/atoms/node-store";
+
+import {
+  addNode,
+  moveNode,
+  insertAtIndex,
+} from "@/builder/context/atoms/node-store/operations/insert-operations";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { updateNodeFlags } from "@/builder/context/atoms/node-store/operations/update-operations";
+import { syncViewports } from "@/builder/context/atoms/node-store/operations/sync-operations";
+import {
+  hierarchyStore,
+  childrenMapAtom,
+  parentMapAtom,
+} from "@/builder/context/atoms/node-store/hierarchy-store";
 
 interface DrawingBoxState {
   startX: number;
@@ -34,13 +59,11 @@ interface DrawingBoxState {
 }
 
 export const FrameCreator: React.FC = () => {
-  const { nodeDisp, nodeState } = useBuilderDynamic();
   const { containerRef } = useBuilderRefs();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
 
   // Use subscription hook for rendering decisions
-
   const isFrameModeActive = useIsFrameModeActive();
 
   // Use getter hooks for event handlers
@@ -53,6 +76,10 @@ export const FrameCreator: React.FC = () => {
   const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
   const getTransform = useGetTransform();
 
+  // New hooks
+  const getAllNodes = useGetAllNodes();
+  const getNodeParent = useGetNodeParent();
+
   // Check if we can enable frame creation mode
   const canCreateFrame = () => {
     return (
@@ -61,6 +88,113 @@ export const FrameCreator: React.FC = () => {
       !getIsRotating() &&
       !getIsAdjustingBorderRadius()
     );
+  };
+
+  // Function to add a new node to the store
+  const addNewNode = (node) => {
+    batchNodeUpdates(() => {
+      // Add node ID to the store
+      nodeStore.set(nodeIdsAtom, (prev) => [...prev, node.id]);
+
+      // Set basic properties
+      nodeStore.set(nodeBasicsAtom(node.id), {
+        id: node.id,
+        type: node.type,
+        customName: node.customName,
+      });
+
+      // Set style
+      nodeStore.set(nodeStyleAtom(node.id), node.style || {});
+
+      // Set flags
+      nodeStore.set(nodeFlagsAtom(node.id), {
+        isLocked: node.isLocked,
+        inViewport: node.inViewport !== false,
+        isViewport: node.isViewport,
+        viewportName: node.viewportName,
+        viewportWidth: node.viewportWidth,
+        isDynamic: node.isDynamic,
+        isAbsoluteInFrame: node.isAbsoluteInFrame,
+        isVariant: node.isVariant,
+      });
+
+      // Set shared info
+      if (node.sharedId) {
+        nodeStore.set(nodeSharedInfoAtom(node.id), { sharedId: node.sharedId });
+      }
+
+      // Set dynamic info
+      if (node.dynamicParentId || node.dynamicViewportId) {
+        nodeStore.set(nodeDynamicInfoAtom(node.id), {
+          dynamicParentId: node.dynamicParentId,
+          dynamicViewportId: node.dynamicViewportId,
+          dynamicPosition: node.dynamicPosition,
+        });
+      }
+
+      // Add to parent-child relationship
+      if (node.position === "inside" && node.targetId) {
+        addNode(node.id, node.targetId);
+      } else if (node.position && node.targetId) {
+        const targetId = node.targetId;
+        const siblings =
+          hierarchyStore.get(childrenMapAtom).get(getNodeParent(targetId)) ||
+          [];
+        const targetIndex = siblings.indexOf(targetId);
+        const insertIndex =
+          node.position === "after" ? targetIndex + 1 : targetIndex;
+
+        insertAtIndex(node.id, getNodeParent(targetId), insertIndex);
+      } else {
+        // Add to root if no position specified
+        addNode(node.id, null);
+      }
+    });
+
+    return node.id;
+  };
+
+  // Function to update dynamic connections
+  const updateDynamicConnections = (
+    oldTargetId: NodeId,
+    newTargetId: NodeId,
+    connections: Array<{
+      sourceId: NodeId;
+      type: "click" | "hover" | "mouseLeave";
+    }>
+  ) => {
+    // For each source node that had a connection to the old target
+    connections.forEach((conn) => {
+      const sourceNodes = getAllNodes();
+      const sourceNode = sourceNodes.find((n) => n.id === conn.sourceId);
+
+      if (sourceNode && sourceNode.dynamicConnections) {
+        // Create a new array of connections for this source, but with the target updated
+        const updatedConnections = sourceNode.dynamicConnections.map(
+          (existingConn) => {
+            if (
+              existingConn.targetId === oldTargetId &&
+              existingConn.type === conn.type
+            ) {
+              // Update the target ID for this connection
+              return {
+                ...existingConn,
+                targetId: newTargetId,
+              };
+            }
+            return existingConn;
+          }
+        );
+
+        // Update the dynamic connections in the store
+        batchNodeUpdates(() => {
+          nodeStore.set(nodeDynamicInfoAtom(conn.sourceId), (prev) => ({
+            ...prev,
+            dynamicConnections: updatedConnections,
+          }));
+        });
+      }
+    });
   };
 
   useEffect(() => {
@@ -74,7 +208,8 @@ export const FrameCreator: React.FC = () => {
         if (frameEl && !frameEl.closest(".viewport-header")) {
           const frameId = frameEl.getAttribute("data-node-id");
           if (frameId) {
-            const node = nodeState.nodes.find((n) => n.id === frameId);
+            const allNodes = getAllNodes();
+            const node = allNodes.find((n) => n.id === frameId);
             if (node) {
               return { id: frameId, element: frameEl };
             }
@@ -188,7 +323,8 @@ export const FrameCreator: React.FC = () => {
         };
 
         // Find elements that will be encapsulated
-        const allElements = nodeState.nodes.filter(
+        const allNodes = getAllNodes();
+        const allElements = allNodes.filter(
           (node) => node.type !== "placeholder" && !node.isViewport
         );
 
@@ -358,7 +494,7 @@ export const FrameCreator: React.FC = () => {
           if (mediaEl) {
             const mediaId = mediaEl.getAttribute("data-node-id");
             if (mediaId) {
-              const mediaNode = nodeState.nodes.find((n) => n.id === mediaId);
+              const mediaNode = allNodes.find((n) => n.id === mediaId);
               if (mediaNode) {
                 mediaElement = { node: mediaNode, element: mediaEl };
                 break;
@@ -369,8 +505,9 @@ export const FrameCreator: React.FC = () => {
 
         if (mediaElement) {
           // We're drawing over a media element - transform it to a frame
-          const newFrame: Node = {
-            id: nanoid(),
+          const newFrameId = nanoid();
+          const newFrame = {
+            id: newFrameId,
             type: "frame",
             style: {
               position: "relative",
@@ -391,56 +528,54 @@ export const FrameCreator: React.FC = () => {
             }),
           };
 
-          // Use the centralized transformation utility
-          const transformed = handleMediaToFrameTransformation(
-            mediaElement.node,
-            newFrame,
-            nodeDisp,
-            "inside"
-          );
+          // Add the new frame
+          addNewNode({
+            ...newFrame,
+            position: "inside",
+            targetId: getNodeParent(mediaElement.node.id),
+          });
 
-          if (transformed) {
-            newFrameId = newFrame.id;
+          // Move the media element inside the frame
+          moveNode(mediaElement.node.id, newFrameId);
 
-            // Process other contained elements if any (except the media element)
-            if (containedElements.length > 0) {
-              const newFrameNode = nodeState.nodes.find(
-                (n) => n.id === newFrame.id
-              );
-              if (newFrameNode) {
-                for (const item of containedElements) {
-                  // Skip the media element itself
-                  if (item.node.id === mediaElement.node.id) continue;
+          // Update media element style
+          updateNodeStyle(mediaElement.node.id, {
+            position: "relative",
+            left: "",
+            top: "",
+            zIndex: "",
+          });
 
-                  // Update position to be relative within the new frame
-                  nodeDisp.updateNodeStyle([item.node.id], {
-                    position: "relative",
-                    left: "",
-                    top: "",
-                  });
+          // Process other contained elements if any (except the media element)
+          if (containedElements.length > 0) {
+            for (const item of containedElements) {
+              // Skip the media element itself
+              if (item.node.id === mediaElement.node.id) continue;
 
-                  // Move the whole hierarchy as is (maintains parent-child relationships)
-                  nodeDisp.moveNode(item.node.id, true, {
-                    targetId: newFrame.id,
-                    position: "inside",
-                  });
+              // Update position to be relative within the new frame
+              updateNodeStyle(item.node.id, {
+                position: "relative",
+                left: "",
+                top: "",
+              });
 
-                  // Handle dynamic connection targets
-                  if (item.isDynamicTarget) {
-                    // Update connections to point to the new frame instead
-                    updateDynamicConnections(
-                      item.node.id,
-                      newFrame.id,
-                      item.dynamicConnections
-                    );
-                  }
-                }
+              // Move the whole hierarchy as is (maintains parent-child relationships)
+              moveNode(item.node.id, newFrameId);
+
+              // Handle dynamic connection targets
+              if (item.isDynamicTarget) {
+                // Update connections to point to the new frame instead
+                updateDynamicConnections(
+                  item.node.id,
+                  newFrameId,
+                  item.dynamicConnections
+                );
               }
             }
           }
         } else if (targetFrame) {
           // Drawing over a frame - insert as child
-          const frameChildren = nodeState.nodes
+          const frameChildren = allNodes
             .filter((n) => n.parentId === targetFrame.id)
             .map((node) => {
               const el = document.querySelector(`[data-node-id="${node.id}"]`);
@@ -453,8 +588,9 @@ export const FrameCreator: React.FC = () => {
                 item !== null
             );
 
-          const newFrame: Node = {
-            id: nanoid(),
+          newFrameId = nanoid();
+          const newFrame = {
+            id: newFrameId,
             type: "frame",
             style: {
               position: "relative",
@@ -482,35 +618,34 @@ export const FrameCreator: React.FC = () => {
             e.clientY
           );
 
-          newFrameId = newFrame.id;
-
           if (dropIndicator?.dropInfo) {
-            nodeDisp.addNode(
-              newFrame,
-              dropIndicator.dropInfo.targetId,
-              dropIndicator.dropInfo.position,
-              true
-            );
+            // Add to specific position
+            addNewNode({
+              ...newFrame,
+              position: dropIndicator.dropInfo.position,
+              targetId: dropIndicator.dropInfo.targetId,
+            });
           } else {
-            // This is the critical line that ensures the frame is added as a child of the target frame
-            nodeDisp.addNode(newFrame, targetFrame.id, "inside", true);
+            // Add as child of target frame
+            addNewNode({
+              ...newFrame,
+              position: "inside",
+              targetId: targetFrame.id,
+            });
           }
 
           // Process contained elements if any
           if (containedElements.length > 0) {
             for (const item of containedElements) {
               // Update position to be relative within the new frame
-              nodeDisp.updateNodeStyle([item.node.id], {
+              updateNodeStyle(item.node.id, {
                 position: "relative",
                 left: "",
                 top: "",
               });
 
               // Move node to the new frame, maintaining hierarchy
-              nodeDisp.moveNode(item.node.id, true, {
-                targetId: newFrameId,
-                position: "inside",
-              });
+              moveNode(item.node.id, newFrameId);
 
               // Handle dynamic connection targets
               if (item.isDynamicTarget) {
@@ -526,7 +661,7 @@ export const FrameCreator: React.FC = () => {
         } else {
           // Drawing on canvas - create absolute positioned frame
           newFrameId = nanoid();
-          const newFrame: Node = {
+          const newFrame = {
             id: newFrameId,
             type: "frame",
             style: {
@@ -551,23 +686,25 @@ export const FrameCreator: React.FC = () => {
             }),
           };
 
-          nodeDisp.addNode(newFrame, null, null, false);
+          // Add to root
+          addNewNode({
+            ...newFrame,
+            position: null,
+            targetId: null,
+          });
 
           // Process contained elements if any
           if (containedElements.length > 0) {
             for (const item of containedElements) {
               // Update position to be relative within the new frame
-              nodeDisp.updateNodeStyle([item.node.id], {
+              updateNodeStyle(item.node.id, {
                 position: "relative",
                 left: "",
                 top: "",
               });
 
               // Move the whole hierarchy as is
-              nodeDisp.moveNode(item.node.id, true, {
-                targetId: newFrameId,
-                position: "inside",
-              });
+              moveNode(item.node.id, newFrameId);
 
               // Handle dynamic connection targets
               if (item.isDynamicTarget) {
@@ -585,7 +722,7 @@ export const FrameCreator: React.FC = () => {
 
       if (!dynamicModeNodeId) {
         // Sync viewports to create duplicates
-        nodeDisp.syncViewports();
+        syncViewports(newFrameId, getNodeParent(newFrameId));
 
         // After syncing viewports, fix the parent-child relationships for dynamic elements
         if (encapsulatedDynamicElements.length > 0 && newFrameSharedId) {
@@ -597,10 +734,11 @@ export const FrameCreator: React.FC = () => {
           // If we have dynamic elements and a frame, fix their parenting directly
           if (dynamicSharedIds.length > 0) {
             // Step 1: Get all viewports
-            const viewports = nodeState.nodes.filter((n) => n.isViewport);
+            const allNodes = getAllNodes();
+            const viewports = allNodes.filter((n) => n.isViewport);
 
             // Step 2: Get all frames with the target shared ID
-            const frames = nodeState.nodes.filter(
+            const frames = allNodes.filter(
               (n) => n.sharedId === newFrameSharedId
             );
 
@@ -612,7 +750,7 @@ export const FrameCreator: React.FC = () => {
               let currentId = frame.parentId;
 
               while (currentId) {
-                const parent = nodeState.nodes.find((n) => n.id === currentId);
+                const parent = allNodes.find((n) => n.id === currentId);
                 if (!parent) break;
 
                 if (parent.isViewport) {
@@ -630,7 +768,7 @@ export const FrameCreator: React.FC = () => {
 
             // Step 4: For each dynamic sharedId, find all instances and move them to the correct frame
             for (const dynamicSharedId of dynamicSharedIds) {
-              const dynamicNodes = nodeState.nodes.filter(
+              const dynamicNodes = allNodes.filter(
                 (n) => n.sharedId === dynamicSharedId
               );
 
@@ -640,9 +778,7 @@ export const FrameCreator: React.FC = () => {
                 let currentId = dynamicNode.parentId;
 
                 while (currentId) {
-                  const parent = nodeState.nodes.find(
-                    (n) => n.id === currentId
-                  );
+                  const parent = allNodes.find((n) => n.id === currentId);
                   if (!parent) break;
 
                   if (parent.isViewport) {
@@ -664,14 +800,13 @@ export const FrameCreator: React.FC = () => {
                     );
 
                     // Move the node to the frame
-                    nodeDisp.updateNode(dynamicNode.id, {
-                      parentId: frameId,
-                      style: {
-                        ...dynamicNode.style,
-                        position: "relative",
-                        left: "",
-                        top: "",
-                      },
+                    moveNode(dynamicNode.id, frameId);
+
+                    // Update the style
+                    updateNodeStyle(dynamicNode.id, {
+                      position: "relative",
+                      left: "",
+                      top: "",
                     });
                   }
                 }
@@ -692,44 +827,6 @@ export const FrameCreator: React.FC = () => {
       window.dispatchEvent(new Event("resize"));
     };
 
-    // Helper function to update dynamic connections to point to a new target
-    const updateDynamicConnections = (
-      oldTargetId: string | number,
-      newTargetId: string | number,
-      connections: Array<{
-        sourceId: string | number;
-        type: "click" | "hover" | "mouseLeave";
-      }>
-    ) => {
-      // For each source node that had a connection to the old target
-      connections.forEach((conn) => {
-        const sourceNode = nodeState.nodes.find((n) => n.id === conn.sourceId);
-        if (sourceNode && sourceNode.dynamicConnections) {
-          // Create a new array of connections for this source, but with the target updated
-          const updatedConnections = sourceNode.dynamicConnections.map(
-            (existingConn) => {
-              if (
-                existingConn.targetId === oldTargetId &&
-                existingConn.type === conn.type
-              ) {
-                // Update the target ID for this connection
-                return {
-                  ...existingConn,
-                  targetId: newTargetId,
-                };
-              }
-              return existingConn;
-            }
-          );
-
-          // Update the source node with the modified connections
-          nodeDisp.updateNode(conn.sourceId, {
-            dynamicConnections: updatedConnections,
-          });
-        }
-      });
-    };
-
     canvas.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
@@ -744,19 +841,18 @@ export const FrameCreator: React.FC = () => {
   }, [
     containerRef,
     box?.isDrawing,
-    nodeDisp,
-    nodeState.nodes,
-
+    box?.startX,
+    box?.startY,
     getTransform,
     getIsResizing,
     getIsRotating,
     getIsAdjustingGap,
     getIsAdjustingBorderRadius,
     getIsFrameModeActive,
-    box?.startX,
-    box?.startY,
     getDynamicModeNodeId,
     getActiveViewportInDynamicMode,
+    getAllNodes,
+    getNodeParent,
   ]);
 
   // Early return if not in frame mode or not drawing

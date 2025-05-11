@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
+import { useBuilderDynamic } from "@/builder/context/builderState";
 import {
   ChevronRight,
   ChevronDown,
@@ -26,7 +25,6 @@ import {
   getNodeViewport,
 } from "./utils";
 import { handleMediaToFrameTransformation } from "@/builder/context/utils";
-import { set } from "lodash";
 import { useAtomValue } from "jotai";
 import {
   isNodeSelectedAtom,
@@ -37,6 +35,17 @@ import {
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
 import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
+import {
+  useNodeChildren,
+  useGetNodeParent,
+} from "@/builder/context/atoms/node-store/hierarchy-store";
+import {
+  useGetNodeBasics,
+  useGetNodeStyle,
+  useGetNodeFlags,
+  useGetNodeSharedInfo,
+  useGetNodeDynamicInfo,
+} from "@/builder/context/atoms/node-store";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;
@@ -47,25 +56,39 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const { nodeDisp, setNodeStyle, nodeState } = useBuilderDynamic();
 
   const currentSelectedIds = useGetSelectedIds();
-
   const { addToSelection, selectNode } = selectOps;
-
   const dynamicModeNodeId = useDynamicModeNodeId();
-
   const isDynamicMode = !!dynamicModeNodeId;
   const isDynamicNode = node.id === dynamicModeNodeId;
   const isDynamicChild = node.dynamicParentId === dynamicModeNodeId;
+
+  // Get node data from store
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+  const getNodeSharedInfo = useGetNodeSharedInfo();
+  const getNodeDynamicInfo = useGetNodeDynamicInfo();
+
+  // Get children directly from hierarchy store
+  const childrenIds = useNodeChildren(node.id);
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [customName, setCustomName] = useState(node.customName || node.type);
   const inputRef = useRef<HTMLInputElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<number | null>(null);
-  const hasChildren = node.children?.length > 0;
+
+  const hasChildren = childrenIds.length > 0;
+
   const isSelected = useAtomValue(isNodeSelectedAtom(node.id), {
     store: selectStore,
   });
-  const isHidden = node.style.display === "none";
+
+  // Check if node is hidden
+  const style = getNodeStyle(node.id);
+  const isHidden = style.display === "none";
 
   // DnD state
   const [isDragging, setIsDragging] = useState(false);
@@ -86,9 +109,11 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     };
   }, []);
 
+  // Update custom name when node changes
   useEffect(() => {
-    setCustomName(node.customName || node.type);
-  }, [node.customName, node.type]);
+    const basics = getNodeBasics(node.id);
+    setCustomName(basics.customName || basics.type);
+  }, [node.id, getNodeBasics]);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -131,7 +156,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       }
       setIsEditing(false);
     } else if (e.key === "Escape") {
-      setCustomName(node.customName || node.type);
+      setCustomName(
+        getNodeBasics(node.id).customName || getNodeBasics(node.id).type
+      );
       setIsEditing(false);
     }
   };
@@ -166,10 +193,14 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   };
 
   const getDisplayName = () => {
-    if (node.isViewport) {
-      return node.viewportName || `${node.viewportWidth}px`;
+    const flags = getNodeFlags(node.id);
+    if (flags.isViewport) {
+      return node.viewportName || `${flags.viewportWidth}px`;
     }
-    return node.customName ? node.customName : firstLetterUpperCase(node.type);
+    const basics = getNodeBasics(node.id);
+    return basics.customName
+      ? basics.customName
+      : firstLetterUpperCase(basics.type);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -187,15 +218,20 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   // ----- Drag and Drop Handlers -----
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    const flags = getNodeFlags(node.id);
     // Completely prevent dragging viewports
-    if (node.isViewport) {
+    if (flags.isViewport) {
       e.preventDefault();
       e.stopPropagation();
       console.log("DRAGSTART-BLOCKED: Viewports cannot be dragged");
       return;
     }
 
-    console.log("DRAGSTART: Starting drag on node", node.id, node.type);
+    console.log(
+      "DRAGSTART: Starting drag on node",
+      node.id,
+      getNodeBasics(node.id).type
+    );
 
     // Prevent dragging when editing or dragging from buttons
     if (isEditing || (e.target as HTMLElement).tagName === "BUTTON") {
@@ -204,13 +240,16 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
 
     // Set drag data - include full node details for debugging
+    const basics = getNodeBasics(node.id);
+    const parentId = getNodeParent(node.id);
+
     const dragDataObj = {
       id: node.id,
-      type: node.type,
-      parentId: node.parentId,
-      isViewport: node.isViewport || false,
+      type: basics.type,
+      parentId: parentId,
+      isViewport: flags.isViewport || false,
       viewportName: node.viewportName,
-      inViewport: node.inViewport,
+      inViewport: flags.inViewport,
     };
 
     // Store data for drop event
@@ -218,9 +257,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
     // Store drag info in global variable for access during dragOver
     currentDragInfo.id = node.id;
-    currentDragInfo.type = node.type;
-    currentDragInfo.isViewport = node.isViewport || false;
-    currentDragInfo.inViewport = node.inViewport || false;
+    currentDragInfo.type = basics.type;
+    currentDragInfo.isViewport = flags.isViewport || false;
+    currentDragInfo.inViewport = flags.inViewport || false;
 
     e.dataTransfer.effectAllowed = "move";
 
@@ -287,9 +326,11 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       return;
     }
 
+    const flags = getNodeFlags(node.id);
+
     // CRITICAL CHECK 1: If either node is a viewport, NEVER allow Inside position
     // This means we can never drop a viewport inside anything, or anything inside a viewport
-    if (draggedNode.isViewport || node.isViewport) {
+    if (draggedNode.isViewport || flags.isViewport) {
       console.log("DRAGOVER: Viewport involved, forcing Before/After position");
 
       const rect = e.currentTarget.getBoundingClientRect();
@@ -312,12 +353,13 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
     // Special canvas handling: For canvas nodes, only allow dropping INSIDE other frames/containers
     const isCanvasNode = !draggedNode.inViewport && !draggedNode.parentId;
-    const isCanvasTarget = !node.inViewport && !node.parentId;
+    const isCanvasTarget = !flags.inViewport && !getNodeParent(node.id);
 
     if (isCanvasNode && isCanvasTarget) {
       // Both are canvas items - only allow "inside" drop on frames/containers
+      const nodeType = getNodeBasics(node.id).type;
       const canBeContainer =
-        node.type === "frame" || node.type === "image" || node.type === "video";
+        nodeType === "frame" || nodeType === "image" || nodeType === "video";
 
       if (canBeContainer) {
         // Only allow dropping INSIDE the container
@@ -350,8 +392,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     // Determine drop position - Regular case (non-viewport)
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const isFrame = node.type === "frame";
-    const isMedia = node.type === "image" || node.type === "video";
+    const nodeType = getNodeBasics(node.id).type;
+    const isFrame = nodeType === "frame";
+    const isMedia = nodeType === "image" || nodeType === "video";
     const canContainChildren = isFrame || isMedia;
 
     let position = DropPosition.None;
@@ -400,7 +443,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       "DROP-START: Drop event starting on node",
       node.id,
       "isViewport:",
-      node.isViewport
+      getNodeFlags(node.id).isViewport
     );
 
     // Clear any pending hover timeouts
@@ -412,7 +455,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     setDropIndicator({ position: DropPosition.None, isVisible: false });
 
     // Parse drag data
-    let dragData: Node;
+    let dragData: any;
     try {
       const dragDataRaw = e.dataTransfer.getData("application/json");
       if (!dragDataRaw) {
@@ -426,7 +469,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       // CRITICAL CHECK 2: If trying to drop a viewport inside another viewport, block immediately
       if (
         dragData.isViewport &&
-        node.isViewport &&
+        getNodeFlags(node.id).isViewport &&
         dropIndicator.position === DropPosition.Inside
       ) {
         console.log(
@@ -471,7 +514,8 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       // Handle media to frame transformation
       if (
         dropIndicator.position === DropPosition.Inside &&
-        (node.type === "image" || node.type === "video")
+        (getNodeBasics(node.id).type === "image" ||
+          getNodeBasics(node.id).type === "video")
       ) {
         console.log("DROP-MEDIA: Transforming media to frame");
 
@@ -652,7 +696,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
           }
 
           // CRITICAL CHECK 5: If trying to drop anything inside a viewport, block again
-          if (node.isViewport) {
+          if (getNodeFlags(node.id).isViewport) {
             console.log(
               "DROP-INSIDE-BLOCKED: Cannot drop anything inside a viewport"
             );
@@ -660,9 +704,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
           }
 
           if (
-            node.type === "frame" ||
-            node.type === "image" ||
-            node.type === "video"
+            getNodeBasics(node.id).type === "frame" ||
+            getNodeBasics(node.id).type === "image" ||
+            getNodeBasics(node.id).type === "video"
           ) {
             if (isMultiSelectionDrag) {
               // Make sure no viewports are in the selection before proceeding
@@ -759,7 +803,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
         // Find the viewport of the target node
         const targetViewport = getNodeViewport(node.id, nodeState);
         const targetViewportNode = targetViewport
-          ? nodeState.nodes.find((n: Node) => n.id === targetViewport)
+          ? nodeState.nodes.find((n) => n.id === targetViewport)
           : null;
 
         if (targetViewportNode && targetViewportNode.viewportWidth !== 1440) {
@@ -796,26 +840,30 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     nodeDisp.toggleNodeLock([node.id]);
   };
 
+  // Get required node data
+  const basics = getNodeBasics(node.id);
+  const flags = getNodeFlags(node.id);
+
   return (
     <li className="relative select-none list-none">
       <div
         ref={nodeRef}
         onClick={handleSelect}
         onContextMenu={handleContextMenu}
-        draggable={!isEditing && !node.isViewport}
-        onDragStart={!node.isViewport ? handleDragStart : undefined}
-        onDragEnd={!node.isViewport ? handleDragEnd : undefined}
+        draggable={!isEditing && !flags.isViewport}
+        onDragStart={!flags.isViewport ? handleDragStart : undefined}
+        onDragEnd={!flags.isViewport ? handleDragEnd : undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
           `group flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius-md)] transition-colors duration-150`,
           "cursor-pointer",
-          node.isViewport && "cursor-default", // Change cursor for viewports
+          flags.isViewport && "cursor-default", // Change cursor for viewports
           !isSelected && " hover:bg-[var(--bg-hover)]",
           isSelected &&
             `${
-              node.isDynamic ||
+              flags.isDynamic ||
               isDynamicChild ||
               (isDynamicMode && isDynamicNode)
                 ? "bg-[var(--accent-secondary)]"
@@ -877,15 +925,15 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
               isSelected && "text-white"
             )}
           >
-            {node.isViewport ? (
+            {flags.isViewport ? (
               // Use viewport width to determine which icon to show
-              node.viewportWidth! >= 768 ? (
+              flags.viewportWidth! >= 768 ? (
                 <Monitor
                   className={`w-4 h-4 ${
                     isSelected ? "text-white" : "text-[var(--accent)]"
                   }`}
                 />
-              ) : node.viewportWidth! >= 376 ? (
+              ) : flags.viewportWidth! >= 376 ? (
                 <Tablet
                   className={`w-4 h-4 ${
                     isSelected ? "text-white" : "text-[var(--accent)]"
@@ -900,7 +948,11 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
               )
             ) : (
               // Pass the entire node object to getElementIcon
-              getElementIcon(node.type, isSelected, node)
+              getElementIcon(basics.type, isSelected, {
+                ...basics,
+                ...flags,
+                parentId: getNodeParent(node.id),
+              })
             )}
           </span>
         </span>
@@ -937,21 +989,21 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
           </span>
         )}
 
-        {node.isLocked && (
+        {flags.isLocked && (
           <button
             onClick={handleToggleLock}
             className={cn(
               "w-3.5 h-3.5 flex items-center justify-center mr-1",
-              !node.isLocked
+              !flags.isLocked
                 ? "opacity-0 group-hover:opacity-100"
                 : "opacity-100",
               "transition-opacity",
               "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
               isSelected && "text-white"
             )}
-            title={node.isLocked ? "Unlock element" : "Lock element"}
+            title={flags.isLocked ? "Unlock element" : "Lock element"}
           >
-            {node.isLocked ? (
+            {flags.isLocked ? (
               <Lock className="w-3.5 h-3.5" />
             ) : (
               <Unlock className="w-3.5 h-3.5" />
@@ -959,7 +1011,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
           </button>
         )}
         {/* Hide visibility toggle for viewports */}
-        {!node.isViewport && (
+        {!flags.isViewport && (
           <button
             onClick={handleToggleVisibility}
             className={cn(
@@ -982,8 +1034,25 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
       {hasChildren && isExpanded && (
         <ul className="mt-0.5 space-y-0.5 list-none">
-          {node.children.map((child) => (
-            <TreeNodeComponent key={child.id} node={child} level={level + 1} />
+          {childrenIds.map((childId) => (
+            <TreeNodeComponent
+              key={childId}
+              node={{
+                id: childId,
+                type: getNodeBasics(childId).type,
+                customName: getNodeBasics(childId).customName,
+                style: getNodeStyle(childId),
+                isViewport: getNodeFlags(childId).isViewport,
+                viewportWidth: getNodeFlags(childId).viewportWidth,
+                inViewport: getNodeFlags(childId).inViewport,
+                isDynamic: getNodeFlags(childId).isDynamic,
+                isVariant: getNodeFlags(childId).isVariant,
+                isLocked: getNodeFlags(childId).isLocked,
+                parentId: getNodeParent(childId),
+                children: [], // Children will be fetched by the child component
+              }}
+              level={level + 1}
+            />
           ))}
         </ul>
       )}

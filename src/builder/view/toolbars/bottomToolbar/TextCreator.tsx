@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  useBuilder,
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import { nanoid } from "nanoid";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import {
   computeFrameDropIndicator,
   handleMediaToFrameTransformation,
@@ -23,6 +18,37 @@ import {
 import { useGetDynamicModeNodeId } from "@/builder/context/atoms/drag-store";
 import { useGetActiveViewportInDynamicMode } from "@/builder/context/atoms/dynamic-store";
 
+// Import the new store operations
+import {
+  NodeId,
+  getCurrentNodes,
+  useGetAllNodes,
+  useGetNodeParent,
+  batchNodeUpdates,
+  nodeStore,
+  nodeIdsAtom,
+  nodeBasicsAtom,
+  nodeStyleAtom,
+  nodeFlagsAtom,
+  nodeSharedInfoAtom,
+  nodeDynamicInfoAtom,
+  nodeParentAtom,
+} from "@/builder/context/atoms/node-store";
+
+import {
+  addNode,
+  moveNode,
+  insertAtIndex,
+} from "@/builder/context/atoms/node-store/operations/insert-operations";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { updateNodeFlags } from "@/builder/context/atoms/node-store/operations/update-operations";
+import { syncViewports } from "@/builder/context/atoms/node-store/operations/sync-operations";
+import {
+  hierarchyStore,
+  childrenMapAtom,
+  parentMapAtom,
+} from "@/builder/context/atoms/node-store/hierarchy-store";
+
 interface DrawingBoxState {
   startX: number;
   startY: number;
@@ -32,9 +58,7 @@ interface DrawingBoxState {
 }
 
 export const TextCreator: React.FC = () => {
-  const { nodeDisp, nodeState, setNodeStyle } = useBuilderDynamic();
   const { containerRef } = useBuilderRefs();
-
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
 
@@ -50,6 +74,10 @@ export const TextCreator: React.FC = () => {
   const getDynamicModeNodeId = useGetDynamicModeNodeId();
   const getActiveViewportInDynamicMode = useGetActiveViewportInDynamicMode();
 
+  // New hooks
+  const getAllNodes = useGetAllNodes();
+  const getNodeParent = useGetNodeParent();
+
   // Check if we can enable text creation mode
   const canCreateText = () => {
     return (
@@ -58,6 +86,120 @@ export const TextCreator: React.FC = () => {
       !getIsRotating() &&
       !getIsAdjustingBorderRadius()
     );
+  };
+
+  // Function to add a new node to the store
+  const addNewNode = (node) => {
+    batchNodeUpdates(() => {
+      // Add node ID to the store
+      nodeStore.set(nodeIdsAtom, (prev) => [...prev, node.id]);
+
+      // Set basic properties
+      nodeStore.set(nodeBasicsAtom(node.id), {
+        id: node.id,
+        type: node.type,
+        customName: node.customName,
+      });
+
+      // Set style
+      nodeStore.set(nodeStyleAtom(node.id), node.style || {});
+
+      // Set flags
+      nodeStore.set(nodeFlagsAtom(node.id), {
+        isLocked: node.isLocked,
+        inViewport: node.inViewport !== false,
+        isViewport: node.isViewport,
+        viewportName: node.viewportName,
+        viewportWidth: node.viewportWidth,
+        isDynamic: node.isDynamic,
+        isAbsoluteInFrame: node.isAbsoluteInFrame,
+        isVariant: node.isVariant,
+      });
+
+      // Set shared info
+      if (node.sharedId) {
+        nodeStore.set(nodeSharedInfoAtom(node.id), { sharedId: node.sharedId });
+      }
+
+      // Set dynamic info
+      if (node.dynamicParentId || node.dynamicViewportId) {
+        nodeStore.set(nodeDynamicInfoAtom(node.id), {
+          dynamicParentId: node.dynamicParentId,
+          dynamicViewportId: node.dynamicViewportId,
+          dynamicPosition: node.dynamicPosition,
+        });
+      }
+
+      // Add to parent-child relationship
+      if (node.position === "inside" && node.targetId) {
+        addNode(node.id, node.targetId);
+      } else if (node.position && node.targetId) {
+        const targetId = node.targetId;
+        const siblings =
+          hierarchyStore.get(childrenMapAtom).get(getNodeParent(targetId)) ||
+          [];
+        const targetIndex = siblings.indexOf(targetId);
+        const insertIndex =
+          node.position === "after" ? targetIndex + 1 : targetIndex;
+
+        insertAtIndex(node.id, getNodeParent(targetId), insertIndex);
+      } else {
+        // Add to root if no position specified
+        addNode(node.id, null);
+      }
+    });
+
+    return node.id;
+  };
+
+  // Function to handle media to frame transformation
+  const handleMediaToFrameTransformationStore = (mediaNode, textNode) => {
+    // Create a new frame
+    const frameId = nanoid();
+    const frameNode = {
+      id: frameId,
+      type: "frame",
+      style: {
+        position: mediaNode.style.position,
+        left: mediaNode.style.left,
+        top: mediaNode.style.top,
+        width: mediaNode.style.width,
+        height: mediaNode.style.height,
+        backgroundColor: "#ffffff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      inViewport: mediaNode.inViewport,
+      sharedId: nanoid(),
+      dynamicParentId: mediaNode.dynamicParentId,
+      dynamicViewportId: mediaNode.dynamicViewportId,
+      position: null,
+      targetId: getNodeParent(mediaNode.id),
+    };
+
+    // Add the frame node
+    addNewNode(frameNode);
+
+    // Update media node style for frame
+    updateNodeStyle(mediaNode.id, {
+      position: "relative",
+      left: "",
+      top: "",
+      zIndex: "",
+    });
+
+    // Move media to frame
+    moveNode(mediaNode.id, frameId);
+
+    // Add text node as sibling to media
+    addNewNode({
+      ...textNode,
+      position: "inside",
+      targetId: frameId,
+    });
+
+    return true;
   };
 
   useEffect(() => {
@@ -71,7 +213,8 @@ export const TextCreator: React.FC = () => {
         if (frameEl && !frameEl.closest(".viewport-header")) {
           const frameId = frameEl.getAttribute("data-node-id");
           if (frameId) {
-            const node = nodeState.nodes.find((n) => n.id === frameId);
+            const allNodes = getAllNodes();
+            const node = allNodes.find((n) => n.id === frameId);
             if (node) {
               return { id: frameId, element: frameEl };
             }
@@ -181,6 +324,7 @@ export const TextCreator: React.FC = () => {
         // Check if we're drawing over a media element (image/video)
         const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
         let mediaElement = null;
+        const allNodes = getAllNodes();
 
         for (const el of elementsUnder) {
           const mediaEl = el.closest(
@@ -189,7 +333,7 @@ export const TextCreator: React.FC = () => {
           if (mediaEl) {
             const mediaId = mediaEl.getAttribute("data-node-id");
             if (mediaId) {
-              const mediaNode = nodeState.nodes.find((n) => n.id === mediaId);
+              const mediaNode = allNodes.find((n) => n.id === mediaId);
               if (mediaNode) {
                 mediaElement = { node: mediaNode, element: mediaEl };
                 break;
@@ -213,7 +357,7 @@ export const TextCreator: React.FC = () => {
         // If drawing on a media element, transform it to a frame first
         if (mediaElement) {
           // Create a new text node to add inside the frame
-          const newText: Node = {
+          const newText = {
             id: nanoid(),
             type: "text",
             style: {
@@ -233,16 +377,11 @@ export const TextCreator: React.FC = () => {
 
           newNodeId = newText.id;
 
-          // Use the centralized utility to transform media to frame and add the text node
-          handleMediaToFrameTransformation(
-            mediaElement.node,
-            newText,
-            nodeDisp,
-            "inside"
-          );
+          // Use the store-based transformation
+          handleMediaToFrameTransformationStore(mediaElement.node, newText);
         } else if (targetFrame) {
           // Drawing over a frame - insert text as child
-          const frameChildren = nodeState.nodes
+          const frameChildren = allNodes
             .filter((n) => n.parentId === targetFrame.id)
             .map((node) => {
               const el = document.querySelector(`[data-node-id="${node.id}"]`);
@@ -255,7 +394,7 @@ export const TextCreator: React.FC = () => {
                 item !== null
             );
 
-          const newText: Node = {
+          const newText = {
             id: nanoid(),
             type: "text",
             style: {
@@ -283,18 +422,23 @@ export const TextCreator: React.FC = () => {
           );
 
           if (dropIndicator?.dropInfo) {
-            nodeDisp.addNode(
-              newText,
-              dropIndicator.dropInfo.targetId,
-              dropIndicator.dropInfo.position,
-              true
-            );
+            // Add to specific position
+            addNewNode({
+              ...newText,
+              position: dropIndicator.dropInfo.position,
+              targetId: dropIndicator.dropInfo.targetId,
+            });
           } else {
-            nodeDisp.addNode(newText, targetFrame.id, "inside", true);
+            // Add as child of target frame
+            addNewNode({
+              ...newText,
+              position: "inside",
+              targetId: targetFrame.id,
+            });
           }
         } else {
           // Drawing on canvas - create absolute positioned text
-          const newText: Node = {
+          const newText = {
             id: nanoid(),
             type: "text",
             style: {
@@ -315,27 +459,29 @@ export const TextCreator: React.FC = () => {
           };
 
           newNodeId = newText.id;
-          nodeDisp.addNode(newText, null, null, false);
+
+          // Add to root
+          addNewNode({
+            ...newText,
+            position: null,
+            targetId: null,
+          });
         }
 
         // Additional text styling options based on dimensions
         if (width / transform.scale > 500) {
           // For wider text boxes, center align text
           setTimeout(() => {
-            setNodeStyle(
-              {
-                text: `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`,
-              },
-              [newNodeId],
-              true
-            );
+            updateNodeStyle(newNodeId, {
+              text: `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`,
+            });
           }, 0);
         }
       }
 
       if (!dynamicModeNodeId) {
         // Only sync viewports if we're NOT in dynamic mode
-        nodeDisp.syncViewports();
+        syncViewports(null, null);
       }
 
       // Hide the style helper
@@ -364,13 +510,12 @@ export const TextCreator: React.FC = () => {
     containerRef,
     box?.isDrawing,
     isTextModeActive,
-    nodeDisp,
-    nodeState.nodes,
-    setNodeStyle,
     box?.startX,
     box?.startY,
     getDynamicModeNodeId,
     getActiveViewportInDynamicMode,
+    getAllNodes,
+    getNodeParent,
   ]);
 
   // Early return if not drawing

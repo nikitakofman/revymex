@@ -157,6 +157,10 @@ body {
   margin: 0;
 }
 
+.ProseMirror:focus {
+  outline: none;
+}
+
 .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
   content: "Type something...";
   color: #adb5bd;

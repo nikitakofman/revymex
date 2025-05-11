@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { useDraggedNode, useIsDragging } from "../atoms/drag-store";
+import {
+  useDraggedNode,
+  useIsDragging,
+  useDragSource,
+} from "../atoms/drag-store";
 import { NodeComponent } from "@/builder/registry/renderNodes";
 import { useTransform } from "../atoms/canvas-interaction-store";
 
@@ -16,6 +20,7 @@ const deg = (rotate: string | number | undefined) => {
 const DragOverlay = () => {
   const dragged = useDraggedNode();
   const dragging = useIsDragging();
+  const dragSource = useDragSource();
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
   const transform = useTransform();
 
@@ -26,13 +31,17 @@ const DragOverlay = () => {
     return () => document.removeEventListener("mousemove", h);
   }, []);
 
+  // Don't render if we don't have a dragged node or we're not dragging
   if (!dragged || !dragging) return null;
+
+  // Don't render the overlay if we're dragging directly on canvas
+  if (dragSource === "canvas") return null;
 
   // Unpack what useDragStart gave us
   const { mouseX, mouseY, width, height, rotate, isSimpleRotation } =
     dragged.offset;
 
-  // For simple 2D rotation, apply the rotation adjustment
+  // Convert the canvas-offset back to current screen pixels
   let left = mouse.x - mouseX;
   let top = mouse.y - mouseY;
 
@@ -54,6 +63,8 @@ const DragOverlay = () => {
     left += rotShiftX * transform.scale;
     top += rotShiftY * transform.scale;
   }
+
+  console.log("draggednode", dragged);
 
   return (
     <div
@@ -77,8 +88,6 @@ const DragOverlay = () => {
           nodeId={dragged.node.id}
           filter="outOfViewport"
           preview={true}
-          static={true}
-          // If not a simple rotation, reset transforms during drag
           style={!isSimpleRotation ? { transform: "none" } : undefined}
         />
       </div>

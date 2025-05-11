@@ -5,14 +5,22 @@ import {
   nodeStyleAtom,
   changedNodesAtom,
   batchNodeUpdates,
+  nodeSyncFlagsAtom,
 } from "../";
 import { STYLE_RULES } from "../rules/style-rules";
+import { findViewportForNode } from "../rules/utils-rules";
 
 /**
  * Update a node's style and propagate changes to nodes with the same sharedId
  */
-export function updateNodeStyle(nodeId: NodeId, style: CSSProperties): void {
+
+type BuilderCSS = CSSProperties & {
+  text?: string;
+};
+
+export function updateNodeStyle(nodeId: NodeId, style: BuilderCSS): void {
   // Batch all operations to minimize re-renders
+
   batchNodeUpdates(() => {
     // First, update the source node's style
     nodeStore.set(nodeStyleAtom(nodeId), {

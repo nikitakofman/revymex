@@ -1,6 +1,8 @@
+// useKeyboardDrag.ts
 import { useEffect, useRef } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { useNodeActions } from "./useNodeActions";
+import { NodeId, useGetAllNodes } from "@/builder/context/atoms/node-store";
+
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
 import {
   dragOps,
@@ -13,9 +15,11 @@ import {
   useGetIsMoveCanvasMode,
   useIsMoveCanvasMode,
 } from "../atoms/canvas-interaction-store";
+import { syncViewports } from "../atoms/node-store/operations/sync-operations";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
 export const useKeyboardDrag = () => {
-  const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
+  const getAllNodes = useGetAllNodes();
 
   const { handleDelete, handleDuplicate, handleCopy, handlePaste } =
     useNodeActions();
@@ -27,13 +31,10 @@ export const useKeyboardDrag = () => {
   const duplicatedFromAlt = useDuplicatedFromAlt();
 
   const { clearSelection, setSelectedIds } = selectOps;
-
   const getIsDragging = useGetIsDragging();
 
   const isAltPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
-
-  // Add this to track when we've already handled the Alt key duplication for this drag
   const altDuplicationHandledRef = useRef(false);
 
   // Reset the Alt state when window loses focus
@@ -51,6 +52,7 @@ export const useKeyboardDrag = () => {
 
   // Handle keyboard shortcuts
   useEffect(() => {
+    // Skip if focus is in an input element
     if (
       document.activeElement?.tagName === "INPUT" ||
       document.activeElement?.tagName === "TEXTAREA" ||
@@ -90,6 +92,7 @@ export const useKeyboardDrag = () => {
       }
 
       const selectedIds = currentSelectedIds();
+
       // Handle Delete/Backspace
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
@@ -106,7 +109,6 @@ export const useKeyboardDrag = () => {
         handleDelete();
       }
 
-      // Other key handlers remain the same...
       // Handle Copy
       if (e.key === "c" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -126,7 +128,14 @@ export const useKeyboardDrag = () => {
         e.preventDefault();
 
         if (selectedIds.length > 0) {
-          nodeDisp.toggleNodeLock(selectedIds);
+          // Toggle lock state for all selected nodes
+          selectedIds.forEach((id) => {
+            const allNodes = getAllNodes();
+            const node = allNodes.find((n) => n.id === id);
+            if (node) {
+              updateNodeLock(id, !node.isLocked);
+            }
+          });
         }
       }
 
@@ -134,13 +143,10 @@ export const useKeyboardDrag = () => {
       if (e.key.toLowerCase() === "i" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         if (selectedIds.length > 0) {
-          setNodeStyle(
-            {
-              display: "none",
-            },
-            undefined,
-            true
-          );
+          // Update display style for all selected nodes
+          selectedIds.forEach((id) => {
+            updateNodeStyle(id, { display: "none" });
+          });
         }
       }
 
@@ -149,16 +155,17 @@ export const useKeyboardDrag = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        // Get all selectable node IDs (filtering out dynamic nodes)
-        const selectableNodeIds = nodeState.nodes
+        // Get all selectable node IDs (filtering out viewports)
+        const allNodes = getAllNodes();
+        const selectableNodeIds = allNodes
           .filter((node) => !node.isViewport)
           .map((node) => node.id);
 
         clearSelection();
-
         setSelectedIds(selectableNodeIds);
       }
 
+      // Handle Cut
       if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         e.stopPropagation();
@@ -198,16 +205,13 @@ export const useKeyboardDrag = () => {
     };
   }, [
     getIsDragging,
-    nodeState.nodes,
+    getAllNodes,
     getIsMoveCanvasMode,
-    canvasOps.setIsMoveCanvasMode,
     getIsEditingText,
-    nodeDisp,
     handleCopy,
     handlePaste,
     handleDelete,
     handleDuplicate,
-    setNodeStyle,
     currentSelectedIds,
     clearSelection,
     setSelectedIds,
@@ -228,6 +232,39 @@ export const useKeyboardDrag = () => {
       dragOps.setDuplicatedFromAlt(false);
     }
   }, [getIsDragging, handleDuplicate]);
+
+  // Helper function to update node lock state
+  const updateNodeLock = (nodeId: NodeId, isLocked: boolean) => {
+    // Check if node is in viewport to handle syncing
+    const allNodes = getAllNodes();
+    const node = allNodes.find((n) => n.id === nodeId);
+
+    if (node) {
+      // Update the lock flag for this node
+      const updatedNode = { ...node, isLocked };
+
+      // Update the node
+      if (node.inViewport && node.sharedId) {
+        // Sync with other viewports if node has shared ID
+        const nodesWithSameSharedId = allNodes.filter(
+          (n) => n.sharedId === node.sharedId && n.id !== nodeId
+        );
+
+        if (nodesWithSameSharedId.length > 0) {
+          // Update all nodes with the same shared ID
+          nodesWithSameSharedId.forEach((sharedNode) => {
+            updateNodeStyle(sharedNode.id, {}, { isLocked });
+          });
+
+          // Sync viewports to ensure consistency
+          syncViewports(nodeId, node.parentId);
+        }
+      }
+
+      // Update this node
+      updateNodeStyle(nodeId, {}, { isLocked });
+    }
+  };
 
   return {
     isAltPressed: isAltPressedRef.current,

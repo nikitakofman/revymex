@@ -453,6 +453,13 @@ export const useNodeState = () => {
   return useAtomValue(nodeStateAtom, { store: nodeStore });
 };
 
+export const useGetSharedNodes = () => {
+  return useCallback((sharedId: string): NodeId[] => {
+    const buckets = nodeStore.get(sharedIdBucketsAtom);
+    return buckets.has(sharedId) ? Array.from(buckets.get(sharedId) || []) : [];
+  }, []);
+};
+
 // Non-reactive getter functions - won't cause re-renders
 // FIXED: These now properly accept a nodeId parameter
 export const useGetNodeBasics = () => {

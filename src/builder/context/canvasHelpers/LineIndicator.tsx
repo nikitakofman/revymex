@@ -1,67 +1,42 @@
 import { createPortal } from "react-dom";
-import { useBuilder } from "../builderState";
-import { useGetLineIndicator, useLineIndicator } from "../atoms/visual-store";
+import { useLineIndicator } from "../atoms/visual-store";
+import { useLineIndicatorController } from "./useLineIndicatorController";
 
 export const LineIndicator = () => {
-  const lineIndicator = useLineIndicator();
+  useLineIndicatorController();
 
-  const { show, x, y, width, height } = lineIndicator;
+  const { show, x, y, width, height } = useLineIndicator();
+
   if (!show) return null;
 
-  const isVertical = parseFloat(String(height)) > parseFloat(String(width));
+  const isVertical = height > width;
 
   return createPortal(
     <>
       <div
         className="pointer-events-none fixed z-[9999] bg-blue-500"
-        style={{
-          left: `${x}px`,
-          top: `${y}px`,
-          width,
-          height,
-        }}
+        style={{ left: x, top: y, width, height }}
       />
-
+      {/* two little end‑caps so it's visible on white backgrounds */}
       {isVertical ? (
         <>
-          <div
-            className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"
-            style={{
-              left: `${x}px`,
-              top: `${y}px`,
-              transform: "translate(-40%, -40%)",
-            }}
-          />
-          <div
-            className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"
-            style={{
-              left: `${x}px`,
-              top: `${y + parseFloat(String(height))}px`,
-              transform: "translate(-40%, -40%)",
-            }}
-          />
+          <Dot x={x} y={y} />
+          <Dot x={x} y={y + height} />
         </>
       ) : (
         <>
-          <div
-            className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"
-            style={{
-              left: `${x}px`,
-              top: `${y}px`,
-              transform: "translate(-40%, -40%)",
-            }}
-          />
-          <div
-            className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"
-            style={{
-              left: `${x + parseFloat(String(width))}px`,
-              top: `${y}px`,
-              transform: "translate(-40%, -40%)",
-            }}
-          />
+          <Dot x={x} y={y} />
+          <Dot x={x + width} y={y} />
         </>
       )}
     </>,
     document.body
   );
 };
+
+const Dot = ({ x, y }: { x: number; y: number }) => (
+  <div
+    className="pointer-events-none fixed z-[9998] w-2.5 h-2.5 bg-white rounded-full border-2 border-blue-500"
+    style={{ left: x, top: y, transform: "translate(-40%, -40%)" }}
+  />
+);

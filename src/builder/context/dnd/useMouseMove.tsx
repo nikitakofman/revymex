@@ -3,22 +3,42 @@ import {
   useGetDraggedNode,
   useGetIsDragging,
   dragOps,
+  useGetDragSource,
 } from "../atoms/drag-store";
+import { useBuilderRefs } from "@/builder/context/builderState";
+import { useGetTransform } from "../atoms/canvas-interaction-store";
 import {
   useGetNodeParent,
   useGetNodeChildren,
 } from "../atoms/node-store/hierarchy-store";
-import { moveNode } from "../atoms/node-store/operations/insert-operations";
+import {
+  moveNode,
+  removeNode,
+} from "../atoms/node-store/operations/insert-operations";
+import { getFilteredElementsUnderMouseDuringDrag } from "../utils";
+import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
+import { getSiblingOrdering, TargetInfo } from "./dnd-utils";
+import { snapOps } from "../atoms/snap-guides-store";
+
+export const screenToCanvas = (
+  e: MouseEvent,
+  containerRect: DOMRect,
+  transform: { x: number; y: number; scale: number }
+) => ({
+  x: (e.clientX - containerRect.left - transform.x) / transform.scale,
+  y: (e.clientY - containerRect.top - transform.y) / transform.scale,
+});
 
 export const useMouseMove = () => {
   const getDraggedNode = useGetDraggedNode();
   const getIsDragging = useGetIsDragging();
   const getNodeParent = useGetNodeParent();
   const getNodeChildren = useGetNodeChildren();
+  const getDragSource = useGetDragSource();
+  const { containerRef } = useBuilderRefs();
+  const getTransform = useGetTransform();
 
-  const lastTarget = useRef<{ id: string; pos: "before" | "after" } | null>(
-    null
-  );
+  const lastTarget = useRef<TargetInfo | null>(null);
   const prevMousePosRef = useRef({ x: 0, y: 0 });
 
   return (e: MouseEvent) => {
@@ -27,210 +47,166 @@ export const useMouseMove = () => {
     const dragged = getDraggedNode();
     if (!dragged) return;
 
+    const dragSource = getDragSource();
+    const draggedNodeId = dragged.node.id;
+
+    const isOverCanvas = getFilteredElementsUnderMouseDuringDrag(
+      e,
+      draggedNodeId,
+      "canvas"
+    );
+
+    // Always track mouse position for canvas elements
+    if (dragSource === "canvas") {
+      const containerRect = containerRef.current!.getBoundingClientRect();
+      const transform = getTransform();
+      const { x, y } = screenToCanvas(e, containerRect, transform);
+
+      // Get snap guides state
+      const { enabled, activeSnapPoints } = snapOps.getState();
+
+      // Calculate mouse speed (pixels per frame)
+      const mouseSpeed = {
+        x: Math.abs(e.clientX - prevMousePosRef.current.x),
+        y: Math.abs(e.clientY - prevMousePosRef.current.y),
+      };
+
+      // Dynamic snap threshold based on speed
+      // Reduce snap effect when moving quickly
+      const speedFactor = Math.max(mouseSpeed.x, mouseSpeed.y);
+      const snapStrength = Math.max(0, 1 - speedFactor / 20); // Gradually reduce snapping as speed increases
+
+      // Prepare final position (will be adjusted if snapping)
+      let finalX = x - dragged.offset.mouseX / transform.scale;
+      let finalY = y - dragged.offset.mouseY / transform.scale;
+
+      // Raw positions (without snapping) to blend with snapped positions
+      const rawX = finalX;
+      const rawY = finalY;
+
+      // Extract node dimensions for snapping calculations
+      const { style } = dragged.node;
+      let width = 100; // Default
+      let height = 100; // Default
+
+      // Get width from style
+      if (typeof style.width === "string" && style.width.includes("px")) {
+        width = parseFloat(style.width);
+      } else if (typeof style.width === "number") {
+        width = style.width;
+      }
+
+      // Get height from style
+      if (typeof style.height === "string" && style.height.includes("px")) {
+        height = parseFloat(style.height);
+      } else if (typeof style.height === "number") {
+        height = style.height;
+      }
+
+      // Apply snapping if enabled and we have active snap points
+      if (enabled) {
+        // Apply horizontal snapping
+        if (activeSnapPoints.horizontal) {
+          const snapPoint = activeSnapPoints.horizontal;
+          let snappedY = finalY;
+
+          // Adjust position based on which edge is snapping
+          if (snapPoint.edge === "top") {
+            snappedY = snapPoint.position;
+          } else if (snapPoint.edge === "center") {
+            snappedY = snapPoint.position - height / 2;
+          } else if (snapPoint.edge === "bottom") {
+            snappedY = snapPoint.position - height;
+          }
+
+          // Blend raw position with snapped position based on speed
+          finalY = snappedY * snapStrength + rawY * (1 - snapStrength);
+        }
+
+        // Apply vertical snapping
+        if (activeSnapPoints.vertical) {
+          const snapPoint = activeSnapPoints.vertical;
+          let snappedX = finalX;
+
+          // Adjust position based on which edge is snapping
+          if (snapPoint.edge === "left") {
+            snappedX = snapPoint.position;
+          } else if (snapPoint.edge === "center") {
+            snappedX = snapPoint.position - width / 2;
+          } else if (snapPoint.edge === "right") {
+            snappedX = snapPoint.position - width;
+          }
+
+          // Blend raw position with snapped position based on speed
+          finalX = snappedX * snapStrength + rawX * (1 - snapStrength);
+        }
+      }
+
+      // Update the node's position with (potentially) snapped coordinates
+      updateNodeStyle(draggedNodeId, {
+        position: "absolute",
+        left: `${finalX}px`,
+        top: `${finalY}px`,
+      });
+
+      // Store positions for drag operations
+      dragOps.setDragPositions(x, y);
+
+      // Toggle canvas state if needed
+      dragOps.setIsOverCanvas(isOverCanvas);
+
+      // Update for next frame
+      prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    // Normal placeholder-based dragging
     const placeholderId = dragged.offset.placeholderId;
     if (!placeholderId) return;
 
-    const parentId = getNodeParent(placeholderId);
-    if (!parentId) return;
+    if (isOverCanvas) {
+      if (placeholderId) removeNode(placeholderId);
 
-    /* --- siblings minus placeholders & self --- */
-    const siblings = getNodeChildren(parentId).filter(
-      (id) =>
-        id !== placeholderId &&
-        id !== dragged.node.id &&
-        !id.includes("placeholder")
-    );
-    if (!siblings.length) return;
+      const containerRect = containerRef.current!.getBoundingClientRect();
+      const transform = getTransform();
+      const { x, y } = screenToCanvas(e, containerRect, transform);
 
-    // Get parent element to check flex direction
-    const parentElement = document.querySelector(
-      `[data-node-id="${parentId}"]`
-    );
-    if (!parentElement) return;
-
-    // Check parent's flex direction
-    const parentStyle = window.getComputedStyle(parentElement);
-    const isColumn = parentStyle.flexDirection.includes("column");
-
-    /* --- Get sibling elements with their boundaries --- */
-    const siblingElements = siblings
-      .map((id) => {
-        const el = document.querySelector<HTMLElement>(
-          `[data-node-id="${id}"]`
-        );
-        if (!el) return null;
-        return { id, rect: el.getBoundingClientRect() };
-      })
-      .filter(Boolean);
-
-    /* --- Sort siblings by position --- */
-    const sortedSiblings = siblingElements.sort((a, b) => {
-      return isColumn
-        ? a.rect.top - b.rect.top // Sort by vertical position for column layout
-        : a.rect.left - b.rect.left; // Sort by horizontal position for row layout
-    });
-
-    /* --- Calculate movement direction --- */
-    const mouseXDirection = e.clientX - prevMousePosRef.current.x;
-    const mouseYDirection = e.clientY - prevMousePosRef.current.y;
-
-    const isMovingRight = mouseXDirection > 1;
-    const isMovingLeft = mouseXDirection < -1;
-    const isMovingDown = mouseYDirection > 1;
-    const isMovingUp = mouseYDirection < -1;
-
-    /* --- Find which zone contains the mouse --- */
-    let targetInfo = null;
-
-    if (isColumn) {
-      // For column layout (vertical zones)
-
-      // Check if we're before the first sibling
-      if (sortedSiblings.length > 0 && e.clientY < sortedSiblings[0].rect.top) {
-        targetInfo = { id: sortedSiblings[0].id, pos: "before" as const };
-      }
-      // Check if we're after the last sibling
-      else if (
-        sortedSiblings.length > 0 &&
-        e.clientY > sortedSiblings[sortedSiblings.length - 1].rect.bottom
-      ) {
-        targetInfo = {
-          id: sortedSiblings[sortedSiblings.length - 1].id,
-          pos: "after" as const,
-        };
-      } else {
-        // Find which vertical zone we're in
-        for (let i = 0; i < sortedSiblings.length; i++) {
-          const sibling = sortedSiblings[i];
-
-          // If cursor is within this sibling's vertical bounds
-          if (
-            e.clientY >= sibling.rect.top &&
-            e.clientY <= sibling.rect.bottom
-          ) {
-            // Immediately use movement direction to determine position
-            if (isMovingUp) {
-              targetInfo = { id: sibling.id, pos: "before" as const };
-            } else if (isMovingDown) {
-              targetInfo = { id: sibling.id, pos: "after" as const };
-            } else {
-              // If no significant movement, use position in the sibling
-              const pos =
-                e.clientY < sibling.rect.top + sibling.rect.height / 2
-                  ? "before"
-                  : "after";
-              targetInfo = { id: sibling.id, pos: pos as const };
-            }
-            break;
-          }
-
-          // If we're between this sibling and the next one
-          if (i < sortedSiblings.length - 1) {
-            const nextSibling = sortedSiblings[i + 1];
-            if (
-              e.clientY > sibling.rect.bottom &&
-              e.clientY < nextSibling.rect.top
-            ) {
-              targetInfo = { id: sibling.id, pos: "after" as const };
-              break;
-            }
-          }
-        }
-      }
+      dragOps.setIsOverCanvas(true);
+      dragOps.setDragPositions(x, y);
     } else {
-      // For row layout (horizontal zones)
+      // Use the comprehensive utility function for all placeholder positioning logic
+      const result = getSiblingOrdering(
+        e,
+        placeholderId,
+        draggedNodeId,
+        getNodeParent,
+        getNodeChildren,
+        lastTarget.current,
+        prevMousePosRef.current
+      );
 
-      // Check if we're before the first sibling
-      if (
-        sortedSiblings.length > 0 &&
-        e.clientX < sortedSiblings[0].rect.left
-      ) {
-        targetInfo = { id: sortedSiblings[0].id, pos: "before" as const };
-      }
-      // Check if we're after the last sibling
-      else if (
-        sortedSiblings.length > 0 &&
-        e.clientX > sortedSiblings[sortedSiblings.length - 1].rect.right
-      ) {
-        targetInfo = {
-          id: sortedSiblings[sortedSiblings.length - 1].id,
-          pos: "after" as const,
-        };
-      } else {
-        // Find which horizontal zone we're in
-        for (let i = 0; i < sortedSiblings.length; i++) {
-          const sibling = sortedSiblings[i];
+      if (result) {
+        const { targetInfo, parentId } = result;
 
-          // If cursor is within this sibling's horizontal bounds
-          if (
-            e.clientX >= sibling.rect.left &&
-            e.clientX <= sibling.rect.right
-          ) {
-            // Immediately use movement direction to determine position
-            if (isMovingLeft) {
-              targetInfo = { id: sibling.id, pos: "before" as const };
-            } else if (isMovingRight) {
-              targetInfo = { id: sibling.id, pos: "after" as const };
-            } else {
-              // If no significant movement, use position in the sibling
-              const pos =
-                e.clientX < sibling.rect.left + sibling.rect.width / 2
-                  ? "before"
-                  : "after";
-              targetInfo = { id: sibling.id, pos: pos as const };
-            }
-            break;
-          }
+        // Update last target
+        lastTarget.current = targetInfo;
 
-          // If we're between this sibling and the next one
-          if (i < sortedSiblings.length - 1) {
-            const nextSibling = sortedSiblings[i + 1];
-            if (
-              e.clientX > sibling.rect.right &&
-              e.clientX < nextSibling.rect.left
-            ) {
-              targetInfo = { id: sibling.id, pos: "after" as const };
-              break;
-            }
-          }
+        // Move placeholder to new position
+        const ordered = getNodeChildren(parentId);
+        const clean = ordered.filter(
+          (id) => id !== placeholderId && !id.includes("placeholder")
+        );
+        const targetIdx = clean.indexOf(targetInfo.id);
+        const newIdx = targetInfo.pos === "before" ? targetIdx : targetIdx + 1;
+
+        const currentIdx = ordered.indexOf(placeholderId);
+        if (currentIdx !== newIdx) {
+          moveNode(placeholderId, parentId, newIdx);
+          dragOps.setDropInfo(targetInfo.id, targetInfo.pos, 0, 0);
         }
       }
     }
 
-    /* --- Skip if no target found or if it hasn't changed --- */
-    if (!targetInfo) {
-      prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-      return;
-    }
-
-    /* --- Skip redundant moves --- */
-    if (
-      lastTarget.current &&
-      lastTarget.current.id === targetInfo.id &&
-      lastTarget.current.pos === targetInfo.pos
-    ) {
-      prevMousePosRef.current = { x: e.clientX, y: e.clientY };
-      return;
-    }
-
-    // Update last target
-    lastTarget.current = targetInfo;
-
-    /* --- Move placeholder --- */
-    const ordered = getNodeChildren(parentId); // includes placeholder
-    const clean = ordered.filter(
-      (id) => id !== placeholderId && !id.includes("placeholder")
-    );
-    const targetIdx = clean.indexOf(targetInfo.id);
-    const newIdx = targetInfo.pos === "before" ? targetIdx : targetIdx + 1;
-
-    const currentIdx = ordered.indexOf(placeholderId);
-    if (currentIdx !== newIdx) {
-      moveNode(placeholderId, parentId, newIdx);
-      dragOps.setDropInfo(targetInfo.id, targetInfo.pos, 0, 0);
-    }
-
-    // Update mouse position for next calculation
     prevMousePosRef.current = { x: e.clientX, y: e.clientY };
   };
 };

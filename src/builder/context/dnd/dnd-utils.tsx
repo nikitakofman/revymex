@@ -1,6 +1,6 @@
 // src/builder/context/utils/dragStartUtils.ts
 
-import { NodeId } from "../atoms/node-store";
+import { getCurrentNodes, NodeId } from "../atoms/node-store";
 import { dragOps } from "../atoms/drag-store";
 
 /**
@@ -15,6 +15,14 @@ export const originTokenToPx = (
     return (parseFloat(token) / 100) * size;
   }
   return parseFloat(token); // already px or keyword will be NaN
+};
+
+export const acceptsChild = (parentId: NodeId, childId: NodeId): boolean => {
+  const parent = getCurrentNodes().find((n) => n.id === parentId);
+  if (!parent) return false;
+
+  // simplest rule: frames & viewports can host children
+  return parent.type === "frame" || parent.flags?.isViewport;
 };
 
 /**
@@ -121,4 +129,187 @@ export const startNodeDrag = (
   dragOps.setDraggedNode(node, dragData);
 
   return true;
+};
+
+// utils/coords.ts
+export const screenToCanvas = (
+  e: MouseEvent,
+  containerRect: DOMRect,
+  transform: { x: number; y: number; scale: number }
+) => ({
+  x: (e.clientX - containerRect.left - transform.x) / transform.scale,
+  y: (e.clientY - containerRect.top - transform.y) / transform.scale,
+});
+
+// utils/orderingUtils.ts
+
+// utils/orderingUtils.ts
+
+export interface TargetInfo {
+  id: string;
+  pos: "before" | "after";
+}
+
+export const getSiblingOrdering = (
+  e: MouseEvent,
+  placeholderId: string,
+  draggedNodeId: string,
+  getNodeParent: (id: string) => string | null,
+  getNodeChildren: (id: string | null) => string[],
+  lastTarget: { id: string; pos: "before" | "after" } | null,
+  prevMousePos: { x: number; y: number }
+) => {
+  const parentId = getNodeParent(placeholderId);
+  if (!parentId) return null;
+
+  const siblings = getNodeChildren(parentId).filter(
+    (id) =>
+      id !== placeholderId &&
+      id !== draggedNodeId &&
+      !id.includes("placeholder")
+  );
+  if (!siblings.length) return null;
+
+  const parentElement = document.querySelector(`[data-node-id="${parentId}"]`);
+  if (!parentElement) return null;
+
+  const parentStyle = window.getComputedStyle(parentElement);
+  const isColumn = parentStyle.flexDirection.includes("column");
+
+  const siblingElements = siblings
+    .map((id) => {
+      const el = document.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
+      if (!el) return null;
+      return { id, rect: el.getBoundingClientRect() };
+    })
+    .filter(Boolean);
+
+  const sortedSiblings = siblingElements.sort((a, b) => {
+    return isColumn ? a.rect.top - b.rect.top : a.rect.left - b.rect.left;
+  });
+
+  const mouseXDirection = e.clientX - prevMousePos.x;
+  const mouseYDirection = e.clientY - prevMousePos.y;
+
+  const isMovingRight = mouseXDirection > 1;
+  const isMovingLeft = mouseXDirection < -1;
+  const isMovingDown = mouseYDirection > 1;
+  const isMovingUp = mouseYDirection < -1;
+
+  let targetInfo: TargetInfo | null = null;
+
+  if (isColumn) {
+    // Before first sibling
+    if (sortedSiblings.length > 0 && e.clientY < sortedSiblings[0].rect.top) {
+      targetInfo = { id: sortedSiblings[0].id, pos: "before" };
+    }
+    // After last sibling
+    else if (
+      sortedSiblings.length > 0 &&
+      e.clientY > sortedSiblings[sortedSiblings.length - 1].rect.bottom
+    ) {
+      targetInfo = {
+        id: sortedSiblings[sortedSiblings.length - 1].id,
+        pos: "after",
+      };
+    } else {
+      // Within siblings
+      for (let i = 0; i < sortedSiblings.length; i++) {
+        const sibling = sortedSiblings[i];
+        // Within this sibling
+        if (e.clientY >= sibling.rect.top && e.clientY <= sibling.rect.bottom) {
+          if (isMovingUp) {
+            targetInfo = { id: sibling.id, pos: "before" };
+          } else if (isMovingDown) {
+            targetInfo = { id: sibling.id, pos: "after" };
+          } else {
+            // No movement, use position within sibling
+            const pos =
+              e.clientY < sibling.rect.top + sibling.rect.height / 2
+                ? "before"
+                : "after";
+            targetInfo = { id: sibling.id, pos };
+          }
+          break;
+        }
+        // Between this sibling and next
+        if (i < sortedSiblings.length - 1) {
+          const nextSibling = sortedSiblings[i + 1];
+          if (
+            e.clientY > sibling.rect.bottom &&
+            e.clientY < nextSibling.rect.top
+          ) {
+            targetInfo = { id: sibling.id, pos: "after" };
+            break;
+          }
+        }
+      }
+    }
+  } else {
+    // Before first sibling
+    if (sortedSiblings.length > 0 && e.clientX < sortedSiblings[0].rect.left) {
+      targetInfo = { id: sortedSiblings[0].id, pos: "before" };
+    }
+    // After last sibling
+    else if (
+      sortedSiblings.length > 0 &&
+      e.clientX > sortedSiblings[sortedSiblings.length - 1].rect.right
+    ) {
+      targetInfo = {
+        id: sortedSiblings[sortedSiblings.length - 1].id,
+        pos: "after",
+      };
+    } else {
+      // Within siblings
+      for (let i = 0; i < sortedSiblings.length; i++) {
+        const sibling = sortedSiblings[i];
+        // Within this sibling
+        if (e.clientX >= sibling.rect.left && e.clientX <= sibling.rect.right) {
+          if (isMovingLeft) {
+            targetInfo = { id: sibling.id, pos: "before" };
+          } else if (isMovingRight) {
+            targetInfo = { id: sibling.id, pos: "after" };
+          } else {
+            // No movement, use position within sibling
+            const pos =
+              e.clientX < sibling.rect.left + sibling.rect.width / 2
+                ? "before"
+                : "after";
+            targetInfo = { id: sibling.id, pos };
+          }
+          break;
+        }
+        // Between this sibling and next
+        if (i < sortedSiblings.length - 1) {
+          const nextSibling = sortedSiblings[i + 1];
+          if (
+            e.clientX > sibling.rect.right &&
+            e.clientX < nextSibling.rect.left
+          ) {
+            targetInfo = { id: sibling.id, pos: "after" };
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Skip if no target found or if it hasn't changed
+  if (!targetInfo) {
+    return null;
+  }
+
+  if (
+    lastTarget &&
+    lastTarget.id === targetInfo.id &&
+    lastTarget.pos === targetInfo.pos
+  ) {
+    return null;
+  }
+
+  return {
+    targetInfo,
+    parentId,
+    isColumn,
+  };
 };

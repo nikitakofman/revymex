@@ -34,7 +34,7 @@ const InterfaceToolbar = () => {
       ) : isUIKitsOpen ? (
         <UIKitsPanel />
       ) : (
-        <Layers />
+        <p>ooo</p>
       )}
     </div>
   );

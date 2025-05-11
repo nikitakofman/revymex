@@ -772,6 +772,13 @@ export const computeSiblingReorderResult = (
   );
 };
 
+/**
+ * Get elements under the mouse during drag and filter by className
+ * @param e - Mouse event
+ * @param draggedNodeId - ID of the node being dragged
+ * @param className - Class name to check for
+ * @returns boolean indicating if an element with the className is under the mouse
+ */
 export const getFilteredElementsUnderMouseDuringDrag = (
   e: MouseEvent,
   draggedNodeId: string | number,
@@ -786,6 +793,29 @@ export const getFilteredElementsUnderMouseDuringDrag = (
   });
 
   return filteredElements[0].classList.contains(className);
+};
+
+/**
+ * Get all filtered element IDs under the mouse during drag
+ * @param e - Mouse event
+ * @param draggedNodeId - ID of the node being dragged
+ * @returns Array of node IDs under the mouse
+ */
+export const getFilteredElementIdsUnderMouseDuringDrag = (
+  e: MouseEvent,
+  draggedNodeId: string | number
+): string[] => {
+  const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
+  const filteredElements = elementsUnder.filter((el) => {
+    const isDraggedElement =
+      el.getAttribute("data-node-id") === String(draggedNodeId);
+    const isChildOfDragged = el.closest(`[data-node-id="${draggedNodeId}"]`);
+    return !isDraggedElement && !isChildOfDragged;
+  });
+
+  return filteredElements
+    .map((el) => el.getAttribute("data-node-id"))
+    .filter((id) => id !== null) as string[];
 };
 
 export const isWithinViewport = (

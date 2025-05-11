@@ -156,7 +156,13 @@ export const NodeComponent = ({
 
   // Keep all viewport children visible regardless of filter
   // This allows children to be visible when their parent viewport is visible
-  if (isViewportChild) {
+  const hasParent = parentId !== null;
+
+  // Children with parents should always be visible in their respective parent's context
+  if (hasParent) {
+    // This node has a parent, so render it regardless of viewport state
+    // This allows all children to be visible when their parent is visible
+  } else if (isViewportChild) {
     // Skip the inViewport/outOfViewport filtering for viewport children
   } else {
     // Skip rendering variants that don't match the active viewport

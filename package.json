@@ -9,10 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@fourwaves/tiptap-extension-selection-decoration": "^1.0.1",
     "@imgly/background-removal": "^1.5.8",
     "@imgly/background-removal-node": "^1.4.5",
     "@popperjs/core": "^2.11.8",
     "@radix-ui/react-slider": "^1.2.3",
+    "@radix-ui/react-toggle": "^1.1.8",
+    "@radix-ui/react-toggle-group": "^1.1.9",
     "@tiptap/extension-color": "^2.11.5",
     "@tiptap/extension-font-family": "^2.11.5",
     "@tiptap/extension-text-align": "^2.11.5",

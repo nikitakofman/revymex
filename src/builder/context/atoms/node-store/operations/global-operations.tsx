@@ -139,3 +139,64 @@ export function pushNodes(nodes: Node[]) {
     hierarchyStore.set(parentMapAtom, newParentMap);
   });
 }
+
+/**
+ * Helper function to create node data in the store
+ * @param nodeData The node data to create
+ * @returns The node ID
+ */
+export function createNodeInStore(nodeData) {
+  const {
+    id,
+    type,
+    customName,
+    style,
+    parentId,
+    sharedId,
+    isLocked,
+    inViewport,
+    isViewport,
+    viewportName,
+    viewportWidth,
+  } = nodeData;
+
+  // Add to node IDs list
+  nodeStore.set(nodeIdsAtom, (prev) => [...prev, id]);
+
+  // Set node basics
+  nodeStore.set(nodeBasicsAtom(id), {
+    id,
+    type: type || "frame",
+    customName,
+  });
+
+  // Set node style
+  nodeStore.set(nodeStyleAtom(id), style || {});
+
+  // Set node flags
+  nodeStore.set(nodeFlagsAtom(id), {
+    isLocked,
+    inViewport: inViewport !== false,
+    isViewport,
+    viewportName,
+    viewportWidth,
+  });
+
+  // Set node parent
+  nodeStore.set(nodeParentAtom(id), parentId || null);
+
+  // Set shared info if present
+  if (sharedId) {
+    nodeStore.set(nodeSharedInfoAtom(id), { sharedId });
+  }
+
+  // Set sync flags
+  nodeStore.set(nodeSyncFlagsAtom(id), {
+    independentStyles: nodeData.independentStyles || {},
+    unsyncFromParentViewport: nodeData.unsyncFromParentViewport || {},
+    variantIndependentSync: nodeData.variantIndependentSync || {},
+    lowerSyncProps: nodeData.lowerSyncProps || {},
+  });
+
+  return id;
+}

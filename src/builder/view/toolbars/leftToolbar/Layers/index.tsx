@@ -1,19 +1,24 @@
 import React, { useRef } from "react";
 import {
-  useBuilder,
   useBuilderDynamic,
   useBuilderRefs,
 } from "@/builder/context/builderState";
-import { buildTreeFromNodes, findOrCreateCanvasPosition } from "./utils";
+import { findOrCreateCanvasPosition } from "./utils";
 import TreeNodeComponent from "./TreeNodeComponent";
-import { TreeNodeWithChildren } from "@/builder/types";
-import { Label, ToolbarLabel } from "@/builder/tools/_components/ToolbarAtoms";
+import { ToolbarLabel } from "@/builder/tools/_components/ToolbarAtoms";
 import { useGetSelectedIds } from "@/builder/context/atoms/select-store";
 import { useTransform } from "@/builder/context/atoms/canvas-interaction-store";
 import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
 } from "@/builder/context/atoms/dynamic-store";
+import { useRootNodes } from "@/builder/context/atoms/node-store/hierarchy-store";
+import {
+  useGetNodeBasics,
+  useGetNodeStyle,
+  useGetNodeFlags,
+  useGetNodeParent,
+} from "@/builder/context/atoms/node-store";
 
 const Layers: React.FC = () => {
   const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
@@ -27,12 +32,15 @@ const Layers: React.FC = () => {
   const currentSelectedIds = useGetSelectedIds();
   const transform = useTransform();
 
-  const treeData = buildTreeFromNodes(
-    nodeState.nodes,
-    isDynamicMode,
-    dynamicModeNodeId,
-    activeViewportInDynamicMode
-  );
+  // Get root nodes directly from hierarchy store
+  const rootNodeIds = useRootNodes();
+
+  // Get getter functions
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+
   const panelRef = useRef<HTMLDivElement>(null);
 
   const handlePanelDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -127,12 +135,25 @@ const Layers: React.FC = () => {
         <ToolbarLabel>
           <span className="ml-2">Layers</span>
         </ToolbarLabel>
-        {treeData.map((node) => (
-          <TreeNodeComponent
-            key={node.id}
-            node={node as TreeNodeWithChildren}
-          />
-        ))}
+        {rootNodeIds.map((nodeId) => {
+          // Create minimal tree node object with required props
+          const treeNode = {
+            id: nodeId,
+            type: getNodeBasics(nodeId).type,
+            customName: getNodeBasics(nodeId).customName,
+            style: getNodeStyle(nodeId),
+            isViewport: getNodeFlags(nodeId).isViewport,
+            viewportWidth: getNodeFlags(nodeId).viewportWidth,
+            inViewport: getNodeFlags(nodeId).inViewport,
+            isDynamic: getNodeFlags(nodeId).isDynamic,
+            isVariant: getNodeFlags(nodeId).isVariant,
+            isLocked: getNodeFlags(nodeId).isLocked,
+            parentId: getNodeParent(nodeId),
+            children: [], // Children will be fetched by the component
+          };
+
+          return <TreeNodeComponent key={nodeId} node={treeNode} />;
+        })}
       </div>
     </div>
   );
