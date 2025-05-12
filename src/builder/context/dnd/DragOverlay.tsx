@@ -3,6 +3,7 @@ import {
   useDraggedNode,
   useIsDragging,
   useDragSource,
+  useIsOverCanvas,
 } from "../atoms/drag-store";
 import { NodeComponent } from "@/builder/registry/renderNodes";
 import { useTransform } from "../atoms/canvas-interaction-store";
@@ -23,6 +24,7 @@ const DragOverlay = () => {
   const dragSource = useDragSource();
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
   const transform = useTransform();
+  const isOverCanvas = useIsOverCanvas();
 
   // Listen to global mousemove
   useEffect(() => {
@@ -63,8 +65,6 @@ const DragOverlay = () => {
     left += rotShiftX * transform.scale;
     top += rotShiftY * transform.scale;
   }
-
-  console.log("draggednode", dragged);
 
   return (
     <div

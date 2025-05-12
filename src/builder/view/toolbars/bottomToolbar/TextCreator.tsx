@@ -61,6 +61,7 @@ export const TextCreator: React.FC = () => {
   const { containerRef } = useBuilderRefs();
   const [box, setBox] = useState<DrawingBoxState | null>(null);
   const targetFrameRef = useRef<{ id: string; element: Element } | null>(null);
+  const newTextNodeIdRef = useRef<string | null>(null);
 
   // Use subscription hook for text mode as it affects rendering
   const isTextModeActive = useIsTextModeActive();
@@ -154,8 +155,10 @@ export const TextCreator: React.FC = () => {
 
   // Function to handle media to frame transformation
   const handleMediaToFrameTransformationStore = (mediaNode, textNode) => {
-    // Create a new frame
+    // Create a new frame with a shared ID
     const frameId = nanoid();
+    const frameSharedId = `frame-${nanoid(8)}`;
+
     const frameNode = {
       id: frameId,
       type: "frame",
@@ -171,7 +174,7 @@ export const TextCreator: React.FC = () => {
         justifyContent: "center",
       },
       inViewport: mediaNode.inViewport,
-      sharedId: nanoid(),
+      sharedId: frameSharedId, // Use a proper shared ID format for frames
       dynamicParentId: mediaNode.dynamicParentId,
       dynamicViewportId: mediaNode.dynamicViewportId,
       position: null,
@@ -192,14 +195,19 @@ export const TextCreator: React.FC = () => {
     // Move media to frame
     moveNode(mediaNode.id, frameId);
 
-    // Add text node as sibling to media
-    addNewNode({
+    // Make sure the text node has a shared ID
+    const textNodeWithSharedId = {
       ...textNode,
+      sharedId: `text-${nanoid(8)}`, // Add a shared ID for the text
       position: "inside",
       targetId: frameId,
-    });
+    };
 
-    return true;
+    // Add text node as sibling to media
+    const textNodeId = addNewNode(textNodeWithSharedId);
+    newTextNodeIdRef.current = textNodeId;
+
+    return { frameId, textNodeId };
   };
 
   useEffect(() => {
@@ -304,6 +312,9 @@ export const TextCreator: React.FC = () => {
       const finalX = e.clientX - rect.left;
       const finalY = e.clientY - rect.top;
 
+      // Reset the text node ID ref for this operation
+      newTextNodeIdRef.current = null;
+
       // Calculate dimensions
       const left = Math.min(box.startX, finalX);
       const top = Math.min(box.startY, finalY);
@@ -352,7 +363,8 @@ export const TextCreator: React.FC = () => {
         // Create text with font size in a span element instead of on the paragraph
         const defaultText = `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`;
 
-        let newNodeId: string;
+        // Generate a shared ID for the text element
+        const textSharedId = `text-${nanoid(8)}`;
 
         // If drawing on a media element, transform it to a frame first
         if (mediaElement) {
@@ -360,6 +372,7 @@ export const TextCreator: React.FC = () => {
           const newText = {
             id: nanoid(),
             type: "text",
+            sharedId: textSharedId, // Add shared ID for the text
             style: {
               position: "relative",
               width: `auto`,
@@ -375,10 +388,17 @@ export const TextCreator: React.FC = () => {
             }),
           };
 
-          newNodeId = newText.id;
-
           // Use the store-based transformation
-          handleMediaToFrameTransformationStore(mediaElement.node, newText);
+          const { frameId, textNodeId } = handleMediaToFrameTransformationStore(
+            mediaElement.node,
+            newText
+          );
+          newTextNodeIdRef.current = textNodeId;
+
+          // Sync the created frame (which will also sync the text inside it)
+          if (!dynamicModeNodeId) {
+            syncViewports(frameId, getNodeParent(frameId));
+          }
         } else if (targetFrame) {
           // Drawing over a frame - insert text as child
           const frameChildren = allNodes
@@ -397,6 +417,7 @@ export const TextCreator: React.FC = () => {
           const newText = {
             id: nanoid(),
             type: "text",
+            sharedId: textSharedId, // Add shared ID for the text
             style: {
               position: "relative",
               width: `auto`,
@@ -412,8 +433,6 @@ export const TextCreator: React.FC = () => {
             }),
           };
 
-          newNodeId = newText.id;
-
           const dropIndicator = computeFrameDropIndicator(
             targetFrame.element,
             frameChildren,
@@ -421,26 +440,35 @@ export const TextCreator: React.FC = () => {
             e.clientY
           );
 
+          let nodeId;
           if (dropIndicator?.dropInfo) {
             // Add to specific position
-            addNewNode({
+            nodeId = addNewNode({
               ...newText,
               position: dropIndicator.dropInfo.position,
               targetId: dropIndicator.dropInfo.targetId,
             });
           } else {
             // Add as child of target frame
-            addNewNode({
+            nodeId = addNewNode({
               ...newText,
               position: "inside",
               targetId: targetFrame.id,
             });
+          }
+
+          newTextNodeIdRef.current = nodeId;
+
+          // Sync the text node
+          if (!dynamicModeNodeId) {
+            syncViewports(nodeId, getNodeParent(nodeId));
           }
         } else {
           // Drawing on canvas - create absolute positioned text
           const newText = {
             id: nanoid(),
             type: "text",
+            sharedId: textSharedId, // Add shared ID for the text
             style: {
               position: "absolute",
               left: `${canvasX}px`,
@@ -458,30 +486,30 @@ export const TextCreator: React.FC = () => {
             }),
           };
 
-          newNodeId = newText.id;
-
           // Add to root
-          addNewNode({
+          const nodeId = addNewNode({
             ...newText,
             position: null,
             targetId: null,
           });
+
+          newTextNodeIdRef.current = nodeId;
+
+          // Sync the text node if it's in a viewport
+          if (!dynamicModeNodeId && isInViewport(nodeId)) {
+            syncViewports(nodeId, getNodeParent(nodeId));
+          }
         }
 
         // Additional text styling options based on dimensions
-        if (width / transform.scale > 500) {
+        if (width / transform.scale > 500 && newTextNodeIdRef.current) {
           // For wider text boxes, center align text
           setTimeout(() => {
-            updateNodeStyle(newNodeId, {
+            updateNodeStyle(newTextNodeIdRef.current, {
               text: `<p class="text-inherit" style="text-align: center"><span style="color: #000000; font-size: ${calculatedFontSize}px">Text</span></p>`,
             });
           }, 0);
         }
-      }
-
-      if (!dynamicModeNodeId) {
-        // Only sync viewports if we're NOT in dynamic mode
-        syncViewports(null, null);
       }
 
       // Hide the style helper
@@ -493,6 +521,23 @@ export const TextCreator: React.FC = () => {
 
       // Use canvasOps instead of setIsTextModeActive
       canvasOps.setIsTextModeActive(false);
+    };
+
+    // Helper function to check if a node is in a viewport
+    const isInViewport = (nodeId: NodeId): boolean => {
+      if (!nodeId) return false;
+
+      const parentMap = hierarchyStore.get(parentMapAtom);
+      let current: NodeId | null | undefined = nodeId;
+
+      while (current) {
+        if (typeof current === "string" && current.includes("viewport")) {
+          return true;
+        }
+        current = parentMap.get(current);
+      }
+
+      return false;
     };
 
     canvas.addEventListener("mousedown", handleMouseDown);

@@ -1,76 +1,58 @@
-// Example usage in DimensionsTool.tsx
 import React, { useEffect, useState } from "react";
 import { ToolbarContainer, ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
-import { useBuilder } from "@/builder/context/builderState";
-import { useGetSelectedIds } from "../context/atoms/select-store";
+import { useSelectedIds } from "@/builder/context/atoms/select-store";
+import { useElementSize } from "./useElementSize";
 
 const DimensionsTool = () => {
+  // Get selected IDs
+  const selectedIds = useSelectedIds();
+
+  // State for unit types
   const [widthUnit, setWidthUnit] = useState("px");
   const [heightUnit, setHeightUnit] = useState("px");
+
+  // Track if we're showing a viewport
   const [isViewport, setIsViewport] = useState(true);
 
-  // Replace subscription with imperative getter
-  const getSelectedIds = useGetSelectedIds();
+  // Use our hook with accurate dimensions
+  const { width, height } = useElementSize(selectedIds);
 
+  // Check if primary element is a viewport and determine units
   useEffect(() => {
-    // Get the current selected IDs only when this effect runs
-    const selectedIds = getSelectedIds();
+    if (selectedIds.length === 0) return;
 
-    if (selectedIds.length > 0) {
-      // Check if the selected node is a viewport
-      setIsViewport(!selectedIds[0].includes("viewport"));
+    const primaryId = selectedIds[0];
+    setIsViewport(!primaryId.includes("viewport"));
 
-      const element = document.querySelector(
-        `[data-node-id="${selectedIds[0]}"]`
-      ) as HTMLElement;
+    // Get the element to check its units
+    const element = document.querySelector(
+      `[data-node-id="${primaryId}"]`
+    ) as HTMLElement;
+    if (!element) return;
 
-      if (element) {
-        const style = window.getComputedStyle(element);
-        const widthMatch = style.width.match(/[a-z%]+$/);
-        const heightMatch = style.height.match(/[a-z%]+$/);
+    // Check if there's an inline style with width/height units
+    const elementStyle = element.getAttribute("style");
 
-        if (widthMatch) setWidthUnit(widthMatch[0]);
-        if (heightMatch) setHeightUnit(heightMatch[0]);
+    if (elementStyle) {
+      // Extract units directly from style attribute for highest accuracy
+      const widthUnitMatch = elementStyle.match(/width:\s*[\d.]+([a-z%]+)/);
+      const heightUnitMatch = elementStyle.match(/height:\s*[\d.]+([a-z%]+)/);
+
+      if (widthUnitMatch && widthUnitMatch[1]) {
+        setWidthUnit(widthUnitMatch[1]);
+      }
+
+      if (heightUnitMatch && heightUnitMatch[1]) {
+        setHeightUnit(heightUnitMatch[1]);
       }
     }
-  }, [getSelectedIds]);
+  }, [selectedIds]);
 
-  // Set up a DOM-based observer to detect selection changes
+  // Debug helper - log actual values to confirm they're correct
   useEffect(() => {
-    const selectionObserver = new MutationObserver(() => {
-      // When selection changes, re-run the logic
-      const selectedIds = getSelectedIds();
-
-      if (selectedIds.length > 0) {
-        setIsViewport(!selectedIds[0].includes("viewport"));
-
-        const element = document.querySelector(
-          `[data-node-id="${selectedIds[0]}"]`
-        ) as HTMLElement;
-
-        if (element) {
-          const style = window.getComputedStyle(element);
-          const widthMatch = style.width.match(/[a-z%]+$/);
-          const heightMatch = style.height.match(/[a-z%]+$/);
-
-          if (widthMatch) setWidthUnit(widthMatch[0]);
-          if (heightMatch) setHeightUnit(heightMatch[0]);
-        }
-      }
-    });
-
-    // Observe changes to data-selected attribute on any element
-    selectionObserver.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["data-selected"],
-      subtree: true,
-    });
-
-    return () => {
-      selectionObserver.disconnect();
-    };
-  }, [getSelectedIds]);
+    console.log(`Current dimensions: ${width}x${height}`);
+  }, [width, height]);
 
   return (
     <ToolbarContainer>
@@ -81,6 +63,7 @@ const DimensionsTool = () => {
             label="Width"
             name="width"
             showUnit
+            value={width} // Pass the exact width from our hook
             unit={widthUnit}
             onUnitChange={setWidthUnit}
           />
@@ -91,6 +74,7 @@ const DimensionsTool = () => {
           label="Height"
           name="height"
           showUnit
+          value={height} // Pass the exact height from our hook
           unit={heightUnit}
           onUnitChange={setHeightUnit}
         />

@@ -54,7 +54,7 @@ import {
 } from "@/builder/context/atoms/node-store/hierarchy-store";
 import DragOverlay from "@/builder/context/dnd/DragOverlay";
 import TextEditor from "@/builder/registry/elements/TextElement/TextEditor";
-import SnapGuides from "@/builder/context/canvasHelpers/snapGrids/snapGuides";
+import SnapGuides from "@/builder/context/canvasHelpers/snapGrids/SnapGuides";
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const hasInitializedAtoms = useRef(false);

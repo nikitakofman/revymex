@@ -4,6 +4,7 @@ import {
   useGetIsDragging,
   dragOps,
   useGetDragSource,
+  useGetDropInfo,
 } from "../atoms/drag-store";
 import { useBuilderRefs } from "@/builder/context/builderState";
 import { useGetTransform } from "../atoms/canvas-interaction-store";
@@ -37,6 +38,7 @@ export const useMouseMove = () => {
   const getDragSource = useGetDragSource();
   const { containerRef } = useBuilderRefs();
   const getTransform = useGetTransform();
+  const getDropInfo = useGetDropInfo();
 
   const lastTarget = useRef<TargetInfo | null>(null);
   const prevMousePosRef = useRef({ x: 0, y: 0 });
@@ -62,8 +64,17 @@ export const useMouseMove = () => {
       const transform = getTransform();
       const { x, y } = screenToCanvas(e, containerRect, transform);
 
-      // Get snap guides state
-      const { enabled, activeSnapPoints } = snapOps.getState();
+      // Check if there's an active drop zone
+      const dropInfo = getDropInfo();
+      const hasActiveDropZone = dropInfo && dropInfo.targetId !== null;
+
+      // Get snap guides state - only if no active drop zone
+      const { enabled, activeSnapPoints } = hasActiveDropZone
+        ? {
+            enabled: false,
+            activeSnapPoints: { horizontal: null, vertical: null },
+          }
+        : snapOps.getState();
 
       // Calculate mouse speed (pixels per frame)
       const mouseSpeed = {
@@ -103,8 +114,8 @@ export const useMouseMove = () => {
         height = style.height;
       }
 
-      // Apply snapping if enabled and we have active snap points
-      if (enabled) {
+      // Apply snapping if enabled, we have active snap points, and no active drop zone
+      if (enabled && !hasActiveDropZone) {
         // Apply horizontal snapping
         if (activeSnapPoints.horizontal) {
           const snapPoint = activeSnapPoints.horizontal;

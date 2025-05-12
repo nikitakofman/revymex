@@ -308,7 +308,9 @@ export const FrameCreator: React.FC = () => {
       // Variables to track encapsulated dynamic elements and frame info
       let encapsulatedDynamicElements = [];
       let newFrameId = null;
-      let newFrameSharedId = nanoid(); // Generate a shared ID for frames
+
+      // FIX: Use a consistent prefix for shared IDs to make them more identifiable
+      let newFrameSharedId = `frame-${nanoid(8)}`; // Generate a shared ID for frames
 
       if (width > 5 && height > 5) {
         const canvasX = (left - transform.x) / transform.scale;
@@ -505,7 +507,7 @@ export const FrameCreator: React.FC = () => {
 
         if (mediaElement) {
           // We're drawing over a media element - transform it to a frame
-          const newFrameId = nanoid();
+          newFrameId = nanoid();
           const newFrame = {
             id: newFrameId,
             type: "frame",
@@ -722,7 +724,14 @@ export const FrameCreator: React.FC = () => {
 
       if (!dynamicModeNodeId) {
         // Sync viewports to create duplicates
-        syncViewports(newFrameId, getNodeParent(newFrameId));
+        // FIX: Pass newFrameId and sharedId explicitly when syncing viewports
+        if (newFrameId) {
+          console.log(
+            `Syncing frame ${newFrameId} with shared ID ${newFrameSharedId}`,
+            getNodeParent(newFrameId)
+          );
+          syncViewports(newFrameId, getNodeParent(newFrameId));
+        }
 
         // After syncing viewports, fix the parent-child relationships for dynamic elements
         if (encapsulatedDynamicElements.length > 0 && newFrameSharedId) {

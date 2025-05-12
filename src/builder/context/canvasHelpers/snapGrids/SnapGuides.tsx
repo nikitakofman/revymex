@@ -9,6 +9,7 @@ import {
   useIsDragging,
   useDragSource,
   useDragPositions,
+  useDropInfo, // Add this import to get the current drop info
 } from "@/builder/context/atoms/drag-store";
 import { useGetAllNodes } from "@/builder/context/atoms/node-store";
 import {
@@ -33,12 +34,14 @@ const SnapGuides: React.FC = () => {
   const dragPositions = useDragPositions();
   const getAllNodes = useGetAllNodes();
 
+  // Get drop info state
+  const dropInfo = useDropInfo();
+  const hasActiveDropZone = dropInfo && dropInfo.targetId !== null;
+
   const animationFrameRef = useRef<number | null>(null);
 
   // Calculate all possible snap positions
   useEffect(() => {
-    console.log("SnapGuides: Initializing snap positions");
-
     const calculateSnapPositions = () => {
       try {
         // Get canvas content element
@@ -55,9 +58,6 @@ const SnapGuides: React.FC = () => {
 
         // Get all DOM nodes with data-node-id
         const elements = document.querySelectorAll("[data-node-id]");
-        console.log(
-          `SnapGuides: Found ${elements.length} elements with data-node-id`
-        );
 
         // Get all node data from store
         const allNodes = getAllNodes();
@@ -70,7 +70,7 @@ const SnapGuides: React.FC = () => {
           const nodeId = element.getAttribute("data-node-id");
 
           // Skip if this is the dragged node
-          if (draggedNode && nodeId === draggedNode.node.id) {
+          if (draggedNode && nodeId === draggedNode.node?.id) {
             return;
           }
 
@@ -79,9 +79,6 @@ const SnapGuides: React.FC = () => {
 
           // Skip nodes that are in viewport
           if (nodeData && nodeData.inViewport === true) {
-            console.log(
-              `SnapGuides: Skipping node ${nodeId} (inViewport:true)`
-            );
             return;
           }
 
@@ -120,11 +117,6 @@ const SnapGuides: React.FC = () => {
           horizontal: validHorizontal,
           vertical: validVertical,
         });
-
-        console.log("SnapGuides: Snap positions calculated", {
-          horizontal: validHorizontal.length,
-          vertical: validVertical.length,
-        });
       } catch (error) {
         console.error("SnapGuides: Error calculating snap positions", error);
       }
@@ -149,7 +141,8 @@ const SnapGuides: React.FC = () => {
       !draggedNode ||
       !dragPositions ||
       isMovingCanvas ||
-      dragSource !== "canvas"
+      dragSource !== "canvas" ||
+      hasActiveDropZone // Skip snap guides when a drop zone is active
     ) {
       // Reset active guides and snap points in the store
       snapOps.resetGuides();
@@ -158,14 +151,9 @@ const SnapGuides: React.FC = () => {
 
     // Skip if dragged node is inViewport
     if (draggedNode.node.inViewport === true) {
-      console.log(
-        "SnapGuides: Skipping snap guides for node with inViewport:true"
-      );
       snapOps.resetGuides();
       return;
     }
-
-    console.log("SnapGuides: Checking canvas drag alignment");
 
     // Get current state from store
     const snapGuidesState = snapOps.getState();
@@ -174,6 +162,12 @@ const SnapGuides: React.FC = () => {
 
     const checkForAlignment = () => {
       try {
+        // Check again inside animation frame if drop zone has been activated
+        if (hasActiveDropZone) {
+          snapOps.resetGuides();
+          return;
+        }
+
         // Extract dimensions from draggedNode
         const { style } = draggedNode.node;
         let width = 100; // Default
@@ -314,12 +308,13 @@ const SnapGuides: React.FC = () => {
     transform,
     isMovingCanvas,
     dragSource,
+    hasActiveDropZone, // Add hasActiveDropZone as a dependency
   ]);
 
-  // Only render when there are active guides
+  // Only render when there are active guides and no active drop zone
   if (
-    activeGuides.horizontal.length === 0 &&
-    activeGuides.vertical.length === 0
+    hasActiveDropZone || // Don't show guides when drop zone is active
+    (activeGuides.horizontal.length === 0 && activeGuides.vertical.length === 0)
   ) {
     return null;
   }

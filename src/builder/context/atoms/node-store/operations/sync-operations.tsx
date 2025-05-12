@@ -47,6 +47,15 @@ import {
  * @param sourceParentId ID of the parent where the operation happened
  * @param targetIndex Index position in the children array (optional)
  */
+/**
+ * Synchronize node positions across all viewports using shared IDs
+ * Works for direct viewport children and nested elements
+ * Properly handles index adjustment for forward vs backward moves
+ *
+ * @param nodeId ID of the node being moved/synchronized
+ * @param sourceParentId ID of the parent where the operation happened
+ * @param targetIndex Index position in the children array (optional)
+ */
 export function syncViewports(
   nodeId: NodeId,
   sourceParentId: NodeId,
@@ -342,27 +351,27 @@ export function syncViewports(
               adjustedIndex = siblings.length;
             }
 
-            // Generate a new unique shared ID for this duplicate
-            // This is different from the original shared ID
-            const newSharedId = `shared-${nanoid(8)}`;
+            // FIX: Use the original node's shared ID instead of generating a new one
+            // to maintain consistency across viewports
+            const newSharedId = movedNode.sharedId;
 
-            // Store this new shared ID
+            // Store this shared ID
             newSharedIdsByViewport.get(viewportId)!.push(newSharedId);
 
-            console.log(`Using NEW shared ID ${newSharedId} for duplicate`);
+            console.log(`Using shared ID ${newSharedId} for duplicate`);
 
-            // Create a clone with the NEW shared ID
+            // Create a clone with the shared ID
             const cloneId = duplicateNodeToViewport(
               nodeId,
               targetParentId,
-              newSharedId, // Use a NEW shared ID for duplicates
+              newSharedId,
               adjustedIndex
             );
 
             console.log(
               "Clone created:",
               cloneId,
-              "with new shared ID:",
+              "with shared ID:",
               newSharedId
             );
           }
@@ -540,7 +549,6 @@ export function syncViewports(
  * @param targetIndex Position to insert at (optional)
  * @returns ID of the duplicated node
  */
-
 export function duplicateNodeToViewport(
   sourceNodeId: NodeId,
   targetParentId: NodeId,
@@ -623,8 +631,9 @@ export function duplicateNodeToViewport(
         return;
       }
 
-      // Generate unique shared ID for each child to maintain proper hierarchy
-      const childSharedId = `${sharedId}-child-${index}`;
+      // FIX: Preserve the child's existing shared ID if it has one
+      // Otherwise, use a predictable ID pattern based on the parent shared ID
+      const childSharedId = childNode.sharedId || `${sharedId}-child-${index}`;
 
       console.log(
         `Duplicating child ${childId} with shared ID ${childSharedId}`
