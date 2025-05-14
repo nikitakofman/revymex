@@ -1,17 +1,13 @@
 import React, { useEffect, useState, useRef } from "react";
 import InterfaceToolbar from "../toolbars/leftToolbar";
 import { RenderNodes } from "../../registry/renderNodes";
-import {
-  useBuilder,
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import { ViewportDevTools } from "../../dev/ViewportDevTools";
 import ElementToolbar from "../toolbars/rightToolbar";
 import { LineIndicator } from "@/builder/context/canvasHelpers/LineIndicator";
 import { ToolbarDragPreview } from "@/builder/context/canvasHelpers/toolbarDragPreview";
 import { StyleUpdateHelper } from "@/builder/context/canvasHelpers/StyleUpdateHelper";
-import { ArrowConnectors } from "../../context/canvasHelpers/ArrowConnectors";
+import { ArrowConnectors } from "../../context/dynamic/ArrowConnectors";
 import { ContextMenu } from "@/builder/context/canvasHelpers/ContextMenu";
 import Header from "../header";
 import SelectionBox from "@/builder/context/canvasHelpers/SelectionBox";
@@ -22,7 +18,7 @@ import "react-tooltip/dist/react-tooltip.css";
 import BottomToolbar from "../toolbars/bottomToolbar";
 import LoadingScreen from "./loading-screen";
 import { DynamicToolbar } from "../toolbars/dynamicToolbar";
-import ConnectionTypeModal from "@/builder/context/canvasHelpers/ConnectionTypeModal";
+import ConnectionTypeModal from "@/builder/context/dynamic/ConnectionTypeModal";
 import IframePreview from "../preview/iframePreview";
 import AddViewportModal from "@/builder/context/canvasHelpers/AddViewportModal";
 import EditViewportModal from "@/builder/context/canvasHelpers/EditViewportModal";
@@ -45,6 +41,7 @@ import {
   initNodeStateFromInitialState,
   nodeStore,
   nodeIdsAtom,
+  getCurrentNodes,
 } from "@/builder/context/atoms/node-store";
 import { nodeInitialState } from "@/builder/reducer/state";
 import {
@@ -55,19 +52,22 @@ import {
 import DragOverlay from "@/builder/context/dnd/DragOverlay";
 import TextEditor from "@/builder/registry/elements/TextElement/TextEditor";
 import SnapGuides from "@/builder/context/canvasHelpers/snapGrids/SnapGuides";
+import DropIndicator from "@/builder/context/canvasHelpers/DropIndicator";
+import PreviewPlay from "../preview/preview-play";
+import { DropTargetHighlighter } from "@/builder/context/canvasHelpers/DropIndicator";
+
 const Canvas = () => {
   const [isLoading, setIsLoading] = useState(true);
   const hasInitializedAtoms = useRef(false);
 
-  const { nodeState } = useBuilderDynamic();
   const { containerRef, contentRef } = useBuilderRefs();
 
   const isPreviewOpen = useIsPreviewOpen();
-
   const getIsSelectionBoxActive = useGetIsSelectionBoxActive();
-
   const { clearSelection } = selectOps;
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
+  // Initialize atoms on first render
   useEffect(() => {
     if (!hasInitializedAtoms.current) {
       const parentChildMap = {};
@@ -83,6 +83,7 @@ const Canvas = () => {
       const nodeIds = nodeStore.get(nodeIdsAtom);
 
       try {
+        // Any additional initialization logic can go here
       } catch (error) {
         console.error("Error checking hierarchy store:", error);
       }
@@ -91,14 +92,15 @@ const Canvas = () => {
     }
   }, []);
 
+  // Handle preview state changes
   useEffect(() => {
     if (!isPreviewOpen) {
       canvasOps.setIsMovingCanvas(false);
-
       window.dispatchEvent(new Event("resize"));
     }
   }, [isPreviewOpen]);
 
+  // Loading screen logic
   useEffect(() => {
     const minLoadTime = 800;
     const minLoadTimer = setTimeout(() => {
@@ -143,7 +145,8 @@ const Canvas = () => {
     }
   };
 
-  const dynamicModeNodeId = useDynamicModeNodeId();
+  // Get current nodes for the preview using getCurrentNodes() instead of nodeState
+  const currentNodes = isPreviewOpen ? getCurrentNodes() : [];
 
   return (
     <>
@@ -159,7 +162,7 @@ const Canvas = () => {
         }`}
       >
         {isPreviewOpen ? (
-          <IframePreview nodes={nodeState.nodes} viewport={1440} />
+          <PreviewPlay nodes={currentNodes} viewport={1440} />
         ) : (
           <>
             <ViewportDevTools />
@@ -211,6 +214,7 @@ const Canvas = () => {
                 <ContextMenu />
               </div>
             </div>
+            <DropTargetHighlighter />
             <BottomToolbar />
             <ElementToolbar />
             <ConnectionTypeModal />

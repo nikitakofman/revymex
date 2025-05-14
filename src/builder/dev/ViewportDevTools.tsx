@@ -7,20 +7,16 @@ import React, {
   useMemo,
   useEffect,
 } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
 import { Sun, Moon, PlayCircle, Copy } from "lucide-react";
-import { Node } from "@/builder/reducer/nodeDispatcher";
 import { createPortal } from "react-dom";
 import { useGetSelectedIds } from "../context/atoms/select-store";
 import {
   canvasOps,
   useTransform,
 } from "../context/atoms/canvas-interaction-store";
-import {
-  dynamicOps,
-  useDynamicModeNodeId,
-} from "../context/atoms/dynamic-store";
+import { useNodeHistory } from "../context/hooks/useHistory";
 import {
   NodeId,
   nodeStore,
@@ -31,7 +27,17 @@ import {
   nodeParentAtom,
   nodeSharedInfoAtom,
   nodeDynamicInfoAtom,
+  nodeVariantInfoAtom,
+  nodeSyncFlagsAtom,
+  nodeDynamicStateAtom,
+  getCurrentNodes,
 } from "../context/atoms/node-store";
+import {
+  useRootNodes,
+  childrenMapAtom,
+  parentMapAtom,
+  hierarchyStore,
+} from "../context/atoms/node-store/hierarchy-store";
 import { pushNodes } from "../context/atoms/node-store/operations/global-operations";
 
 interface Operation {
@@ -41,62 +47,143 @@ interface Operation {
   options?: any;
 }
 
-function getNodesFromJotai() {
+// Function to get a comprehensive view of a node from Jotai
+function getDetailedNode(nodeId: NodeId) {
+  const basics = nodeStore.get(nodeBasicsAtom(nodeId));
+  const style = nodeStore.get(nodeStyleAtom(nodeId));
+  const flags = nodeStore.get(nodeFlagsAtom(nodeId));
+  const parentId = nodeStore.get(nodeParentAtom(nodeId));
+  const sharedInfo = nodeStore.get(nodeSharedInfoAtom(nodeId));
+  const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(nodeId));
+  const variantInfo = nodeStore.get(nodeVariantInfoAtom(nodeId));
+  const syncFlags = nodeStore.get(nodeSyncFlagsAtom(nodeId));
+  const dynamicState = nodeStore.get(nodeDynamicStateAtom(nodeId));
+
+  // Get children from hierarchy store
+  const childrenMap = hierarchyStore.get(childrenMapAtom);
+  const children = childrenMap.get(nodeId) || [];
+
+  return {
+    id: basics.id,
+    type: basics.type,
+    customName: basics.customName,
+    style,
+    parentId,
+    children,
+    sharedId: sharedInfo.sharedId,
+    // Dynamic info
+    dynamicViewportId: dynamicInfo.dynamicViewportId,
+    dynamicFamilyId: dynamicInfo.dynamicFamilyId,
+    dynamicParentId: dynamicInfo.dynamicParentId,
+    dynamicConnections: dynamicInfo.dynamicConnections,
+    dynamicPosition: dynamicInfo.dynamicPosition,
+    originalParentId: dynamicInfo.originalParentId,
+    originalState: dynamicInfo.originalState,
+    // Variant info
+    variantParentId: variantInfo.variantParentId,
+    variantInfo: variantInfo.variantInfo,
+    variantResponsiveId: variantInfo.variantResponsiveId,
+    // Flags
+    isViewport: flags.isViewport,
+    viewportWidth: flags.viewportWidth,
+    viewportName: flags.viewportName,
+    isVariant: flags.isVariant,
+    isDynamic: flags.isDynamic,
+    isLocked: flags.isLocked,
+    isAbsoluteInFrame: flags.isAbsoluteInFrame,
+    inViewport: flags.inViewport,
+    // Sync flags
+    syncFlags: {
+      independentStyles: syncFlags.independentStyles,
+      unsyncFromParentViewport: syncFlags.unsyncFromParentViewport,
+      variantIndependentSync: syncFlags.variantIndependentSync,
+      lowerSyncProps: syncFlags.lowerSyncProps,
+    },
+    // Dynamic state
+    dynamicState,
+  };
+}
+
+// Function to get all nodes from the Jotai store
+function getAllNodesFromJotai() {
   // Get all node IDs from the Jotai store
   const nodeIds = nodeStore.get(nodeIdsAtom);
 
-  // Create nodes array from IDs
-  return nodeIds.map((id) => {
-    const basics = nodeStore.get(nodeBasicsAtom(id));
-    const style = nodeStore.get(nodeStyleAtom(id));
-    const flags = nodeStore.get(nodeFlagsAtom(id));
-    const parentId = nodeStore.get(nodeParentAtom(id));
-    const sharedInfo = nodeStore.get(nodeSharedInfoAtom(id));
-    const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(id));
-
-    return {
-      id: basics.id,
-      type: basics.type,
-      customName: basics.customName,
-      style,
-      parentId,
-      sharedId: sharedInfo.sharedId,
-      dynamicViewportId: dynamicInfo.dynamicViewportId,
-      dynamicFamilyId: dynamicInfo.dynamicFamilyId,
-      dynamicParentId: dynamicInfo.dynamicParentId,
-      dynamicConnections: dynamicInfo.dynamicConnections,
-      dynamicPosition: dynamicInfo.dynamicPosition,
-      originalParentId: dynamicInfo.originalParentId,
-      originalState: dynamicInfo.originalState,
-      isViewport: flags.isViewport,
-      viewportWidth: flags.viewportWidth,
-      isVariant: flags.isVariant,
-      isDynamic: flags.isDynamic,
-      isLocked: flags.isLocked,
-      isAbsoluteInFrame: flags.isAbsoluteInFrame,
-      inViewport: flags.inViewport,
-    };
-  });
+  // Create detailed nodes for each ID
+  return nodeIds.map((id) => getDetailedNode(id));
 }
 
-function getDescendants(nodes: Node[], rootId: string | number): Node[] {
-  const result: Node[] = [];
+// Function to get nodes grouped by viewport
+function getNodesGroupedByViewport() {
+  const allNodes = getAllNodesFromJotai();
+  const viewports = allNodes.filter((node) => node.isViewport);
+
+  // Create a map of viewport ID to nodes in that viewport
+  const nodesByViewport = new Map();
+
+  // Initialize map with empty arrays for each viewport
+  viewports.forEach((viewport) => {
+    nodesByViewport.set(viewport.id, []);
+  });
+
+  // Helper function to find viewport for a node
+  const findViewport = (nodeId: NodeId): NodeId | null => {
+    const parentMap = hierarchyStore.get(parentMapAtom);
+    let current = nodeId;
+
+    while (current) {
+      const node = allNodes.find((n) => n.id === current);
+      if (node?.isViewport) {
+        return current;
+      }
+
+      const parentId = parentMap.get(current);
+      if (!parentId) break;
+      current = parentId;
+    }
+
+    return null;
+  };
+
+  // Add each node to its viewport's array
+  allNodes.forEach((node) => {
+    if (!node.isViewport) {
+      const viewportId = findViewport(node.id);
+      if (viewportId && nodesByViewport.has(viewportId)) {
+        nodesByViewport.get(viewportId).push(node);
+      }
+    }
+  });
+
+  return {
+    viewports,
+    nodesByViewport,
+  };
+}
+
+function getDescendants(nodes: any[], rootId: string | number): any[] {
+  const result: any[] = [];
   const queue = [rootId];
+
+  // Get the children map from hierarchy store
+  const childrenMap = hierarchyStore.get(childrenMapAtom);
 
   while (queue.length) {
     const current = queue.shift()!;
-    const children = nodes.filter(
-      (n) => n.parentId === current && n.type !== "placeholder"
-    );
-    for (const child of children) {
-      result.push(child);
-      queue.push(child.id);
+    const children = childrenMap.get(current) || [];
+
+    for (const childId of children) {
+      const childNode = nodes.find((n) => n.id === childId);
+      if (childNode && childNode.type !== "placeholder") {
+        result.push(childNode);
+        queue.push(childId);
+      }
     }
   }
   return result;
 }
 
-const NodeDispOperations: React.FC<{
+const OperationsList: React.FC<{
   operations: Operation[];
   onClear: () => void;
 }> = ({ operations, onClear }) => {
@@ -121,7 +208,7 @@ const NodeDispOperations: React.FC<{
     <div className="flex flex-col h-full">
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2">
-          <h3 className="font-semibold">NodeDispatcher Operations</h3>
+          <h3 className="font-semibold">Operations</h3>
           <span className="text-sm text-[var(--text-secondary)]">
             ({filteredOperations.length} total)
           </span>
@@ -195,24 +282,180 @@ const NodeDispOperations: React.FC<{
   );
 };
 
+// Component to display hierarchy store information
+const HierarchyStoreView: React.FC = () => {
+  const rootNodes = useRootNodes();
+
+  // Get hierarchy data directly from the stores
+  const childrenMap = hierarchyStore.get(childrenMapAtom);
+  const parentMap = hierarchyStore.get(parentMapAtom);
+
+  // Create presentable data objects
+  const childrenMapData = Array.from(childrenMap.entries()).map(
+    ([parentId, children]) => ({
+      parentId: parentId || "null", // Replace null with "null" for display
+      children,
+    })
+  );
+
+  const parentMapData = Array.from(parentMap.entries()).map(
+    ([childId, parentId]) => ({
+      childId,
+      parentId: parentId || "null", // Replace null with "null" for display
+    })
+  );
+
+  return (
+    <div className="flex flex-col">
+      <h3 className="font-semibold mb-2">Hierarchy Store</h3>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <h4 className="text-sm font-medium mb-2">Root Nodes</h4>
+          <pre className="text-xs p-2 bg-[var(--control-bg)] rounded-[var(--radius-sm)] max-h-[200px] overflow-auto">
+            {JSON.stringify(rootNodes, null, 2)}
+          </pre>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium mb-2">Parent Map (Sample)</h4>
+          <pre className="text-xs p-2 bg-[var(--control-bg)] rounded-[var(--radius-sm)] max-h-[200px] overflow-auto">
+            {JSON.stringify(parentMapData.slice(0, 10), null, 2)}
+            {parentMapData.length > 10 && "... (more entries)"}
+          </pre>
+        </div>
+
+        <div className="col-span-2">
+          <h4 className="text-sm font-medium mb-2">Children Map (Sample)</h4>
+          <pre className="text-xs p-2 bg-[var(--control-bg)] rounded-[var(--radius-sm)] max-h-[200px] overflow-auto">
+            {JSON.stringify(childrenMapData.slice(0, 10), null, 2)}
+            {childrenMapData.length > 10 && "... (more entries)"}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Component to show shared nodes and their sync status
+const SharedNodesView: React.FC = () => {
+  const [sharedGroups, setSharedGroups] = useState<Record<string, any[]>>({});
+
+  useEffect(() => {
+    // Get all nodes
+    const allNodes = getAllNodesFromJotai();
+
+    // Group nodes by sharedId
+    const groups: Record<string, any[]> = {};
+
+    allNodes.forEach((node) => {
+      if (node.sharedId) {
+        if (!groups[node.sharedId]) {
+          groups[node.sharedId] = [];
+        }
+        groups[node.sharedId].push(node);
+      }
+    });
+
+    // Filter to only include groups with more than one node
+    const filteredGroups: Record<string, any[]> = {};
+    Object.entries(groups).forEach(([sharedId, nodes]) => {
+      if (nodes.length > 1) {
+        filteredGroups[sharedId] = nodes;
+      }
+    });
+
+    setSharedGroups(filteredGroups);
+  }, []);
+
+  return (
+    <div className="flex flex-col">
+      <h3 className="font-semibold mb-4">Shared Nodes Groups</h3>
+
+      {Object.keys(sharedGroups).length === 0 ? (
+        <p className="text-[var(--text-secondary)]">No shared nodes found</p>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(sharedGroups).map(([sharedId, nodes]) => (
+            <div
+              key={sharedId}
+              className="border border-[var(--border-light)] rounded-[var(--radius-md)] p-4"
+            >
+              <h4 className="font-medium mb-2">
+                Shared ID: {sharedId} ({nodes.length} nodes)
+              </h4>
+
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-[var(--control-bg)]">
+                    <th className="p-2 text-left">Node ID</th>
+                    <th className="p-2 text-left">Viewport</th>
+                    <th className="p-2 text-left">Position</th>
+                    <th className="p-2 text-left">Unsync Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nodes.map((node) => {
+                    // Find node's viewport
+                    const viewportNode = getDetailedNode(node.parentId);
+                    const viewportName =
+                      viewportNode?.viewportName ||
+                      viewportNode?.viewportWidth ||
+                      "Unknown";
+
+                    return (
+                      <tr
+                        key={node.id}
+                        className="border-t border-[var(--border-light)]"
+                      >
+                        <td className="p-2">{node.id}</td>
+                        <td className="p-2">{viewportName}</td>
+                        <td className="p-2">
+                          {node.style.position || "static"}
+                        </td>
+                        <td className="p-2">
+                          {node.syncFlags?.unsyncFromParentViewport
+                            ? Object.keys(
+                                node.syncFlags.unsyncFromParentViewport
+                              ).join(", ")
+                            : "None"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ViewportDevTools: React.FC = () => {
-  const { nodeState, nodeDisp, operations, clearOperations } =
-    useBuilderDynamic();
+  // Get operations through useNodeHistory
+  const { operations = [], clearOperations = () => {} } =
+    useNodeHistory() || {};
 
   // Get Jotai node state
-  const [jotaiNodes, setJotaiNodes] = useState(() => getNodesFromJotai());
+  const [jotaiNodes, setJotaiNodes] = useState(() => getAllNodesFromJotai());
+  const [hierarchyData, setHierarchyData] = useState<{
+    viewports: any[];
+    nodesByViewport: Map<any, any[]>;
+  }>(() => getNodesGroupedByViewport());
 
   // Update Jotai node state periodically
   useEffect(() => {
     const intervalId = setInterval(() => {
-      setJotaiNodes(getNodesFromJotai());
+      setJotaiNodes(getAllNodesFromJotai());
+      setHierarchyData(getNodesGroupedByViewport());
     }, 1000); // Update every second
 
     return () => clearInterval(intervalId);
   }, []);
 
   const transform = useTransform();
-  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Replace subscription with imperative getter
   const getSelectedIds = useGetSelectedIds();
@@ -246,8 +489,8 @@ export const ViewportDevTools: React.FC = () => {
   const [showTree, setShowTree] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
-    "view" | "jotai" | "perViewport" | "import" | "drag" | "nodeDisp"
-  >("view");
+    "jotai" | "perViewport" | "import" | "hierarchy" | "operations" | "shared"
+  >("jotai");
 
   const [mounted, setMounted] = useState(false);
 
@@ -258,12 +501,15 @@ export const ViewportDevTools: React.FC = () => {
   const [importValue, setImportValue] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const { theme, setTheme } = useTheme();
-  const [showPreview, setShowPreview] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
 
   const [openViewportId, setOpenViewportId] = useState<string | number | null>(
     null
   );
+
+  // Get detailed node info for the selected node
+  const selectedNodeDetails =
+    selectedIdsList.length > 0 ? getDetailedNode(selectedIdsList[0]) : null;
 
   if (!mounted) return null;
 
@@ -332,25 +578,12 @@ export const ViewportDevTools: React.FC = () => {
       });
   };
 
-  // Use Jotai nodes instead of nodeState.nodes for viewports
-  const viewports = jotaiNodes.filter((n) => n.isViewport);
+  // Get viewports from hierarchyData instead of filtering jotaiNodes
+  const { viewports } = hierarchyData;
 
   return createPortal(
     <>
       <div className="fixed resize bottom-14 scale-75 right-[190px] flex gap-2 p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
-        {dynamicModeNodeId && (
-          <button
-            className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
-            onClick={() => {
-              nodeDisp.resetDynamicNodePositions();
-              dynamicOps.setDynamicModeNodeId(null);
-              nodeDisp.syncViewports();
-            }}
-          >
-            Exit Dynamic Mode
-          </button>
-        )}
-
         <div className="absolute bottom-[-40px] z-[9999] cursor-pointer right-0 p-2">
           {selectedIdsList[0]}
         </div>
@@ -405,7 +638,7 @@ export const ViewportDevTools: React.FC = () => {
           Show Tree
         </button>
 
-        {/* New Copy JSON button */}
+        {/* Copy JSON button */}
         <button
           className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleCopyNodesJson}
@@ -415,7 +648,7 @@ export const ViewportDevTools: React.FC = () => {
           Copy JSON
         </button>
 
-        {/* New Copy ID button */}
+        {/* Copy ID button */}
         <button
           className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleCopySelectedId}
@@ -460,23 +693,13 @@ export const ViewportDevTools: React.FC = () => {
             <div className="flex gap-2 mb-4">
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
-                  activeTab === "view"
-                    ? "bg-[var(--button-primary-bg)] text-white"
-                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
-                }`}
-                onClick={() => setActiveTab("view")}
-              >
-                Old State
-              </button>
-              <button
-                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
                   activeTab === "jotai"
                     ? "bg-[var(--button-primary-bg)] text-white"
                     : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
                 }`}
                 onClick={() => setActiveTab("jotai")}
               >
-                Jotai State
+                Full Node State
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
@@ -490,6 +713,26 @@ export const ViewportDevTools: React.FC = () => {
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+                  activeTab === "hierarchy"
+                    ? "bg-[var(--button-primary-bg)] text-white"
+                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+                }`}
+                onClick={() => setActiveTab("hierarchy")}
+              >
+                Hierarchy Store
+              </button>
+              <button
+                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
+                  activeTab === "shared"
+                    ? "bg-[var(--button-primary-bg)] text-white"
+                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
+                }`}
+                onClick={() => setActiveTab("shared")}
+              >
+                Shared Nodes
+              </button>
+              <button
+                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
                   activeTab === "import"
                     ? "bg-[var(--button-primary-bg)] text-white"
                     : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
@@ -500,40 +743,70 @@ export const ViewportDevTools: React.FC = () => {
               </button>
               <button
                 className={`px-3 py-1 rounded-[var(--radius-sm)] ${
-                  activeTab === "drag"
+                  activeTab === "operations"
                     ? "bg-[var(--button-primary-bg)] text-white"
                     : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
                 }`}
-                onClick={() => setActiveTab("drag")}
+                onClick={() => setActiveTab("operations")}
               >
-                drag state
-              </button>
-              <button
-                className={`px-3 py-1 rounded-[var(--radius-sm)] ${
-                  activeTab === "nodeDisp"
-                    ? "bg-[var(--button-primary-bg)] text-white"
-                    : "bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]"
-                }`}
-                onClick={() => setActiveTab("nodeDisp")}
-              >
-                NodeDisp
+                Operations
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto">
-              {activeTab === "view" && (
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-[var(--text-secondary)]">
-                      {nodeState.nodes.length} nodes
-                    </span>
+            {/* Selected node details display */}
+            {selectedNodeDetails && (
+              <div className="mb-4 p-3 bg-[var(--control-bg)] rounded-[var(--radius-md)] border border-[var(--border-light)]">
+                <h3 className="font-semibold mb-2">Selected Node Details</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <strong>ID:</strong> {selectedNodeDetails.id}
                   </div>
-                  <textarea className="text-xs w-full whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
-                    {JSON.stringify(nodeState.nodes, null, 2)}
-                  </textarea>
+                  <div>
+                    <strong>Type:</strong> {selectedNodeDetails.type}
+                  </div>
+                  <div>
+                    <strong>Name:</strong>{" "}
+                    {selectedNodeDetails.customName || "-"}
+                  </div>
+                  <div>
+                    <strong>Shared ID:</strong>{" "}
+                    {selectedNodeDetails.sharedId || "-"}
+                  </div>
+                  <div>
+                    <strong>Parent ID:</strong>{" "}
+                    {selectedNodeDetails.parentId || "null"}
+                  </div>
+                  <div>
+                    <strong>Children:</strong>{" "}
+                    {selectedNodeDetails.children?.length || 0}
+                  </div>
+                  <div>
+                    <strong>Position:</strong>{" "}
+                    {selectedNodeDetails.style.position || "static"}
+                  </div>
+                  <div>
+                    <strong>Flags:</strong>{" "}
+                    {Object.entries(selectedNodeDetails)
+                      .filter(
+                        ([key, value]) =>
+                          typeof value === "boolean" && value === true
+                      )
+                      .map(([key]) => key)
+                      .join(", ") || "-"}
+                  </div>
                 </div>
-              )}
+                <div className="mt-2">
+                  <strong>Unsync Flags:</strong>{" "}
+                  {selectedNodeDetails.syncFlags?.unsyncFromParentViewport
+                    ? Object.keys(
+                        selectedNodeDetails.syncFlags.unsyncFromParentViewport
+                      ).join(", ")
+                    : "None"}
+                </div>
+              </div>
+            )}
 
+            <div className="flex-1 overflow-auto">
               {activeTab === "jotai" && (
                 <div>
                   <div className="flex justify-between items-center mb-2">
@@ -542,29 +815,29 @@ export const ViewportDevTools: React.FC = () => {
                     </span>
                     <button
                       className="px-2 py-1 bg-[var(--control-bg)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
-                      onClick={() => setJotaiNodes(getNodesFromJotai())}
+                      onClick={() => setJotaiNodes(getAllNodesFromJotai())}
                     >
                       Refresh
                     </button>
                   </div>
-                  <textarea className="text-xs w-full whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
-                    {JSON.stringify(jotaiNodes, null, 2)}
-                  </textarea>
+                  <textarea
+                    className="text-xs w-full whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]"
+                    readOnly
+                    value={JSON.stringify(jotaiNodes, null, 2)}
+                  ></textarea>
                 </div>
               )}
 
-              {activeTab === "drag" && (
-                <pre className="text-xs whitespace-pre-wrap bg-[var(--control-bg)] p-4 rounded-[var(--radius-md)]">
-                  ss
-                </pre>
-              )}
-
-              {activeTab === "nodeDisp" && (
-                <NodeDispOperations
+              {activeTab === "operations" && (
+                <OperationsList
                   operations={operations}
                   onClear={clearOperations}
                 />
               )}
+
+              {activeTab === "hierarchy" && <HierarchyStoreView />}
+
+              {activeTab === "shared" && <SharedNodesView />}
 
               {activeTab === "perViewport" && (
                 <div className="flex gap-4 min-w-[900px] min-h-[600px]">

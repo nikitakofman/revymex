@@ -11,7 +11,6 @@ import {
   getHandleCursor,
   matrixToCss,
 } from "../utils";
-import { useBuilderDynamic } from "../builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import {
   useGetTransform,
@@ -25,6 +24,7 @@ import {
   useNodeBasics,
   useGetNode,
   NodeId,
+  getCurrentNodes,
 } from "../atoms/node-store";
 
 interface GroupBounds {
@@ -86,7 +86,6 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
   // Get a full node builder for compatibility with utility functions
   const getNode = useGetNode();
 
-  const { nodeState } = useBuilderDynamic();
   const getTransform = useGetTransform();
   const transform = useTransform();
 
@@ -146,6 +145,10 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     // Build a node for the matrix calculation
     const node = getNode(nodeId);
 
+    // Get all nodes for the full transform matrix calculation
+    const allNodes = getCurrentNodes();
+    const nodeState = { nodes: allNodes };
+
     // Get the full transform matrix for the entire node chain
     const matrix = getFullTransformMatrix(node, nodeState, width, height);
     setFullMatrix(matrix);
@@ -197,7 +200,6 @@ export const ResizeHandles: React.FC<ResizeHandlesProps> = ({
     isGroupSelection,
     getTransform,
     nodeId,
-    nodeState,
     getNode,
     // Including these dependencies ensures we recalculate when any transform changes
     style.transform,

@@ -108,7 +108,7 @@ const PreviewContent = forwardRef<
   return (
     <div
       className="preview-container"
-      style={{ width: "100vw", overflow: "hidden" }}
+      style={{ width: "100vw", overflow: "auto" }}
     >
       <PreviewStyles />
       <style>{viewportContainerRules}</style>

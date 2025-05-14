@@ -1,8 +1,5 @@
 import React, { useRef } from "react";
-import {
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import { findOrCreateCanvasPosition } from "./utils";
 import TreeNodeComponent from "./TreeNodeComponent";
 import { ToolbarLabel } from "@/builder/tools/_components/ToolbarAtoms";
@@ -18,10 +15,13 @@ import {
   useGetNodeStyle,
   useGetNodeFlags,
   useGetNodeParent,
+  getCurrentNodes,
 } from "@/builder/context/atoms/node-store";
+import { syncViewports } from "@/builder/context/atoms/node-store/operations/sync-operations";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { moveNode } from "@/builder/context/atoms/node-store/operations/insert-operations";
 
 const Layers: React.FC = () => {
-  const { nodeState, nodeDisp, setNodeStyle } = useBuilderDynamic();
   const { contentRef } = useBuilderRefs();
 
   // Use atoms for state
@@ -61,7 +61,9 @@ const Layers: React.FC = () => {
       const dragData = JSON.parse(
         e.dataTransfer.getData("application/json") || "{}"
       );
-      const draggedNode = nodeState.nodes.find((n) => n.id === dragData.id);
+
+      const allNodes = getCurrentNodes();
+      const draggedNode = allNodes.find((n) => n.id === dragData.id);
       if (!draggedNode) return;
 
       const isMultiSelectionDrag =
@@ -70,7 +72,7 @@ const Layers: React.FC = () => {
       const canvasElement = contentRef.current;
       const position = findOrCreateCanvasPosition(
         canvasElement,
-        nodeState,
+        { nodes: allNodes },
         transform
       );
 
@@ -80,44 +82,47 @@ const Layers: React.FC = () => {
 
       if (isMultiSelectionDrag) {
         selectedIds.forEach((id) => {
-          const currentNode = nodeState.nodes.find((n) => n.id === id);
+          const currentNode = allNodes.find((n) => n.id === id);
           if (!currentNode) return;
 
-          nodeDisp.moveNode(id, false);
+          // Use direct moveNode function instead of nodeDisp
+          moveNode(id, null);
 
-          setNodeStyle(
-            {
-              position: "absolute",
-              left: `${position.x + xOffset}px`,
-              top: `${position.y + yOffset}px`,
-              zIndex: "",
-              transform: "",
-            },
-            [id],
-            undefined
-          );
+          // Use direct updateNodeStyle function instead of setNodeStyle
+          updateNodeStyle(id, {
+            position: "absolute",
+            left: `${position.x + xOffset}px`,
+            top: `${position.y + yOffset}px`,
+            zIndex: "",
+            transform: "",
+          });
 
           xOffset += offsetStep;
           yOffset += offsetStep;
         });
       } else {
-        nodeDisp.moveNode(draggedNode.id, false);
+        // Use direct moveNode function instead of nodeDisp
+        moveNode(draggedNode.id, null);
 
-        setNodeStyle(
-          {
-            position: "absolute",
-            left: `${position.x}px`,
-            top: `${position.y}px`,
-            zIndex: "",
-            transform: "",
-          },
-          [draggedNode.id],
-          undefined
-        );
+        // Use direct updateNodeStyle function instead of setNodeStyle
+        updateNodeStyle(draggedNode.id, {
+          position: "absolute",
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          zIndex: "",
+          transform: "",
+        });
       }
 
+      // Sync viewports directly if not in dynamic mode
       if (!dynamicModeNodeId) {
-        nodeDisp.syncViewports();
+        if (isMultiSelectionDrag) {
+          selectedIds.forEach((id) => {
+            syncViewports(id, null);
+          });
+        } else {
+          syncViewports(draggedNode.id, null);
+        }
       }
     } catch (error) {
       console.error("Error handling canvas drop:", error);

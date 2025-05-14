@@ -11,8 +11,11 @@ import {
   NodeId,
   useNodeParent,
   useGetNode,
+  getCurrentNodes,
+  useGetNodeStyle,
 } from "@/builder/context/atoms/node-store";
 import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { updateNodeFlags } from "@/builder/context/atoms/node-store/operations/update-operations";
 
 interface ToolSelectProps {
   label: string;
@@ -33,13 +36,12 @@ export const ToolSelect = ({
   onChange,
   customSelectWidth,
 }: ToolSelectProps) => {
-  const { nodeDisp } = useBuilderDynamic();
-
   // Use reactive hooks for selected IDs
   const selectedIds = useSelectedIds();
   const getSelectedIds = useGetSelectedIds();
   const [hasParent, setHasParent] = useState(false);
   const getNode = useGetNode();
+  const getNodeStyle = useGetNodeStyle();
   const parentId = useNodeParent(selectedIds[0]);
 
   // Update hasParent state when needed
@@ -59,6 +61,15 @@ export const ToolSelect = ({
     parseValue: false,
     defaultValue: value || "",
   });
+
+  // For position property specifically, check for 'isFakeFixed'
+  let displayValue = computedStyle.value as string;
+  if (name === "position" && selectedIds.length > 0) {
+    const style = getNodeStyle(selectedIds[0]);
+    if (style && style["isFakeFixed"] === "true") {
+      displayValue = "fixed";
+    }
+  }
 
   // Modify options based on parent status if they're dimension-related
   const processedOptions = options.map((option) => ({
@@ -86,14 +97,16 @@ export const ToolSelect = ({
     }
   };
 
-  // Handle position changes with special logic for absolute positioning in frames
   const handlePositionChange = (position: string) => {
     // Get the current selection when handling position change
     const currentSelectedIds = getSelectedIds();
     if (currentSelectedIds.length === 0) return;
 
-    // If position is absolute, check if node is within a frame
-    if (position === "absolute") {
+    console.log("🔍 handlePositionChange called with position:", position);
+    console.log("🔍 Selected IDs:", currentSelectedIds);
+
+    // If position is "fixed", handle as fake fixed
+    if (position === "fixed") {
       // For each selected node
       currentSelectedIds.forEach((nodeId) => {
         // Get node info from Jotai
@@ -111,43 +124,155 @@ export const ToolSelect = ({
             (parentNode.type === "frame" || parentNode.isViewport);
         }
 
+        // 1. Set position to absolute but mark it as fake fixed
+        updateNodeStyle(nodeId, {
+          position: "absolute", // Always use absolute in the DOM
+          isFakeFixed: "true", // Add flag for fake fixed
+          isAbsoluteInFrame: isInFrame ? "true" : "false",
+        });
+
+        // 2. Handle positioning within frames
         if (isInFrame) {
-          // For elements in frames, set the isAbsoluteInFrame flag
-          // Keep nodeDisp.updateNode as requested
-          nodeDisp.updateNode(nodeId, { isAbsoluteInFrame: true });
+          // Calculate position within the parent frame
+          const parentElement = document.querySelector(
+            `[data-node-id="${parentId}"]`
+          ) as HTMLElement;
 
-          // If the element already has positions, keep them
-          // Otherwise, set initial positions at 0,0 within the frame
-          const currentLeft = node.style.left || "0px";
-          const currentTop = node.style.top || "0px";
+          const element = document.querySelector(
+            `[data-node-id="${nodeId}"]`
+          ) as HTMLElement;
 
-          // Use updateNodeStyle instead of setNodeStyle
-          updateNodeStyle(nodeId, {
-            position: "absolute",
-            left: currentLeft,
-            top: currentTop,
-          });
+          if (parentElement && element) {
+            // Get element's current position relative to parent
+            const parentRect = parentElement.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
 
-          return;
-        }
-      });
-    } else if (position !== "absolute") {
-      // When changing from absolute to another position, reset the flag
-      currentSelectedIds.forEach((nodeId) => {
-        // Get node info from Jotai
-        const node = getNode(nodeId);
+            // Calculate position in pixels
+            const left = elementRect.left - parentRect.left;
+            const top = elementRect.top - parentRect.top;
 
-        if (node?.isAbsoluteInFrame) {
-          // Keep nodeDisp.updateNode as requested
-          nodeDisp.updateNode(nodeId, { isAbsoluteInFrame: false });
+            // Apply coordinates as a separate update
+            updateNodeStyle(nodeId, {
+              left: `${Math.round(left)}px`,
+              top: `${Math.round(top)}px`,
+            });
+          } else {
+            // If elements not found, use default position
+            updateNodeStyle(nodeId, {
+              left: node.style.left || "0px",
+              top: node.style.top || "0px",
+            });
+          }
         }
       });
     }
+    // If position is absolute, handle normally
+    else if (position === "absolute") {
+      // For each selected node
+      currentSelectedIds.forEach((nodeId) => {
+        // Get node info from Jotai
+        const node = getNode(nodeId);
+        if (!node) return;
 
-    // Apply the position style to all selected nodes
-    currentSelectedIds.forEach((id) => {
-      updateNodeStyle(id, { position });
-    });
+        // Get parent node info from Jotai
+        const parentId = node.parentId;
+        let isInFrame = false;
+
+        if (parentId) {
+          const parentNode = getNode(parentId);
+          isInFrame =
+            parentNode &&
+            (parentNode.type === "frame" || parentNode.isViewport);
+        }
+
+        // 1. First update position by itself so it cascades properly
+        updateNodeStyle(nodeId, {
+          position: position,
+          isFakeFixed: "false", // Clear any fake fixed flag
+        });
+
+        // 2. Update isAbsoluteInFrame as a style property instead of a flag
+        updateNodeStyle(nodeId, {
+          isAbsoluteInFrame: isInFrame ? "true" : "false",
+        });
+
+        // 3. Handle positioning within frames
+        if (isInFrame) {
+          // Calculate position within the parent frame
+          const parentElement = document.querySelector(
+            `[data-node-id="${parentId}"]`
+          ) as HTMLElement;
+
+          const element = document.querySelector(
+            `[data-node-id="${nodeId}"]`
+          ) as HTMLElement;
+
+          if (parentElement && element) {
+            // Get element's current position relative to parent
+            const parentRect = parentElement.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
+
+            // Calculate position in pixels
+            const left = elementRect.left - parentRect.left;
+            const top = elementRect.top - parentRect.top;
+
+            // Apply coordinates as a separate update
+            updateNodeStyle(nodeId, {
+              left: `${Math.round(left)}px`,
+              top: `${Math.round(top)}px`,
+            });
+          } else {
+            // If elements not found, use default position
+            updateNodeStyle(nodeId, {
+              left: node.style.left || "0px",
+              top: node.style.top || "0px",
+            });
+          }
+        }
+      });
+    } else if (position === "sticky") {
+      // Special handling for sticky positioning
+      currentSelectedIds.forEach((nodeId) => {
+        // 1. Update position first (separate from other styles)
+        updateNodeStyle(nodeId, {
+          position: "sticky",
+          isFakeFixed: "false", // Clear any fake fixed flag
+        });
+
+        // 2. Update isAbsoluteInFrame as a style property instead of a flag
+        updateNodeStyle(nodeId, { isAbsoluteInFrame: "false" });
+
+        // 3. Add top value in separate call
+        updateNodeStyle(nodeId, { top: "0px" });
+
+        // 4. Clear other position properties
+        updateNodeStyle(nodeId, {
+          left: "",
+          right: "",
+          bottom: "",
+        });
+      });
+    } else {
+      // When changing to other positions (relative, static, etc.)
+      currentSelectedIds.forEach((nodeId) => {
+        // 1. Update position first (separate from other styles)
+        updateNodeStyle(nodeId, {
+          position: position,
+          isFakeFixed: "false", // Clear any fake fixed flag
+        });
+
+        // 2. Update isAbsoluteInFrame as a style property instead of a flag
+        updateNodeStyle(nodeId, { isAbsoluteInFrame: "false" });
+
+        // 3. Clear positioning properties in a separate call
+        updateNodeStyle(nodeId, {
+          left: "",
+          top: "",
+          right: "",
+          bottom: "",
+        });
+      });
+    }
   };
 
   // Event handlers to prevent propagation
@@ -181,7 +306,7 @@ export const ToolSelect = ({
       {label && <Label>{label}</Label>}
 
       <select
-        value={computedStyle.mixed ? "mixed" : (computedStyle.value as string)}
+        value={computedStyle.mixed ? "mixed" : displayValue}
         onChange={handleSelectChange}
         onFocus={handleSelectFocus}
         onMouseDown={handleMouseDown}

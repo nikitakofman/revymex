@@ -1,5 +1,4 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
 import { canvasOps, useTransform } from "../atoms/canvas-interaction-store";
@@ -10,6 +9,7 @@ import {
   useNodeFlags,
   useNodeBasics,
   useGetNode,
+  getCurrentNodes,
 } from "../atoms/node-store";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
@@ -47,8 +47,6 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 
   // Get a full node builder for compatibility with some functions
   const getNode = useGetNode();
-
-  const { startRecording, stopRecording, nodeState } = useBuilderDynamic();
 
   const transform = useTransform();
 
@@ -130,8 +128,6 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 
     e.preventDefault();
     e.stopPropagation();
-
-    const sessionId = startRecording();
 
     // Get the current selection imperatively at the time of the event
     const selectedIds = getSelectedIds();
@@ -279,27 +275,27 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
             144, 180, 240, 300,
           ];
           const closest = commonSizes.reduce((prev, curr) => {
-            return Math.abs(curr - newAverageFontSize) <
-              Math.abs(prev - newAverageFontSize)
-              ? curr
-              : prev;
+            return Math.abs(curr - newAverageFontSize);
+            Math.abs(prev - newAverageFontSize) ? curr : prev;
           });
           newAverageFontSize = closest;
         }
       }
 
-      // First update the text styles
       // Get nodes to update
       const nodesToUpdate = isGroupSelection
         ? selectedIds.filter((id) => {
-            const selectedNode = nodeState.nodes.find((n) => n.id === id);
+            const allNodes = getCurrentNodes();
+            const selectedNode = allNodes.find((n) => n.id === id);
             return selectedNode && selectedNode.type === "text";
           })
         : [nodeId];
 
       // Update each text node
       nodesToUpdate.forEach((id) => {
-        const textNode = nodeState.nodes.find((n) => n.id === id);
+        // Get node data from getCurrentNodes
+        const allNodes = getCurrentNodes();
+        const textNode = allNodes.find((n) => n.id === id);
         if (!textNode || textNode.type !== "text" || !textNode.style.text)
           return;
 
@@ -313,12 +309,10 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
 
         // Check if this node has independent text styles
         if (textNode.independentStyles?.text) {
-          // Update only this node - using updateNodeStyle instead of setNodeStyle
+          // Update only this node - using updateNodeStyle directly
           updateNodeStyle(id, { text: updatedText });
         } else {
           // Update with normal syncing behavior
-          // Note: we would need to add a separate function for syncing updates
-          // For now, use standard updateNodeStyle
           updateNodeStyle(id, { text: updatedText });
         }
       });
@@ -339,7 +333,6 @@ export const FontSizeHandle: React.FC<FontSizeHandleProps> = ({
     const handleMouseUp = () => {
       visualOps.hideStyleHelper();
       canvasOps.setIsFontSizeHandleActive(false);
-      stopRecording(sessionId);
       // Reset the prevention flag
       preventStyleHelperReset.current = false;
       window.removeEventListener("mousemove", handleMouseMove);

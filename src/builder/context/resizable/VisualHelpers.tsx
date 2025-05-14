@@ -4,7 +4,7 @@ import {
   useBuilderDynamic,
   useBuilderRefs,
 } from "@/builder/context/builderState";
-import { ConnectionHandle } from "../canvasHelpers/ConnectionHandle";
+import { ConnectionHandle } from "../dynamic/ConnectionHandle";
 import { ResizeHandles } from "./ResizeHandles";
 import { GapHandles } from "./GapHandles";
 import { GripHandles } from "./GripHandles";
@@ -21,7 +21,7 @@ import {
 } from "../utils";
 import { RotateHandle } from "./RotateHandle";
 import { BorderRadiusHandle } from "./BorderRadiusHandle";
-import AddVariantsUI from "../canvasHelpers/AddVariantUI";
+import AddVariantsUI from "../dynamic/AddVariantUI";
 import NameDisplay from "./NameDisplay";
 import { AxeIcon } from "lucide-react";
 import { FontSizeHandle } from "./FontSizeHandle";

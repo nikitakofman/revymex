@@ -113,8 +113,6 @@ export const createPlaceholder = ({
     isViewport: false,
   });
 
-  console.log(`Created placeholder ${placeholderId} for node ${node.id}`);
-
   return {
     id: placeholderId,
     type: "placeholder",

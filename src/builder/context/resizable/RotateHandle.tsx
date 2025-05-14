@@ -1,5 +1,4 @@
 import React, { useRef } from "react";
-import { useBuilderDynamic } from "@/builder/context/builderState";
 import { useGetSelectedIds } from "../atoms/select-store";
 import { visualOps } from "../atoms/visual-store";
 import {
@@ -11,8 +10,8 @@ import {
   NodeId,
   useNodeStyle,
   useNodeFlags,
-  useNodeBasics,
-  useGetNode,
+  useGetNodeStyle,
+  getCurrentNodes,
 } from "../atoms/node-store";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
 
@@ -43,13 +42,9 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
   const dynamicParentId = flags.dynamicParentId || null;
 
   const isRotating = useIsRotating();
-
-  // Original functions from context
-  const { startRecording, stopRecording, nodeState } = useBuilderDynamic();
-
   const transform = useTransform();
-
   const currentSelectedIds = useGetSelectedIds();
+  const getNodeStyle = useGetNodeStyle();
 
   const initialMouseAngleRef = useRef<number>(0);
   const initialRotationRef = useRef<number>(0);
@@ -86,7 +81,6 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
-    const sessionId = startRecording();
     canvasOps.setIsRotating(true);
 
     const center = getElementCenter();
@@ -109,18 +103,19 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     // For group rotation, store initial rotation of all selected nodes
     initialRotationsRef.current.clear();
     if (isGroupSelection) {
+      const allNodes = getCurrentNodes();
+
       selectedIds.forEach((id) => {
-        const selectedNode = nodeState.nodes.find((n) => n.id === id);
-        if (selectedNode) {
-          let rotation = 0;
-          if (selectedNode.style.rotate) {
-            const match = selectedNode.style.rotate.match(/([-\d.]+)deg/);
-            if (match) {
-              rotation = parseFloat(match[1]);
-            }
+        const nodeStyle = getNodeStyle(id);
+        let rotation = 0;
+
+        if (nodeStyle.rotate) {
+          const match = nodeStyle.rotate.match(/([-\d.]+)deg/);
+          if (match) {
+            rotation = parseFloat(match[1]);
           }
-          initialRotationsRef.current.set(id, rotation);
         }
+        initialRotationsRef.current.set(id, rotation);
       });
     }
 
@@ -193,7 +188,6 @@ export const RotateHandle: React.FC<RotateHandleProps> = ({
     const handleMouseUp = () => {
       canvasOps.setIsRotating(false);
       visualOps.hideStyleHelper();
-      stopRecording(sessionId);
       initialRotationsRef.current.clear();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);

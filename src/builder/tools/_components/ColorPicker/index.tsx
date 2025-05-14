@@ -537,9 +537,7 @@ export const ColorPicker = ({
   // Use the shared popupRef from useBuilder
   const { startRecording, stopRecording } = useBuilderDynamic();
 
-  const { selectedIdsRef } = useBuilderRefs();
-
-  const { popupRef } = useBuilderRefs();
+  const { selectedIdsRef, popupRef } = useBuilderRefs();
 
   const [isOpen, setIsOpen] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>("hex");

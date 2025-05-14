@@ -122,7 +122,6 @@ export function syncViewports(
 
     // Get ancestor chain for better debugging
     const ancestorChain = getAncestorChain(nodeId, parentMap);
-    console.log("Node ancestry:", ancestorChain);
 
     // Get parent node info for shared ID
     const parentNode = nodeParentId
@@ -147,10 +146,6 @@ export function syncViewports(
       // CASE 1: DROPPING FROM VIEWPORT TO CANVAS
       // If the node was moved to the canvas (null parent) and had a shared ID
       if (nodeParentId === null && movedNode.sharedId) {
-        console.log(
-          "Handling drop from viewport to canvas - removing shared instances"
-        );
-
         // Remove shared ID from the dragged node
         removeSharedId(nodeId);
 
@@ -181,10 +176,6 @@ export function syncViewports(
       const isMovingToViewport = !!findTopViewport(nodeParentId);
 
       if (!movedNode.sharedId && isMovingToViewport) {
-        console.log(
-          "Handling move from canvas to viewport - duplicating to other viewports"
-        );
-
         // Get the top-level viewport containing the node
         const targetViewport = findTopViewport(nodeParentId);
         if (!targetViewport) {
@@ -196,9 +187,6 @@ export function syncViewports(
         if (!parentSharedId && nodeParentId) {
           // Assign shared ID to the parent first to ensure proper ancestry chain
           const newParentSharedId = assignSharedId(nodeParentId);
-          console.log(
-            `Assigned shared ID ${newParentSharedId} to parent ${nodeParentId}`
-          );
 
           // Update our reference to parent's shared ID
           const updatedParentNode = allNodes.find((n) => n.id === nodeParentId);
@@ -214,7 +202,6 @@ export function syncViewports(
         for (const viewportId of viewports) {
           // Skip the viewport that already contains the node
           if (viewportId === targetViewport) {
-            console.log(`Skipping source viewport ${viewportId}`);
             continue;
           }
 
@@ -235,10 +222,6 @@ export function syncViewports(
             // If parent doesn't have shared ID, use viewport root
             targetParentInOtherViewport = viewportId;
           }
-
-          console.log(
-            `Duplicating to viewport ${viewportId} under parent ${targetParentInOtherViewport}`
-          );
 
           // Create a clone in the target viewport
           duplicateNodeToViewport(
@@ -264,10 +247,6 @@ export function syncViewports(
         (sibId) => sharedById.get(sibId) === movedNode.sharedId
       ).length;
 
-      console.log(
-        `Found ${instancesInSourceParent} instances with sharedId ${movedNode.sharedId} in source parent`
-      );
-
       // Track new shared IDs for duplicates
       const newSharedIdsByViewport = new Map<NodeId, string[]>();
 
@@ -281,18 +260,8 @@ export function syncViewports(
             n.sharedId === movedNode.sharedId && isInViewport(n.id, viewportId)
         );
 
-        console.log(
-          `Found ${correspondingNodes.length} corresponding nodes in viewport ${viewportId}`
-        );
-
         // Check if we need to create additional instances
         if (correspondingNodes.length < instancesInSourceParent) {
-          console.log(
-            `Need to create ${
-              instancesInSourceParent - correspondingNodes.length
-            } additional instances in viewport ${viewportId}`
-          );
-
           // Find the corresponding parent in this viewport
           let targetParentId: NodeId;
           if (parentSharedId) {
@@ -317,12 +286,6 @@ export function syncViewports(
           const missingCount =
             instancesInSourceParent - correspondingNodes.length;
           for (let i = 0; i < missingCount; i++) {
-            console.log(
-              `Creating instance ${
-                i + 1
-              } of ${missingCount} in viewport ${viewportId}`
-            );
-
             // Calculate the adjusted index for new nodes
             let adjustedIndex = 0;
             if (targetIndex !== undefined) {
@@ -358,21 +321,12 @@ export function syncViewports(
             // Store this shared ID
             newSharedIdsByViewport.get(viewportId)!.push(newSharedId);
 
-            console.log(`Using shared ID ${newSharedId} for duplicate`);
-
             // Create a clone with the shared ID
             const cloneId = duplicateNodeToViewport(
               nodeId,
               targetParentId,
               newSharedId,
               adjustedIndex
-            );
-
-            console.log(
-              "Clone created:",
-              cloneId,
-              "with shared ID:",
-              newSharedId
             );
           }
 
@@ -385,10 +339,6 @@ export function syncViewports(
             (n) =>
               n.sharedId === movedNode.sharedId &&
               isInViewport(n.id, viewportId)
-          );
-
-          console.log(
-            `After refresh: found ${correspondingNodes.length} corresponding nodes in viewport ${viewportId}`
           );
         }
 
@@ -449,9 +399,6 @@ export function syncViewports(
                 targetParentId,
                 Math.min(adjustedIndex, siblings.length)
               );
-              console.log(
-                `Inserted ${correspondingNode.id} at adjusted index ${adjustedIndex} in ${targetParentId}`
-              );
             } else {
               // Move inside this parent
               siblings.splice(currentIndex, 1);
@@ -466,10 +413,6 @@ export function syncViewports(
                 next.set(targetParentId, siblings);
                 return next;
               });
-
-              console.log(
-                `Reordered ${correspondingNode.id} from ${currentIndex} to adjusted index ${adjustedIndex}`
-              );
             }
           } else {
             // Just ensure the node is a child of the correct parent
@@ -478,14 +421,6 @@ export function syncViewports(
               moveNode(correspondingNode.id, targetParentId);
             }
           }
-
-          // Update style to relative for viewport children
-          updateNodeStyle(correspondingNode.id, {
-            position: "relative",
-            left: "",
-            top: "",
-            zIndex: "",
-          });
 
           // Update viewport flag
           updateNodeFlags(correspondingNode.id, {
@@ -520,14 +455,6 @@ export function syncViewports(
             );
 
             for (const node of nodesWithOtherSharedId) {
-              // Update style and flags for consistent appearance
-              updateNodeStyle(node.id, {
-                position: "relative",
-                left: "",
-                top: "",
-                zIndex: "",
-              });
-
               updateNodeFlags(node.id, {
                 inViewport: true,
               });
@@ -556,10 +483,6 @@ export function duplicateNodeToViewport(
   targetIndex?: number
 ): NodeId {
   try {
-    console.log(
-      `Duplicating node ${sourceNodeId} to ${targetParentId} with sharedId ${sharedId}`
-    );
-
     // Generate a unique ID for the clone
     const cloneId = nanoid();
 
@@ -607,14 +530,6 @@ export function duplicateNodeToViewport(
       addNode(cloneId, targetParentId);
     }
 
-    // Update style to relative for viewport children
-    updateNodeStyle(cloneId, {
-      position: "relative",
-      left: "",
-      top: "",
-      zIndex: "",
-    });
-
     // Update viewport flag
     updateNodeFlags(cloneId, {
       inViewport: true,
@@ -634,14 +549,8 @@ export function duplicateNodeToViewport(
       // FIX: Preserve the child's existing shared ID if it has one
       // Otherwise, use a predictable ID pattern based on the parent shared ID
       const childSharedId = childNode.sharedId || `${sharedId}-child-${index}`;
-
-      console.log(
-        `Duplicating child ${childId} with shared ID ${childSharedId}`
-      );
       duplicateNodeToViewport(childId, cloneId, childSharedId);
     });
-
-    console.log(`Successfully duplicated node ${sourceNodeId} to ${cloneId}`);
     return cloneId;
   } catch (e) {
     console.error("Error duplicating node to viewport:", e);

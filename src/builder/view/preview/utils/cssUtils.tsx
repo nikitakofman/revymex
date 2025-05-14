@@ -1,14 +1,26 @@
 import { NodeStyle, ResponsiveNode, Viewport } from "../types";
 
 export const convertStyleToCss = (style: NodeStyle): string => {
-  return Object.entries(style)
+  // Make a copy of the style object to avoid modifying the original
+  const processedStyle = { ...style };
+
+  // If isFakeFixed is true, change position to fixed
+  if (
+    processedStyle.isFakeFixed === "true" &&
+    processedStyle.position === "absolute"
+  ) {
+    processedStyle.position = "fixed";
+  }
+
+  return Object.entries(processedStyle)
     .filter(([key, value]) => {
       return (
         value !== "" &&
         key !== "src" &&
         key !== "text" &&
         key !== "backgroundVideo" &&
-        key !== "backgroundImage"
+        key !== "backgroundImage" &&
+        key !== "isFakeFixed" // Exclude the isFakeFixed flag from the output CSS
       );
     })
     .map(([key, value]) => {
@@ -47,6 +59,7 @@ export const generateViewportContainerRules = (
       delete cleanStyle.position;
       delete cleanStyle.width;
       delete cleanStyle.height;
+      delete cleanStyle.isFakeFixed; // Remove the isFakeFixed flag
 
       // Remove background media from inline styles (we'll handle them separately)
       delete cleanStyle.backgroundImage;
@@ -132,9 +145,24 @@ export const generateResponsiveCSS = (node, viewportBreakpoints) => {
         }px)`;
       }
 
+      // Process the styles to handle isFakeFixed
+      const processedStyles = { ...styles };
+      if (
+        processedStyles.isFakeFixed === "true" &&
+        processedStyles.position === "absolute"
+      ) {
+        processedStyles.position = "fixed";
+      }
+
       // Filter out any special properties that aren't CSS styles
-      const { text, src, backgroundVideo, backgroundImage, ...stylesToApply } =
-        styles;
+      const {
+        text,
+        src,
+        backgroundVideo,
+        backgroundImage,
+        isFakeFixed,
+        ...stylesToApply
+      } = processedStyles;
 
       // Convert style object to CSS string
       const cssStyles = Object.entries(stylesToApply)
@@ -288,31 +316,46 @@ export const generateEnhancedResponsiveCSS = (node, viewportBreakpoints) => {
   // Desktop styles (largest viewport)
   const desktopBreakpoint = sortedBreakpoints[0];
   if (desktopBreakpoint) {
+    // Process styles for fixed positioning
+    const baseStyles = { ...node.style };
+    if (
+      baseStyles.isFakeFixed === "true" &&
+      baseStyles.position === "absolute"
+    ) {
+      baseStyles.position = "fixed";
+    }
+    delete baseStyles.isFakeFixed; // Remove the flag
+
     // Desktop styles with non-overlapping boundaries
     cssRules += `
       @media (min-width: ${
         sortedBreakpoints[1] ? sortedBreakpoints[1].width : 0
       }px) {
         #dynamic-node-${node.id} {
-          width: ${node.style.width || "auto"} !important;
-          height: ${node.style.height || "auto"} !important;
+          width: ${baseStyles.width || "auto"} !important;
+          height: ${baseStyles.height || "auto"} !important;
           background-color: ${
-            node.style.backgroundColor || "transparent"
+            baseStyles.backgroundColor || "transparent"
           } !important;
           ${
-            node.style.flexDirection
-              ? `flex-direction: ${node.style.flexDirection} !important;`
+            baseStyles.position
+              ? `position: ${baseStyles.position} !important;`
               : ""
           }
           ${
-            node.style.padding
-              ? `padding: ${node.style.padding} !important;`
+            baseStyles.flexDirection
+              ? `flex-direction: ${baseStyles.flexDirection} !important;`
               : ""
           }
-          ${node.style.margin ? `margin: ${node.style.margin} !important;` : ""}
           ${
-            node.style.borderRadius
-              ? `border-radius: ${node.style.borderRadius} !important;`
+            baseStyles.padding
+              ? `padding: ${baseStyles.padding} !important;`
+              : ""
+          }
+          ${baseStyles.margin ? `margin: ${baseStyles.margin} !important;` : ""}
+          ${
+            baseStyles.borderRadius
+              ? `border-radius: ${baseStyles.borderRadius} !important;`
               : ""
           }
         }
@@ -329,6 +372,16 @@ export const generateEnhancedResponsiveCSS = (node, viewportBreakpoints) => {
     const responsiveNode = node;
 
     if (responsiveNode) {
+      // Process styles for fixed positioning
+      const nodeStyles = { ...responsiveNode.style };
+      if (
+        nodeStyles.isFakeFixed === "true" &&
+        nodeStyles.position === "absolute"
+      ) {
+        nodeStyles.position = "fixed";
+      }
+      delete nodeStyles.isFakeFixed; // Remove the flag
+
       // Use exact pixel boundaries to prevent overlap
       const minWidth = nextBreakpoint ? nextBreakpoint.width : 0;
       const maxWidth = currentBreakpoint.width - 0.02; // Avoid exact boundary
@@ -345,29 +398,34 @@ export const generateEnhancedResponsiveCSS = (node, viewportBreakpoints) => {
       cssRules += `
         ${mediaQuery} {
           #dynamic-node-${node.id} {
-            width: ${responsiveNode.style.width || "auto"} !important;
-            height: ${responsiveNode.style.height || "auto"} !important;
+            width: ${nodeStyles.width || "auto"} !important;
+            height: ${nodeStyles.height || "auto"} !important;
             background-color: ${
-              responsiveNode.style.backgroundColor || "transparent"
+              nodeStyles.backgroundColor || "transparent"
             } !important;
             ${
-              responsiveNode.style.flexDirection
-                ? `flex-direction: ${responsiveNode.style.flexDirection} !important;`
+              nodeStyles.position
+                ? `position: ${nodeStyles.position} !important;`
                 : ""
             }
             ${
-              responsiveNode.style.padding
-                ? `padding: ${responsiveNode.style.padding} !important;`
+              nodeStyles.flexDirection
+                ? `flex-direction: ${nodeStyles.flexDirection} !important;`
                 : ""
             }
             ${
-              responsiveNode.style.margin
-                ? `margin: ${responsiveNode.style.margin} !important;`
+              nodeStyles.padding
+                ? `padding: ${nodeStyles.padding} !important;`
                 : ""
             }
             ${
-              responsiveNode.style.borderRadius
-                ? `border-radius: ${responsiveNode.style.borderRadius} !important;`
+              nodeStyles.margin
+                ? `margin: ${nodeStyles.margin} !important;`
+                : ""
+            }
+            ${
+              nodeStyles.borderRadius
+                ? `border-radius: ${nodeStyles.borderRadius} !important;`
                 : ""
             }
           }
@@ -389,5 +447,10 @@ export const debugResponsiveNode = (node) => {
     console.log(`    Height: ${styles.height}`);
     console.log(`    Width: ${styles.width}`);
     console.log(`    Background: ${styles.backgroundColor}`);
+    if (styles.isFakeFixed === "true") {
+      console.log(`    Position: fixed (using isFakeFixed)`);
+    } else {
+      console.log(`    Position: ${styles.position || "default"}`);
+    }
   });
 };

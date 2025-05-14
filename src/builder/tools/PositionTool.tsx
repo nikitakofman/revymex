@@ -1,4 +1,3 @@
-import { useBuilderDynamic } from "@/builder/context/builderState";
 import { ToolbarSection } from "./_components/ToolbarAtoms";
 import { ToolInput } from "./_components/ToolInput";
 import { ToolSelect } from "./_components/ToolSelect";
@@ -14,7 +13,14 @@ import {
   useLastMousePosition,
 } from "../context/atoms/drag-store";
 import { useTransform } from "../context/atoms/canvas-interaction-store";
-import { useGetNode } from "../context/atoms/node-store";
+import {
+  useGetNode,
+  useNodeStyle,
+  useNodeParent,
+  useGetNodeFlags,
+  useGetNodeStyle,
+  useGetNodeParent,
+} from "../context/atoms/node-store";
 
 export const PositionTool = () => {
   const [realTimePosition, setRealTimePosition] = useState({ x: 0, y: 0 });
@@ -27,27 +33,72 @@ export const PositionTool = () => {
   const lastMousePosition = useLastMousePosition();
   const transform = useTransform();
 
-  // Use reactive hook
+  // Use reactive hooks for selected node and its parent
   const selectedIds = useSelectedIds();
   const getNode = useGetNode();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeParent = useGetNodeParent();
+
+  // Get the current node's style directly to ensure we have the accurate position value
+  const nodeStyle = useNodeStyle(selectedIds[0]);
+  const parentId = useNodeParent(selectedIds[0]);
 
   const [viewportNode, setViewportNode] = useState(false);
+  // State to track the actual position value
+  const [positionValue, setPositionValue] = useState("static");
+  // State to track if the parent is a viewport
+  const [isParentViewport, setIsParentViewport] = useState(false);
 
   // Check if first selected node is a viewport using Jotai
   useEffect(() => {
     if (selectedIds.length === 0) {
       setViewportNode(false);
+      setPositionValue("static");
+      setIsParentViewport(false);
       return;
     }
 
     // Check if the selected node is a viewport
-    // Here we use Jotai's getNode utility instead of nodeState
     const node = getNode(selectedIds[0]);
     const isViewport =
       node && (node.isViewport || node.id.toString().includes("viewport"));
-
     setViewportNode(!!isViewport);
-  }, [selectedIds, getNode]);
+
+    // Get the style for the node
+    const style = getNodeStyle(selectedIds[0]);
+
+    // Check if the node is "fake fixed" and set the position value accordingly
+    if (style && style["isFakeFixed"] === "true") {
+      setPositionValue("fixed");
+    } else if (node && node.style && node.style.position) {
+      setPositionValue(node.style.position.toString());
+    } else {
+      setPositionValue("static");
+    }
+
+    // Check if parent is a viewport
+    if (parentId) {
+      const parentFlags = getNodeFlags(parentId);
+      setIsParentViewport(
+        !!parentFlags?.isViewport ||
+          (typeof parentId === "string" && parentId.includes("viewport"))
+      );
+    } else {
+      setIsParentViewport(false);
+    }
+  }, [selectedIds, getNode, parentId, getNodeFlags, getNodeStyle]);
+
+  // Also update position value when nodeStyle changes
+  useEffect(() => {
+    if (nodeStyle) {
+      if (nodeStyle["isFakeFixed"] === "true") {
+        setPositionValue("fixed");
+      } else if (nodeStyle.position) {
+        setPositionValue(nodeStyle.position.toString());
+      }
+    }
+  }, [nodeStyle]);
 
   const positionStyle = useComputedStyle({
     property: "position",
@@ -55,25 +106,35 @@ export const PositionTool = () => {
     defaultValue: "static",
   });
 
+  // Modify position options to include sticky and disable fixed positioning unless parent is a viewport
   const positionOptions = [
-    { label: "Default", value: "static" },
     { label: "Relative", value: "relative" },
     { label: "Absolute", value: "absolute" },
-    { label: "Fixed", value: "fixed" },
+    { label: "Fixed", value: "fixed", disabled: !isParentViewport },
+    { label: "Sticky", value: "sticky" }, // Added sticky option
   ];
 
-  const position = positionStyle.mixed
-    ? "static"
-    : (positionStyle.value as string);
+  // Use our state-tracked position value instead of relying solely on computedStyle
+  // This ensures we properly detect "fake fixed" positioning
+  const position = positionStyle.mixed ? "static" : positionValue;
+
+  // Show coordinates for absolute or fixed positioning
   const showCoordinates = position === "absolute" || position === "fixed";
+
+  // Show top offset for sticky positioning
+  const showStickyOffset = position === "sticky";
 
   const isDragging = dragPositions && isDraggingFromStore;
 
-  // Helper to check if node is absolutely positioned within a frame using Jotai
+  // Helper to check if node is absolutely positioned within a frame using style property
   const isAbsoluteInFrame = (nodeId: string) => {
     if (!nodeId) return false;
-    const node = getNode(nodeId);
-    return node?.isAbsoluteInFrame === true && node?.parentId !== null;
+    const style = getNodeStyle(nodeId);
+    return (
+      (style?.isAbsoluteInFrame === "true" ||
+        style?.["isFakeFixed"] === "true") &&
+      getNodeParent(nodeId) !== null
+    );
   };
 
   // Use draggedNode from the store
@@ -151,12 +212,18 @@ export const PositionTool = () => {
                 label="Type"
                 name="position"
                 options={positionOptions}
+                value={position} // Use our tracked position value
               />
             )}
             {showCoordinates && (
               <div className="grid grid-cols-2 gap-3">
                 <ToolInput type="number" label="X" name="left" />
                 <ToolInput type="number" label="Y" name="top" />
+              </div>
+            )}
+            {showStickyOffset && (
+              <div>
+                <ToolInput type="number" label="Top Offset" name="top" />
               </div>
             )}
           </>

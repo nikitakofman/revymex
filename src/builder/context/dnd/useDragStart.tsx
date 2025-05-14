@@ -1,5 +1,5 @@
 import { dragOps } from "../atoms/drag-store";
-import { NodeId, useGetNode } from "../atoms/node-store";
+import { NodeId, useGetNode, useGetNodeStyle } from "../atoms/node-store";
 import {
   useGetNodeParent,
   useGetNodeChildren,
@@ -11,6 +11,7 @@ import {
   moveNode,
 } from "../atoms/node-store/operations/insert-operations";
 import { useGetNodeFlags } from "../atoms/node-store";
+import { getDimensionUnits, convertDimensionsToPx } from "./dnd-utils";
 
 export const useDragStart = () => {
   const getNode = useGetNode();
@@ -18,6 +19,7 @@ export const useDragStart = () => {
   const getNodeChildren = useGetNodeChildren();
   const getTransform = useGetTransform();
   const getNodeFlags = useGetNodeFlags();
+  const getNodeStyle = useGetNodeStyle();
 
   return (
     e: React.MouseEvent,
@@ -31,36 +33,57 @@ export const useDragStart = () => {
 
     const nodeId = nodeObj.id;
     const node = getNode(nodeId);
-    const nodeType = nodeObj.type || node.type; // Get node type
-
-    // Determine drag source
-    const parentId = getNodeParent(nodeId);
+    const nodeType = nodeObj.type || node.type;
+    const nodeStyle = getNodeStyle(nodeId);
     const nodeFlags = getNodeFlags(nodeId);
+
+    const parentId = getNodeParent(nodeId);
     const isOnCanvas = !parentId && !nodeFlags.inViewport;
 
-    // Set appropriate drag source
+    // Check isAbsoluteInFrame from style instead of flags
+    // Include both absolute and fixed as "absolute in frame" for drag handling
+    const isAbsoluteInFrame =
+      (nodeStyle.isAbsoluteInFrame === "true" ||
+        nodeStyle.position === "fixed" ||
+        nodeStyle.position === "absolute") &&
+      parentId;
+
+    // Simplified drag source determination
     if (isOnCanvas) {
       dragOps.setDragSource("canvas");
-    } else if (nodeFlags.inViewport) {
+    } else if (
+      nodeFlags.inViewport &&
+      nodeStyle.isAbsoluteInFrame !== "true" &&
+      nodeStyle.position !== "fixed" &&
+      nodeStyle.position !== "absolute"
+    ) {
       dragOps.setDragSource("viewport");
     } else if (fromToolbarType) {
       dragOps.setDragSource("toolbar");
-    } else if (nodeFlags.isAbsoluteInFrame) {
+    } else if (isAbsoluteInFrame) {
+      // Use "absolute-in-frame" for both absolute and fixed
       dragOps.setDragSource("absolute-in-frame");
     } else {
       dragOps.setDragSource("parent");
     }
 
-    // Get the element that was clicked
-    const element = document.querySelector(`[data-node-id="${nodeId}"]`);
+    const element = document.querySelector(
+      `[data-node-id="${nodeId}"]`
+    ) as HTMLElement;
     if (!element) return;
 
-    // Get computed style for dimensions and rotation
+    const dimensionUnits = getDimensionUnits(element, node.style);
+
+    // Only convert dimensions for non-absolute elements
+    const needsConversion = parentId && !isOnCanvas && !isAbsoluteInFrame;
+    if (needsConversion) {
+      convertDimensionsToPx(nodeId, element, dimensionUnits);
+    }
+
     const style = window.getComputedStyle(element);
     const width = parseFloat(style.width) || element.offsetWidth;
     const height = parseFloat(style.height) || element.offsetHeight;
 
-    // Detect if we have a pure 2D rotation or more complex transforms
     const transformStr = style.transform || "none";
     const isSimpleRotation =
       !transformStr.includes("skew") &&
@@ -68,7 +91,6 @@ export const useDragStart = () => {
       !transformStr.includes("3d") &&
       !transformStr.includes("matrix");
 
-    // Get rotation value if it's a simple rotation
     let rotate = "0deg";
     if (isSimpleRotation) {
       rotate =
@@ -78,32 +100,45 @@ export const useDragStart = () => {
 
     const elementRect = element.getBoundingClientRect();
 
-    // Store the grab-offset in screen pixels
     const mouseOffsetX = e.clientX - elementRect.left;
     const mouseOffsetY = e.clientY - elementRect.top;
 
-    // Create placeholder with the same dimensions
     const transform = getTransform();
-    const placeholder = createPlaceholder({
-      node,
-      element,
-      transform,
-    });
 
-    // Find the parent and position of the dragged node
-    if (parentId) {
-      const siblings = getNodeChildren(parentId);
-      const index = siblings.indexOf(nodeId);
+    let placeholder = null;
 
-      if (index !== -1) {
-        // Add placeholder to parent
-        addNode(placeholder.id, parentId);
-        // Move placeholder to the exact position
-        moveNode(placeholder.id, parentId, index);
+    // Only create placeholder for non-absolute elements
+    if (!isAbsoluteInFrame && !isOnCanvas) {
+      placeholder = createPlaceholder({
+        node,
+        element,
+        transform,
+      });
+
+      if (parentId) {
+        const siblings = getNodeChildren(parentId);
+        const index = siblings.indexOf(nodeId);
+
+        if (index !== -1) {
+          addNode(placeholder.id, parentId);
+          moveNode(placeholder.id, parentId, index);
+        }
       }
     }
 
-    // Start the drag operation
+    // Capture initial position for absolute/fixed elements
+    let initialLeft = 0;
+    let initialTop = 0;
+
+    if (isAbsoluteInFrame && parentId) {
+      // Get the current position
+      initialLeft = parseFloat(style.left) || 0;
+      initialTop = parseFloat(style.top) || 0;
+    }
+
+    // Remember original position type to maintain it during the drag
+    const originalPositionType = nodeStyle.position || "static";
+
     dragOps.setIsDragging(true);
     dragOps.setDraggedNode(node, {
       x: 0,
@@ -115,7 +150,15 @@ export const useDragStart = () => {
       rotate,
       isSimpleRotation,
       nodeType,
-      placeholderId: placeholder.id, // Store placeholder ID for reference
+      placeholderId: placeholder?.id,
+      startingParentId: parentId,
+      dimensionUnits,
+      isAbsoluteInFrame,
+      originalPositionType, // Store the original position type to maintain it
+      initialPosition: {
+        left: initialLeft,
+        top: initialTop,
+      },
     });
   };
 };

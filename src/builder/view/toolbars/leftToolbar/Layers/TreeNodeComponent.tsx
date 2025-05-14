@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useBuilderDynamic } from "@/builder/context/builderState";
 import {
   ChevronRight,
   ChevronDown,
@@ -34,7 +33,10 @@ import {
 } from "@/builder/context/atoms/select-store";
 import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
-import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
+import {
+  dynamicOps,
+  useDynamicModeNodeId,
+} from "@/builder/context/atoms/dynamic-store";
 import {
   useNodeChildren,
   useGetNodeParent,
@@ -45,7 +47,21 @@ import {
   useGetNodeFlags,
   useGetNodeSharedInfo,
   useGetNodeDynamicInfo,
+  useUpdateNodeBasics,
+  useUpdateNodeStyle,
+  useUpdateNodeFlags,
+  nodeStore,
+  nodeBasicsAtom,
+  getCurrentNodes,
+  NodeId,
 } from "@/builder/context/atoms/node-store";
+import {
+  insertAtIndex,
+  moveNode,
+} from "@/builder/context/atoms/node-store/operations/insert-operations";
+import { syncViewports } from "@/builder/context/atoms/node-store/operations/sync-operations";
+import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
+import { updateNodeFlags } from "@/builder/context/atoms/node-store/operations/update-operations";
 
 interface TreeNodeProps {
   node: TreeNodeWithChildren;
@@ -53,8 +69,7 @@ interface TreeNodeProps {
 }
 
 const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
-  const { nodeDisp, setNodeStyle, nodeState } = useBuilderDynamic();
-
+  // Get jotai state and operations
   const currentSelectedIds = useGetSelectedIds();
   const { addToSelection, selectNode } = selectOps;
   const dynamicModeNodeId = useDynamicModeNodeId();
@@ -69,6 +84,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const getNodeParent = useGetNodeParent();
   const getNodeSharedInfo = useGetNodeSharedInfo();
   const getNodeDynamicInfo = useGetNodeDynamicInfo();
+
+  // Update node basics directly with atoms
+  const updateNodeBasics = useUpdateNodeBasics(node.id);
 
   // Get children directly from hierarchy store
   const childrenIds = useNodeChildren(node.id);
@@ -151,8 +169,11 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       if (customName.trim() !== "") {
-        // Pass the dynamic mode state to setCustomName
-        nodeDisp.setCustomName(node.id, customName.trim(), !!dynamicModeNodeId);
+        // Update node basics directly with atom
+        updateNodeBasics((prev) => ({
+          ...prev,
+          customName: customName.trim(),
+        }));
       }
       setIsEditing(false);
     } else if (e.key === "Escape") {
@@ -165,8 +186,11 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
   const handleBlur = () => {
     if (customName.trim() !== "") {
-      // Pass the dynamic mode state to setCustomName
-      nodeDisp.setCustomName(node.id, customName.trim(), !!dynamicModeNodeId);
+      // Update node basics directly with atom
+      updateNodeBasics((prev) => ({
+        ...prev,
+        customName: customName.trim(),
+      }));
     }
     setIsEditing(false);
     canvasOps.setIsEditingText(false);
@@ -181,14 +205,29 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
 
     // Always specify the exact node ID when making style changes
-    // This ensures the change applies to the correct node regardless of selection state
-    const nodeIds = [node.id];
-
-    // Toggle visibility with explicit node IDs
+    // Use direct updateNodeStyle function instead of setNodeStyle
     if (isHidden) {
-      setNodeStyle({ display: "flex" }, nodeIds, true);
+      updateNodeStyle(node.id, { display: "flex" });
+
+      // Handle syncing across viewports
+      const nodeFlags = getNodeFlags(node.id);
+      if (nodeFlags.inViewport && !dynamicModeNodeId) {
+        const parentId = getNodeParent(node.id);
+        if (parentId !== null) {
+          syncViewports(node.id, parentId);
+        }
+      }
     } else {
-      setNodeStyle({ display: "none" }, nodeIds, true);
+      updateNodeStyle(node.id, { display: "none" });
+
+      // Handle syncing across viewports
+      const nodeFlags = getNodeFlags(node.id);
+      if (nodeFlags.inViewport && !dynamicModeNodeId) {
+        const parentId = getNodeParent(node.id);
+        if (parentId !== null) {
+          syncViewports(node.id, parentId);
+        }
+      }
     }
   };
 
@@ -318,9 +357,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
 
     // Get the node being dragged for additional checks
-    const draggedNode = nodeState.nodes.find(
-      (n) => n.id === currentDragInfo.id
-    );
+    const allNodes = getCurrentNodes();
+    const draggedNode = allNodes.find((n) => n.id === currentDragInfo.id);
+
     if (!draggedNode) {
       setDropIndicator({ position: DropPosition.None, isVisible: false });
       return;
@@ -345,7 +384,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
 
     // Check if node is a child of dragged item
-    if (isChildOfDragged(node.id, currentDragInfo.id, nodeState.nodes)) {
+    if (isChildOfDragged(node.id, currentDragInfo.id, allNodes)) {
       setDropIndicator({ position: DropPosition.None, isVisible: false });
       e.dataTransfer.dropEffect = "none";
       return;
@@ -373,6 +412,8 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     }
 
     // Find viewports of both nodes
+    const allNodesArray = getCurrentNodes();
+    const nodeState = { nodes: allNodesArray };
     const draggedNodeViewport = getNodeViewport(currentDragInfo.id, nodeState);
     const targetNodeViewport = getNodeViewport(node.id, nodeState);
 
@@ -455,7 +496,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
     setDropIndicator({ position: DropPosition.None, isVisible: false });
 
     // Parse drag data
-    let dragData: any;
+    let dragData: Record<string, any>;
     try {
       const dragDataRaw = e.dataTransfer.getData("application/json");
       if (!dragDataRaw) {
@@ -494,13 +535,15 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       }
 
       // Check if node is a child of dragged item
-      if (isChildOfDragged(node.id, dragData.id, nodeState.nodes)) {
+      const allNodes = getCurrentNodes();
+      const nodeState = { nodes: allNodes };
+      if (isChildOfDragged(node.id, dragData.id, allNodes)) {
         console.log("DROP-BLOCKED: Cannot drop parent onto its own child");
         return;
       }
 
       // Retrieve the full node from node state
-      const draggedNode = nodeState.nodes.find((n) => n.id === dragData.id);
+      const draggedNode = allNodes.find((n) => n.id === dragData.id);
       if (!draggedNode) {
         console.error("Dragged node not found:", dragData.id);
         return;
@@ -521,7 +564,20 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
         // First, transform the media node to a frame
         const mediaNode = node;
-        handleMediaToFrameTransformation(mediaNode, draggedNode, nodeDisp);
+        handleMediaToFrameTransformation(mediaNode, draggedNode, {
+          // Create a minimal nodeDisp interface for the transformation
+          setBasics: (id: NodeId, updates: Record<string, any>) => {
+            nodeStore.set(nodeBasicsAtom(id), (prev: Record<string, any>) => ({
+              ...prev,
+              ...updates,
+            }));
+          },
+          updateNodeStyle: (ids: NodeId[], style: Record<string, any>) => {
+            if (ids.length > 0) {
+              updateNodeStyle(ids[0], style);
+            }
+          },
+        });
 
         // Now perform the normal drop operations to move nodes into the newly created frame
         const frameId = mediaNode.id; // Same ID was retained when replacing
@@ -530,50 +586,53 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
           // Move all selected nodes inside the new frame node
           selectedIds.forEach((id, index) => {
             if (index === 0) {
-              nodeDisp.moveNode(id, true, {
-                targetId: frameId,
-                position: "inside",
-              });
-            } else {
-              const prevId = selectedIds[index - 1];
-              nodeDisp.moveNode(id, true, {
-                targetId: prevId,
-                position: "after",
-              });
-            }
+              // First selected node goes inside the frame
+              moveNode(id, frameId);
 
-            // Fix styles for the moved element
-            setNodeStyle(
-              {
+              // Fix styles for the moved element
+              updateNodeStyle(id, {
                 position: "relative",
                 zIndex: "",
                 transform: "",
                 left: "",
                 top: "",
-              },
-              [id],
-              undefined
-            );
+              });
+            } else {
+              // Other selected nodes go after the previous selected node
+              const prevId = selectedIds[index - 1];
+              const siblings = childrenIds;
+              const prevIndex = siblings.indexOf(prevId);
+
+              // Insert after the previous node
+              if (prevIndex !== -1) {
+                insertAtIndex(id, frameId, prevIndex + 1);
+              } else {
+                // Fallback to just adding as a child
+                moveNode(id, frameId);
+              }
+
+              // Fix styles
+              updateNodeStyle(id, {
+                position: "relative",
+                zIndex: "",
+                transform: "",
+                left: "",
+                top: "",
+              });
+            }
           });
         } else {
           // Move the single dragged node inside the new frame
-          nodeDisp.moveNode(draggedNode.id, true, {
-            targetId: frameId,
-            position: "inside",
-          });
+          moveNode(draggedNode.id, frameId);
 
           // Fix styles for the moved element
-          setNodeStyle(
-            {
-              position: "relative",
-              zIndex: "",
-              transform: "",
-              left: "",
-              top: "",
-            },
-            [draggedNode.id],
-            undefined
-          );
+          updateNodeStyle(draggedNode.id, {
+            position: "relative",
+            zIndex: "",
+            transform: "",
+            left: "",
+            top: "",
+          });
         }
 
         // Expand the node to show the newly added children
@@ -581,7 +640,10 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
         // Sync viewports if necessary
         if (!dynamicModeNodeId) {
-          nodeDisp.syncViewports();
+          const parentId = getNodeParent(frameId);
+          if (parentId !== null) {
+            syncViewports(frameId, parentId);
+          }
         }
 
         return;
@@ -607,10 +669,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                   "before",
                   node.id
                 );
-                nodeDisp.moveNode(id, true, {
-                  targetId: node.id,
-                  position: "before",
-                });
+
+                // Find the index of the target node among its siblings
+                const parentId = getNodeParent(node.id);
+                if (parentId !== null) {
+                  const siblings = childrenIds;
+                  const targetIndex = siblings.indexOf(node.id);
+
+                  // Insert at the target index
+                  if (targetIndex !== -1) {
+                    insertAtIndex(id, parentId, targetIndex);
+                  }
+                }
               } else {
                 const prevId = selectedIds[index - 1];
                 console.log(
@@ -619,10 +689,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                   "after",
                   prevId
                 );
-                nodeDisp.moveNode(id, true, {
-                  targetId: prevId,
-                  position: "after",
-                });
+
+                // Find the index of the previous node among its siblings
+                const parentId = getNodeParent(prevId);
+                if (parentId !== null) {
+                  const siblings = childrenIds;
+                  const prevIndex = siblings.indexOf(prevId);
+
+                  // Insert after the previous node
+                  if (prevIndex !== -1) {
+                    insertAtIndex(id, parentId, prevIndex + 1);
+                  }
+                }
               }
             });
           } else {
@@ -632,10 +710,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
               "before",
               node.id
             );
-            nodeDisp.moveNode(draggedNode.id, true, {
-              targetId: node.id,
-              position: "before",
-            });
+
+            // Find the index of the target node among its siblings
+            const parentId = getNodeParent(node.id);
+            if (parentId !== null) {
+              const siblings = childrenIds;
+              const targetIndex = siblings.indexOf(node.id);
+
+              // Insert at the target index
+              if (targetIndex !== -1) {
+                insertAtIndex(draggedNode.id, parentId, targetIndex);
+              }
+            }
           }
           break;
 
@@ -652,10 +738,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                   "after",
                   node.id
                 );
-                nodeDisp.moveNode(id, true, {
-                  targetId: node.id,
-                  position: "after",
-                });
+
+                // Find the index of the target node among its siblings
+                const parentId = getNodeParent(node.id);
+                if (parentId !== null) {
+                  const siblings = childrenIds;
+                  const targetIndex = siblings.indexOf(node.id);
+
+                  // Insert after the target node
+                  if (targetIndex !== -1) {
+                    insertAtIndex(id, parentId, targetIndex + 1);
+                  }
+                }
               } else {
                 const prevId = selectedIds[index - 1];
                 console.log(
@@ -664,10 +758,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                   "after",
                   prevId
                 );
-                nodeDisp.moveNode(id, true, {
-                  targetId: prevId,
-                  position: "after",
-                });
+
+                // Find the index of the previous node among its siblings
+                const parentId = getNodeParent(prevId);
+                if (parentId !== null) {
+                  const siblings = childrenIds;
+                  const prevIndex = siblings.indexOf(prevId);
+
+                  // Insert after the previous node
+                  if (prevIndex !== -1) {
+                    insertAtIndex(id, parentId, prevIndex + 1);
+                  }
+                }
               }
             });
           } else {
@@ -677,10 +779,18 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
               "after",
               node.id
             );
-            nodeDisp.moveNode(draggedNode.id, true, {
-              targetId: node.id,
-              position: "after",
-            });
+
+            // Find the index of the target node among its siblings
+            const parentId = getNodeParent(node.id);
+            if (parentId !== null) {
+              const siblings = childrenIds;
+              const targetIndex = siblings.indexOf(node.id);
+
+              // Insert after the target node
+              if (targetIndex !== -1) {
+                insertAtIndex(draggedNode.id, parentId, targetIndex + 1);
+              }
+            }
           }
           break;
 
@@ -711,8 +821,8 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             if (isMultiSelectionDrag) {
               // Make sure no viewports are in the selection before proceeding
               const hasViewports = selectedIds.some((id) => {
-                const node = nodeState.nodes.find((n) => n.id === id);
-                return node && node.isViewport;
+                const nodeFlags = getNodeFlags(id);
+                return nodeFlags.isViewport;
               });
 
               if (hasViewports) {
@@ -731,10 +841,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                     "inside",
                     node.id
                   );
-                  nodeDisp.moveNode(id, true, {
-                    targetId: node.id,
-                    position: "inside",
-                  });
+
+                  // Insert as first child
+                  moveNode(id, node.id);
                 } else {
                   const prevId = selectedIds[index - 1];
                   console.log(
@@ -743,10 +852,21 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                     "after",
                     prevId
                   );
-                  nodeDisp.moveNode(id, true, {
-                    targetId: prevId,
-                    position: "after",
-                  });
+
+                  // Find the index of the previous node among its siblings
+                  const parentId = getNodeParent(prevId);
+                  if (parentId !== null) {
+                    const siblings = childrenIds;
+                    const prevIndex = siblings.indexOf(prevId);
+
+                    // Insert after the previous node
+                    if (prevIndex !== -1) {
+                      insertAtIndex(id, parentId, prevIndex + 1);
+                    } else {
+                      // Fallback to just adding as a child
+                      moveNode(id, node.id);
+                    }
+                  }
                 }
               });
 
@@ -759,10 +879,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                 "inside",
                 node.id
               );
-              nodeDisp.moveNode(draggedNode.id, true, {
-                targetId: node.id,
-                position: "inside",
-              });
+
+              // Add as a child
+              moveNode(draggedNode.id, node.id);
 
               // Expand this node to show the newly added child
               setIsExpanded(true);
@@ -786,38 +905,46 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
         : [draggedNode.id];
 
       nodesToUpdate.forEach((id) => {
-        setNodeStyle(
-          {
-            position: "relative",
-            zIndex: "",
-            transform: "",
-            left: "",
-            top: "",
-          },
-          [id],
-          undefined
-        );
+        updateNodeStyle(id, {
+          position: "relative",
+          zIndex: "",
+          transform: "",
+          left: "",
+          top: "",
+        });
       });
 
       setTimeout(() => {
         // Find the viewport of the target node
+        const allNodesArray = getCurrentNodes();
+        const nodeState = { nodes: allNodesArray };
         const targetViewport = getNodeViewport(node.id, nodeState);
-        const targetViewportNode = targetViewport
-          ? nodeState.nodes.find((n) => n.id === targetViewport)
-          : null;
 
-        if (targetViewportNode && targetViewportNode.viewportWidth !== 1440) {
-          // If we're in a non-desktop viewport, sync FROM this viewport
-          console.log(
-            `Syncing from viewport: ${
-              targetViewportNode.viewportName || targetViewportNode.id
-            }`
-          );
-          nodeDisp.syncFromViewport(targetViewportNode.id);
-        } else {
-          // Default case: sync from desktop to all viewports
-          console.log("Syncing from desktop to all viewports");
-          nodeDisp.syncViewports();
+        if (targetViewport) {
+          const viewportFlags = getNodeFlags(targetViewport);
+
+          if (viewportFlags.viewportWidth !== 1440) {
+            // If we're in a non-desktop viewport, sync FROM this viewport
+            console.log(
+              `Syncing from viewport: ${
+                viewportFlags.viewportName || targetViewport
+              }`
+            );
+
+            // // Use syncFromViewport for non-desktop viewports
+            // syncFromViewport(targetViewport);
+          } else {
+            // Default case: sync from desktop to all viewports
+            console.log("Syncing from desktop to all viewports");
+
+            // For desktop viewport, use standard syncViewports
+            nodesToUpdate.forEach((id) => {
+              const parentId = getNodeParent(id);
+              if (parentId !== null) {
+                syncViewports(id, parentId);
+              }
+            });
+          }
         }
 
         // Make sure we're selecting the dragged node to complete the operation
@@ -836,8 +963,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
       selectNode(node.id);
     }
 
-    // Toggle the lock state for this node
-    nodeDisp.toggleNodeLock([node.id]);
+    // Toggle the lock state directly with updateNodeFlags
+    const flags = getNodeFlags(node.id);
+    updateNodeFlags(node.id, { isLocked: !flags.isLocked });
   };
 
   // Get required node data
@@ -1049,6 +1177,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                 isVariant: getNodeFlags(childId).isVariant,
                 isLocked: getNodeFlags(childId).isLocked,
                 parentId: getNodeParent(childId),
+                dynamicParentId: getNodeDynamicInfo(childId).dynamicParentId,
                 children: [], // Children will be fetched by the child component
               }}
               level={level + 1}

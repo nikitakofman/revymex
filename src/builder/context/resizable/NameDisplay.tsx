@@ -1,5 +1,4 @@
 import React, { useRef, useState } from "react";
-import { useBuilderDynamic } from "../builderState";
 import { Component, Crown } from "lucide-react"; // Import Crown icon from lucide-react
 import { useDragStart } from "../dnd/useDragStart";
 import { selectOps } from "../atoms/select-store";
@@ -16,11 +15,11 @@ import {
   useNodeBasics,
   useGetNode,
   useNodeStyle,
-  useNodeState,
+  useGetNodeFlags,
+  getCurrentNodes,
 } from "../atoms/node-store";
 
 const NameDisplay = ({ nodeId }: { nodeId: string }) => {
-  const { nodeState } = useBuilderDynamic();
   const handleDragStart = useDragStart();
 
   // Get node data directly from atoms
@@ -32,6 +31,7 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
 
   // Get a full node builder for compatibility with drag functions
   const getNode = useGetNode();
+  const getNodeFlags = useGetNodeFlags();
 
   // Use atoms for state
   const transform = useTransform();
@@ -45,8 +45,8 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
   const mouseDownRef = useRef({ x: 0, y: 0, time: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
-  // Get active viewport in dynamic mode
-  const activeViewport = nodeState.nodes.find(
+  const allNodes = getCurrentNodes();
+  const activeViewport = allNodes.find(
     (node) => node.id === activeViewportInDynamicMode
   );
 

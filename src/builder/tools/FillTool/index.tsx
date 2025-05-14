@@ -21,7 +21,6 @@ import {
 } from "@/builder/context/atoms/node-store";
 
 export const FillTool = () => {
-  // Replace nodeState with Jotai hooks
   const getNode = useGetNode();
 
   // Use subscription-based hook

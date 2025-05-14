@@ -18,9 +18,16 @@ import {
 } from "../atoms/node-store/operations/insert-operations";
 import { getFilteredElementsUnderMouseDuringDrag } from "../utils";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
-import { getSiblingOrdering, TargetInfo } from "./dnd-utils";
+import {
+  getSiblingOrdering,
+  TargetInfo,
+  calculateSnappedPosition,
+  extractNodeDimensions,
+} from "./dnd-utils";
 import { snapOps } from "../atoms/snap-guides-store";
+import { useGetNodeFlags, useGetNodeStyle } from "../atoms/node-store";
 
+// Convert screen coordinates to canvas space
 export const screenToCanvas = (
   e: MouseEvent,
   containerRect: DOMRect,
@@ -28,6 +35,20 @@ export const screenToCanvas = (
 ) => ({
   x: (e.clientX - containerRect.left - transform.x) / transform.scale,
   y: (e.clientY - containerRect.top - transform.y) / transform.scale,
+});
+
+// Get parent element's position in canvas space
+export const getParentOffsetInCanvas = (
+  parentEl: HTMLElement,
+  containerRect: DOMRect,
+  transform: { x: number; y: number; scale: number }
+) => ({
+  x:
+    (parentEl.getBoundingClientRect().left - containerRect.left - transform.x) /
+    transform.scale,
+  y:
+    (parentEl.getBoundingClientRect().top - containerRect.top - transform.y) /
+    transform.scale,
 });
 
 export const useMouseMove = () => {
@@ -39,6 +60,8 @@ export const useMouseMove = () => {
   const { containerRef } = useBuilderRefs();
   const getTransform = useGetTransform();
   const getDropInfo = useGetDropInfo();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeStyle = useGetNodeStyle();
 
   const lastTarget = useRef<TargetInfo | null>(null);
   const prevMousePosRef = useRef({ x: 0, y: 0 });
@@ -51,6 +74,11 @@ export const useMouseMove = () => {
 
     const dragSource = getDragSource();
     const draggedNodeId = dragged.node.id;
+    const startingParentId = dragged.offset.startingParentId;
+
+    // Get the original position type to maintain it
+    const originalPositionType =
+      dragged.offset.originalPositionType || "absolute";
 
     const isOverCanvas = getFilteredElementsUnderMouseDuringDrag(
       e,
@@ -58,17 +86,32 @@ export const useMouseMove = () => {
       "canvas"
     );
 
-    // Always track mouse position for canvas elements
-    if (dragSource === "canvas") {
-      const containerRect = containerRef.current!.getBoundingClientRect();
+    // Handle absolute-in-frame elements (including fixed)
+    if (dragSource === "absolute-in-frame" && startingParentId) {
       const transform = getTransform();
-      const { x, y } = screenToCanvas(e, containerRect, transform);
+      const containerRect = containerRef.current!.getBoundingClientRect();
+      const parentEl = document.querySelector(
+        `[data-node-id="${startingParentId}"]`
+      ) as HTMLElement;
+
+      if (!parentEl) return;
+
+      // 1️⃣ Mouse position in canvas space
+      const { x: mouseCX, y: mouseCY } = screenToCanvas(
+        e,
+        containerRect,
+        transform
+      );
+
+      // 2️⃣ Raw drag position in canvas space (keep the grab-offset)
+      const rawCX = mouseCX - dragged.offset.mouseX / transform.scale;
+      const rawCY = mouseCY - dragged.offset.mouseY / transform.scale;
 
       // Check if there's an active drop zone
       const dropInfo = getDropInfo();
       const hasActiveDropZone = dropInfo && dropInfo.targetId !== null;
 
-      // Get snap guides state - only if no active drop zone
+      // 3️⃣ Snap in canvas space
       const { enabled, activeSnapPoints } = hasActiveDropZone
         ? {
             enabled: false,
@@ -76,92 +119,110 @@ export const useMouseMove = () => {
           }
         : snapOps.getState();
 
-      // Calculate mouse speed (pixels per frame)
+      // Extract node dimensions
+      const dimensions = extractNodeDimensions(dragged.node.style);
+
+      // Calculate mouse speed
       const mouseSpeed = {
         x: Math.abs(e.clientX - prevMousePosRef.current.x),
         y: Math.abs(e.clientY - prevMousePosRef.current.y),
       };
 
-      // Dynamic snap threshold based on speed
-      // Reduce snap effect when moving quickly
-      const speedFactor = Math.max(mouseSpeed.x, mouseSpeed.y);
-      const snapStrength = Math.max(0, 1 - speedFactor / 20); // Gradually reduce snapping as speed increases
+      // Calculate snapped position in canvas space
+      const { x: snapCX, y: snapCY } = calculateSnappedPosition(
+        rawCX,
+        rawCY,
+        dimensions,
+        mouseSpeed,
+        activeSnapPoints,
+        enabled,
+        hasActiveDropZone
+      );
 
-      // Prepare final position (will be adjusted if snapping)
-      let finalX = x - dragged.offset.mouseX / transform.scale;
-      let finalY = y - dragged.offset.mouseY / transform.scale;
+      // 4️⃣ Convert snapped canvas coords → parent coords
+      const { x: parentCX, y: parentCY } = getParentOffsetInCanvas(
+        parentEl,
+        containerRect,
+        transform
+      );
 
-      // Raw positions (without snapping) to blend with snapped positions
-      const rawX = finalX;
-      const rawY = finalY;
+      const relX = Math.round(snapCX - parentCX);
+      const relY = Math.round(snapCY - parentCY);
 
-      // Extract node dimensions for snapping calculations
-      const { style } = dragged.node;
-      let width = 100; // Default
-      let height = 100; // Default
-
-      // Get width from style
-      if (typeof style.width === "string" && style.width.includes("px")) {
-        width = parseFloat(style.width);
-      } else if (typeof style.width === "number") {
-        width = style.width;
-      }
-
-      // Get height from style
-      if (typeof style.height === "string" && style.height.includes("px")) {
-        height = parseFloat(style.height);
-      } else if (typeof style.height === "number") {
-        height = style.height;
-      }
-
-      // Apply snapping if enabled, we have active snap points, and no active drop zone
-      if (enabled && !hasActiveDropZone) {
-        // Apply horizontal snapping
-        if (activeSnapPoints.horizontal) {
-          const snapPoint = activeSnapPoints.horizontal;
-          let snappedY = finalY;
-
-          // Adjust position based on which edge is snapping
-          if (snapPoint.edge === "top") {
-            snappedY = snapPoint.position;
-          } else if (snapPoint.edge === "center") {
-            snappedY = snapPoint.position - height / 2;
-          } else if (snapPoint.edge === "bottom") {
-            snappedY = snapPoint.position - height;
-          }
-
-          // Blend raw position with snapped position based on speed
-          finalY = snappedY * snapStrength + rawY * (1 - snapStrength);
-        }
-
-        // Apply vertical snapping
-        if (activeSnapPoints.vertical) {
-          const snapPoint = activeSnapPoints.vertical;
-          let snappedX = finalX;
-
-          // Adjust position based on which edge is snapping
-          if (snapPoint.edge === "left") {
-            snappedX = snapPoint.position;
-          } else if (snapPoint.edge === "center") {
-            snappedX = snapPoint.position - width / 2;
-          } else if (snapPoint.edge === "right") {
-            snappedX = snapPoint.position - width;
-          }
-
-          // Blend raw position with snapped position based on speed
-          finalX = snappedX * snapStrength + rawX * (1 - snapStrength);
-        }
-      }
-
-      // Update the node's position with (potentially) snapped coordinates
+      // 5️⃣ Write styles - use absolute for positioning but maintain the original position type
       updateNodeStyle(draggedNodeId, {
-        position: "absolute",
-        left: `${finalX}px`,
-        top: `${finalY}px`,
+        position: originalPositionType, // Keep the original position type
+        left: `${relX}px`,
+        top: `${relY}px`,
       });
 
+      // Store position for snap guides
+      dragOps.setDragPositions(mouseCX, mouseCY);
+
+      // Store mouse position for reference
+      dragOps.setLastMousePosition(e.clientX, e.clientY);
+      prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    // Handle canvas elements
+    else if (dragSource === "canvas") {
+      const containerRect = containerRef.current!.getBoundingClientRect();
+      const transform = getTransform();
+
+      // Mouse position in canvas space
+      const { x: mouseCX, y: mouseCY } = screenToCanvas(
+        e,
+        containerRect,
+        transform
+      );
+
+      // Raw drag position in canvas space
+      const rawCX = mouseCX - dragged.offset.mouseX / transform.scale;
+      const rawCY = mouseCY - dragged.offset.mouseY / transform.scale;
+
+      // Check if there's an active drop zone
+      const dropInfo = getDropInfo();
+      const hasActiveDropZone = dropInfo && dropInfo.targetId !== null;
+
+      // Get snap guides state
+      const { enabled, activeSnapPoints } = hasActiveDropZone
+        ? {
+            enabled: false,
+            activeSnapPoints: { horizontal: null, vertical: null },
+          }
+        : snapOps.getState();
+
+      // Extract node dimensions
+      const dimensions = extractNodeDimensions(dragged.node.style);
+
+      // Calculate mouse speed
+      const mouseSpeed = {
+        x: Math.abs(e.clientX - prevMousePosRef.current.x),
+        y: Math.abs(e.clientY - prevMousePosRef.current.y),
+      };
+
       // Store positions for drag operations
-      dragOps.setDragPositions(x, y);
+      dragOps.setDragPositions(mouseCX, mouseCY);
+
+      // Calculate snapped position (already in canvas space)
+      const { x: finalX, y: finalY } = calculateSnappedPosition(
+        rawCX,
+        rawCY,
+        dimensions,
+        mouseSpeed,
+        activeSnapPoints,
+        enabled,
+        hasActiveDropZone
+      );
+
+      // Update the node's position - use absolute for positioning on canvas
+      // regardless of original position type
+      updateNodeStyle(draggedNodeId, {
+        position: "absolute", // Always use absolute when on canvas
+        left: `${Math.round(finalX)}px`,
+        top: `${Math.round(finalY)}px`,
+      });
 
       // Toggle canvas state if needed
       dragOps.setIsOverCanvas(isOverCanvas);
@@ -171,7 +232,7 @@ export const useMouseMove = () => {
       return;
     }
 
-    // Normal placeholder-based dragging
+    // Handle placeholder-based dragging
     const placeholderId = dragged.offset.placeholderId;
     if (!placeholderId) return;
 
@@ -185,13 +246,14 @@ export const useMouseMove = () => {
       dragOps.setIsOverCanvas(true);
       dragOps.setDragPositions(x, y);
     } else {
-      // Use the comprehensive utility function for all placeholder positioning logic
+      // Handle sibling ordering
       const result = getSiblingOrdering(
         e,
         placeholderId,
         draggedNodeId,
         getNodeParent,
         getNodeChildren,
+        getNodeStyle,
         lastTarget.current,
         prevMousePosRef.current
       );

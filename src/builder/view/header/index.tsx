@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Play, Settings } from "lucide-react";
 import Button from "@/components/ui/button";
 import LineSeparator from "@/components/ui/line-separator";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import RevymeIcon from "./revyme-icon";
 import { Tooltip } from "react-tooltip";
 import { ToolbarSlider } from "@/builder/tools/_components/ToolbarSlider";
@@ -13,6 +12,7 @@ import {
 } from "@/builder/context/atoms/interface-store";
 import { ChevronDown } from "lucide-react";
 import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
+import { getCurrentNodes } from "@/builder/context/atoms/node-store";
 
 interface SimplifiedToolSelectProps {
   value: string;
@@ -51,8 +51,6 @@ export const SimplifiedToolSelect: React.FC<SimplifiedToolSelectProps> = ({
 };
 
 const Header = () => {
-  const { nodeState } = useBuilderDynamic();
-
   // Get interface state from the interface store
   const isPreviewOpen = useIsPreviewOpen();
   const previewWidth = usePreviewWidth();
@@ -63,10 +61,12 @@ const Header = () => {
   const [maxWidth, setMaxWidth] = useState(2560);
   const [selectedViewport, setSelectedViewport] = useState("custom");
 
-  // Get viewports from nodes
   const viewportOptions = useMemo(() => {
+    // Get all nodes directly from the store
+    const allNodes = getCurrentNodes();
+
     // Get all viewports
-    const viewports = nodeState.nodes
+    const viewports = allNodes
       .filter((node) => node.isViewport)
       .sort((a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0))
       .map((viewport) => ({
@@ -76,7 +76,7 @@ const Header = () => {
 
     // Add custom option
     return [...viewports, { label: "Custom", value: "custom" }];
-  }, [nodeState.nodes]);
+  }, []); // Empty dependency array since we'll get fresh data on each render
 
   // Get max width from screen on mount and when window resizes
   useEffect(() => {

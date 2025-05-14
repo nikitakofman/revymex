@@ -374,12 +374,7 @@ export const useSetInterfaceState = () => {
 };
 
 // Debug function
-export const debugInterfaceStore = () => {
-  console.log(
-    "Interface Store State:",
-    interfaceStore.get(_internalInterfaceStateAtom)
-  );
-};
+export const debugInterfaceStore = () => {};
 
 // Initialize the store with default values
 interfaceStore.set(_internalInterfaceStateAtom, {
@@ -396,10 +391,5 @@ interfaceStore.set(_internalInterfaceStateAtom, {
 
 // Optional listener for debugging
 if (process.env.NODE_ENV === "development") {
-  interfaceStore.sub(_internalInterfaceStateAtom, () => {
-    console.log(
-      "Interface state changed:",
-      interfaceStore.get(_internalInterfaceStateAtom)
-    );
-  });
+  interfaceStore.sub(_internalInterfaceStateAtom, () => {});
 }

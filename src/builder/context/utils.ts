@@ -2163,7 +2163,7 @@ export function createMatrix3dTransform(
 }
 
 export const isAbsoluteInFrame = (node: Node) => {
-  return node.isAbsoluteInFrame === true && node.parentId !== null;
+  return node.style.isAbsoluteInFrame === "true" && node.parentId !== null;
 };
 
 export function multiply2D(A: number[], B: number[]) {

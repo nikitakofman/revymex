@@ -87,8 +87,6 @@ export const useDragStart = () => {
       stopRecording(recordingSessionId);
       dragOps.resetDragState();
 
-      // Clean up any dangling placeholders
-      // Instead of searching through nodeState, use DOM query to find placeholders
       const placeholderElements = document.querySelectorAll(
         '[data-node-type="placeholder"]'
       );
@@ -403,7 +401,6 @@ export const useDragStart = () => {
     if (node.inViewport) {
       dragOps.setDragSource("viewport");
 
-      // Find index within parent using DOM order instead of nodeState
       const parentElement = element.parentElement;
       let oldIndex = 0;
 

@@ -30,6 +30,32 @@ export interface StyleRule {
   after?: (nodeId: NodeId, style: CSSProperties) => void;
 }
 
+// Helper function to mark isAbsoluteInFrame as independent when position properties change
+// ONLY in lower viewports, and ONLY when explicitly changed
+const markAbsoluteInFrameIndependent = (
+  nodeId: NodeId,
+  viewportIndex: number
+) => {
+  // Skip for desktop viewport
+  if (viewportIndex <= 0) return;
+
+  // Get the existing sync flags
+  const syncFlags = nodeStore.get(nodeSyncFlagsAtom(nodeId));
+
+  // Add the flags if they don't already exist
+  nodeStore.set(nodeSyncFlagsAtom(nodeId), {
+    ...syncFlags,
+    independentStyles: {
+      ...syncFlags.independentStyles,
+      isAbsoluteInFrame: true,
+    },
+    unsyncFromParentViewport: {
+      ...syncFlags.unsyncFromParentViewport,
+      isAbsoluteInFrame: true,
+    },
+  });
+};
+
 export const viewportCascadingRule = {
   name: "viewport-cascading",
   description: "Cascade style changes based on viewport hierarchy",
@@ -64,6 +90,22 @@ export const viewportCascadingRule = {
 
     // Properties being changed - we'll use this to check for barriers
     const changedProps = Object.keys(style);
+
+    // Check if position or positioning properties are changing
+    const isChangingPosition = changedProps.some(
+      (prop) =>
+        prop === "position" ||
+        prop === "top" ||
+        prop === "left" ||
+        prop === "right" ||
+        prop === "bottom"
+    );
+
+    // If in a lower viewport AND explicitly changing position properties,
+    // automatically mark isAbsoluteInFrame as independent
+    if (currentViewportIndex > 0 && isChangingPosition) {
+      markAbsoluteInFrameIndependent(nodeId, currentViewportIndex);
+    }
 
     // Different behavior based on viewport level
     if (currentViewportIndex === 0) {

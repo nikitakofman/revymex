@@ -13,8 +13,6 @@ import { useGetNode } from "@/builder/context/atoms/node-store";
 import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 export const StylesTool = () => {
-  // Remove nodeState and setNodeStyle
-  // Add getNode from Jotai
   const getNode = useGetNode();
 
   // Use reactive hook

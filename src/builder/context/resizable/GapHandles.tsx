@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from "react";
-import { useBuilderDynamic } from "@/builder/context/builderState";
+import React, { useEffect, useState, useMemo } from "react";
 import { visualOps } from "../atoms/visual-store";
 import {
   canvasOps,
@@ -7,8 +6,16 @@ import {
   useIsResizing,
   useTransform,
 } from "../atoms/canvas-interaction-store";
-import { NodeId, useNodeStyle, useNodeBasics } from "../atoms/node-store";
+import {
+  NodeId,
+  useNodeStyle,
+  useNodeBasics,
+  useGetNodeParent,
+  useGetNodeStyle,
+  // Remove this import: useGetNodeFlags
+} from "../atoms/node-store";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
+import { useNodeChildren } from "../atoms/node-store/hierarchy-store";
 
 const parseRotation = (rotate: string | undefined): number => {
   if (!rotate) return 0;
@@ -16,17 +23,24 @@ const parseRotation = (rotate: string | undefined): number => {
   return match ? parseFloat(match[1]) : 0;
 };
 
-const hasRotation = (nodeId: NodeId, nodes: any[]): boolean => {
+// This function should NOT use React hooks directly
+const checkHasRotation = (
+  nodeId: NodeId,
+  getStyleFn: (id: NodeId) => any,
+  getParentFn: (id: NodeId) => NodeId | null
+): boolean => {
   let currentNodeId = nodeId;
   while (currentNodeId) {
-    const currentNode = nodes.find((n) => n.id === currentNodeId);
-    if (!currentNode) break;
+    const currentNodeStyle = getStyleFn(currentNodeId);
 
-    if (parseRotation(currentNode.style.rotate) !== 0) {
+    if (parseRotation(currentNodeStyle.rotate) !== 0) {
       return true;
     }
-    if (!currentNode.parentId) break;
-    currentNodeId = currentNode.parentId;
+
+    const parentId = getParentFn(currentNodeId);
+    if (!parentId) break;
+
+    currentNodeId = parentId;
   }
   return false;
 };
@@ -40,13 +54,18 @@ export const GapHandles = ({
   isSelected: boolean;
   elementRef: React.RefObject<HTMLDivElement>;
 }) => {
-  // Get node data directly from atoms
+  // Get node data directly from atoms - hooks must be at the top level
   const style = useNodeStyle(nodeId);
   const basics = useNodeBasics(nodeId);
   const { type } = basics;
 
-  const { nodeState, startRecording, stopRecording, setNodeStyle } =
-    useBuilderDynamic();
+  // Use getter functions instead of hooks for conditionals
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeParent = useGetNodeParent();
+  // Remove this line: const getNodeFlags = useGetNodeFlags();
+
+  // Get the node's children from hierarchy store
+  const childrenIds = useNodeChildren(nodeId);
 
   const [hoveredGapIndex, setHoveredGapIndex] = useState<number | null>(null);
   const [isInteractive, setIsInteractive] = useState(false);
@@ -54,6 +73,11 @@ export const GapHandles = ({
   const transform = useTransform();
   const isMovingCanvas = useIsMovingCanvas();
   const isResizing = useIsResizing();
+
+  // Check for rotation using the useMemo hook to avoid hook rule violations
+  const nodeHasRotation = useMemo(() => {
+    return checkHasRotation(nodeId, getNodeStyle, getNodeParent);
+  }, [nodeId, getNodeStyle, getNodeParent]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -83,8 +107,6 @@ export const GapHandles = ({
       console.log("Initializing gap to 0px");
       updateNodeStyle(nodeId, { gap: "0px" });
     }
-
-    const sessionId = startRecording();
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -134,7 +156,7 @@ export const GapHandles = ({
         value: newGap,
       });
 
-      // Using updateNodeStyle instead of setNodeStyle
+      // Using updateNodeStyle directly
       updateNodeStyle(nodeId, { gap: `${Math.round(newGap)}px` });
     };
 
@@ -143,7 +165,6 @@ export const GapHandles = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
       canvasOps.setIsAdjustingGap(false);
-      stopRecording(sessionId);
       window.dispatchEvent(new Event("resize"));
     };
 
@@ -151,6 +172,7 @@ export const GapHandles = ({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
+  // Early return conditions
   if (
     !elementRef.current ||
     !isSelected ||
@@ -160,9 +182,7 @@ export const GapHandles = ({
   )
     return null;
   if (type !== "frame") return null;
-
-  // Check if this node or any of its parents have rotation
-  if (hasRotation(nodeId, nodeState.nodes)) return null;
+  if (nodeHasRotation) return null;
 
   const frameElement = document.querySelector(`[data-node-id="${nodeId}"]`);
   if (!frameElement) return null;
@@ -175,16 +195,29 @@ export const GapHandles = ({
 
   const isColumn = computedStyle.flexDirection === "column";
 
-  const frameChildren = nodeState.nodes
-    .filter((child) => child.parentId === nodeId)
-    .map((childNode) => {
-      const el = document.querySelector(
-        `[data-node-id="${childNode.id}"]`
-      ) as HTMLElement | null;
-      return el ? { id: childNode.id, rect: el.getBoundingClientRect() } : null;
-    })
-    .filter((x): x is { id: string; rect: DOMRect } => !!x);
+  // Filter out absolute-in-frame elements from childrenIds
+  // CHANGE: Using getNodeStyle instead of getNodeFlags
+  const nonAbsoluteChildren = childrenIds.filter((childId) => {
+    const childStyle = getNodeStyle(childId);
+    // Match the same conditions as in orderingUtils.ts
+    return !(
+      childStyle.isAbsoluteInFrame === "true" ||
+      (childStyle.position === "absolute" &&
+        childStyle.isAbsoluteInFrame !== "false")
+    );
+  });
 
+  // Use the filtered children for creating gap handles
+  const frameChildren = nonAbsoluteChildren
+    .map((childId) => {
+      const el = document.querySelector(
+        `[data-node-id="${childId}"]`
+      ) as HTMLElement | null;
+      return el ? { id: childId, rect: el.getBoundingClientRect() } : null;
+    })
+    .filter((x): x is { id: string | number; rect: DOMRect } => !!x);
+
+  // If we have less than 2 non-absolute children, don't show gap handles
   if (frameChildren.length < 2) return null;
 
   const frameRect = frameElement.getBoundingClientRect();

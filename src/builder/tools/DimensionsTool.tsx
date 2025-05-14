@@ -50,9 +50,7 @@ const DimensionsTool = () => {
   }, [selectedIds]);
 
   // Debug helper - log actual values to confirm they're correct
-  useEffect(() => {
-    console.log(`Current dimensions: ${width}x${height}`);
-  }, [width, height]);
+  useEffect(() => {}, [width, height]);
 
   return (
     <ToolbarContainer>

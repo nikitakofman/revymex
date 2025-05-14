@@ -32,6 +32,7 @@ export interface Node {
     backgroundImage?: string;
     isVideoBackground?: boolean;
     backgroundVideo?: string;
+    isAbsoluteInFrame?: string;
   };
   isLocked?: boolean;
   sharedId?: string;
@@ -60,6 +61,7 @@ export interface Node {
     inViewport: boolean;
   };
   isAbsoluteInFrame?: boolean;
+  isFixedInFrame?: boolean;
   isVariant?: boolean;
   variantParentId?: string | number;
   variantInfo?: VariantInfo;

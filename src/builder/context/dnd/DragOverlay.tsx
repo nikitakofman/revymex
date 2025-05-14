@@ -37,7 +37,8 @@ const DragOverlay = () => {
   if (!dragged || !dragging) return null;
 
   // Don't render the overlay if we're dragging directly on canvas
-  if (dragSource === "canvas") return null;
+  if (dragSource === "canvas" || dragSource === "absolute-in-frame")
+    return null;
 
   // Unpack what useDragStart gave us
   const { mouseX, mouseY, width, height, rotate, isSimpleRotation } =

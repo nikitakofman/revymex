@@ -1,4 +1,3 @@
-// hooks/useLineIndicatorController.ts
 import { useEffect } from "react";
 import {
   useIsDragging,
@@ -8,17 +7,17 @@ import {
 } from "@/builder/context/atoms/drag-store";
 import { visualOps } from "../atoms/visual-store";
 import { computeFrameDropIndicator } from "../utils";
+import { useGetNodeStyle } from "@/builder/context/atoms/node-store";
 
 export const useLineIndicatorController = () => {
   const dragging = useIsDragging();
   const dragged = useDraggedNode();
   const dragSource = useDragSource();
+  const getNodeStyle = useGetNodeStyle();
 
   useEffect(() => {
-    // Only proceed if we're dragging and have a dragged node
     if (!dragging || !dragged) return;
 
-    // Only show line indicator when dragging from canvas
     if (dragSource !== "canvas") {
       visualOps.hideLineIndicator();
       return;
@@ -27,7 +26,6 @@ export const useLineIndicatorController = () => {
     const onMove = (e: MouseEvent) => {
       const els = document.elementsFromPoint(e.clientX, e.clientY);
 
-      // Find the nearest element that can accept children
       const frame = els.find(
         (el) =>
           el.getAttribute("data-node-type") === "frame" &&
@@ -47,19 +45,29 @@ export const useLineIndicatorController = () => {
         return;
       }
 
-      // Gather non-placeholder, non-dragged children rects
-      const children = Array.from(frame.children).filter(
-        (el) =>
-          el.getAttribute("data-node-type") !== "placeholder" &&
-          el.getAttribute("data-node-id") !== dragged.node.id
-      ) as HTMLElement[];
+      const children = Array.from(frame.children).filter((el) => {
+        const childId = el.getAttribute("data-node-id");
+
+        if (
+          el.getAttribute("data-node-type") === "placeholder" ||
+          childId === dragged.node.id
+        ) {
+          return false;
+        }
+
+        if (childId) {
+          const childStyle = getNodeStyle(childId);
+          return childStyle.isAbsoluteInFrame !== "true";
+        }
+
+        return true;
+      }) as HTMLElement[];
 
       const childRects = children.map((el) => ({
         id: el.getAttribute("data-node-id")!,
         rect: el.getBoundingClientRect(),
       }));
 
-      // Get the result from the original helper
       const result = computeFrameDropIndicator(
         frame,
         childRects,
@@ -68,20 +76,15 @@ export const useLineIndicatorController = () => {
       );
 
       if (result && result.lineIndicator.show) {
-        // Show the line indicator visually
         visualOps.setLineIndicator(result.lineIndicator);
 
-        // IMPORTANT: Pass the actual position from the result
-        // This preserves the correct drop position
         dragOps.setDropInfo(result.dropInfo.targetId, result.dropInfo.position);
       } else {
-        // When not showing a line indicator, set drop to "inside"
         visualOps.hideLineIndicator();
         dragOps.setDropInfo(frameId, "inside");
       }
     };
 
-    // Mouse up handler to hide the line indicator
     const onMouseUp = () => {
       visualOps.hideLineIndicator();
     };
@@ -94,5 +97,5 @@ export const useLineIndicatorController = () => {
       document.removeEventListener("mouseup", onMouseUp);
       visualOps.hideLineIndicator();
     };
-  }, [dragging, dragged, dragSource]);
+  }, [dragging, dragged, dragSource, getNodeStyle]);
 };

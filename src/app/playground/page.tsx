@@ -5,11 +5,12 @@ import PreviewPlay from "./components/preview/previewplay";
 import TextCss from "./components/textcss";
 import DuplicateDyna from "./components/duplicatedyna";
 import SimpleEditor from "./components/tiptap";
+import Sticky from "./components/sticky";
 
 type Props = {};
 
 const page = (props: Props) => {
-  return <SimpleEditor />;
+  return <Sticky />;
 };
 
 export default page;

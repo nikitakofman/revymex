@@ -1,21 +1,22 @@
 import React, { useRef, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 import { canvasOps } from "../atoms/canvas-interaction-store";
 import { useEditViewportModal, modalOps } from "../atoms/modal-store";
+import { getCurrentNodes } from "@/builder/context/atoms/node-store";
+import { updateViewport } from "../atoms/node-store/operations/update-operations";
 
 const EditViewportModal: React.FC = () => {
-  const { nodeState, nodeDisp } = useBuilderDynamic();
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   // Use the subscription hook for the edit viewport modal
   const editViewportModal = useEditViewportModal();
 
-  // Find the viewport to edit
-  const viewport = nodeState.nodes.find(
+  // Find the viewport to edit using getCurrentNodes
+  const allNodes = getCurrentNodes();
+  const viewport = allNodes.find(
     (n) => n.id === editViewportModal.viewportId && n.isViewport
   );
 
@@ -72,7 +73,7 @@ const EditViewportModal: React.FC = () => {
     modalOps.hideEditViewportModal();
   };
 
-  const updateViewport = () => {
+  const handleUpdateViewport = () => {
     const width = parseInt(widthValue);
 
     if (isNaN(width) || width <= 0) {
@@ -80,13 +81,14 @@ const EditViewportModal: React.FC = () => {
       return;
     }
 
-    nodeDisp.editViewport(editViewportModal.viewportId, width, nameValue);
+    // Use updateViewport from the node store instead of nodeDisp.editViewport
+    updateViewport(editViewportModal.viewportId, width, nameValue);
     handleClose();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
-      updateViewport();
+      handleUpdateViewport();
     }
   };
 
@@ -164,7 +166,7 @@ const EditViewportModal: React.FC = () => {
         <Button
           variant="primary"
           size="sm"
-          onClick={updateViewport}
+          onClick={handleUpdateViewport}
           className="mt-1 w-full"
         >
           Update Viewport

@@ -7,9 +7,9 @@ import {
   contextMenuOps,
 } from "../atoms/context-menu-store";
 import { modalOps } from "../atoms/modal-store";
+import { alignViewports } from "../atoms/node-store/operations/style-operations";
 
 const ViewportContextMenu = () => {
-  const { nodeDisp } = useBuilderDynamic();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState({
     left: 0,
@@ -109,7 +109,7 @@ const ViewportContextMenu = () => {
       icon: AlignHorizontalJustifyCenter,
       onClick: (e: React.MouseEvent) => {
         e.stopPropagation();
-        nodeDisp.alignViewports();
+        alignViewports();
         contextMenuOps.hideViewportContextMenu();
       },
     },

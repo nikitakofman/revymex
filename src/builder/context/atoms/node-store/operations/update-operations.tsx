@@ -4,8 +4,10 @@ import {
   nodeFlagsAtom,
   nodeSharedInfoAtom,
   nodeDynamicInfoAtom,
+  changedNodesAtom,
 } from "../";
 import { batchNodeUpdates } from "../";
+import { updateNodeStyle } from "./style-operations";
 
 /**
  * Update a node's flags
@@ -78,5 +80,47 @@ export function updateNodeDynamicInfo(
       ...prev,
       ...updates,
     }));
+  });
+}
+
+/**
+ * Update a viewport node's width and name
+ * @param viewportId ID of the viewport to update
+ * @param width New width for the viewport
+ * @param name New name for the viewport
+ */
+export function updateViewport(
+  viewportId: NodeId,
+  width: number,
+  name: string
+) {
+  // Batch updates for better performance
+  batchNodeUpdates(() => {
+    // Check if viewport exists and is actually a viewport
+    const flags = nodeStore.get(nodeFlagsAtom(viewportId));
+    if (!flags.isViewport) {
+      console.error(`Node ${viewportId} is not a viewport`);
+      return;
+    }
+
+    // Update the viewport width flag
+    nodeStore.set(nodeFlagsAtom(viewportId), (prev) => ({
+      ...prev,
+      viewportWidth: width,
+      viewportName: name,
+    }));
+
+    // Update the viewport's style width with dontSync option
+    updateNodeStyle(viewportId, { width: `${width}px` }, { dontSync: true });
+
+    // Mark the node as changed for optimization
+    nodeStore.set(changedNodesAtom, (prev: Set<NodeId>) => {
+      const newSet = new Set(prev);
+      newSet.add(viewportId);
+      return newSet;
+    });
+
+    // Reset any nodes with styles tied to viewport width (advanced feature)
+    // This would be implemented if there are viewport-dependent styles
   });
 }

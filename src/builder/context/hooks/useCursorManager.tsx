@@ -114,7 +114,7 @@ export const useCursorManager = () => {
           preventSelectStyle
         );
       } else if (isDragging) {
-        updateCursorStyle("move", preventSelectStyle);
+        // updateCursorStyle("move", preventSelectStyle);
       } else {
         updateCursorStyle("default", {
           userSelect: "",

@@ -5,7 +5,6 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { useBuilderDynamic } from "@/builder/context/builderState";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -21,8 +20,14 @@ import {
   NodeId,
   useNodeStyle,
   useNodeBasics,
+  useGetNodeBasics,
+  useGetNodeFlags,
+  useGetNodeParent,
+  getCurrentNodes,
+  useGetNodeStyle,
 } from "@/builder/context/atoms/node-store";
 import { nanoid } from "nanoid";
+import { useNodeHistory } from "@/builder/context/hooks/useHistory";
 import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/style-operations";
 
 interface ToolInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -159,7 +164,6 @@ export function ToolInput({
   sliderStep = 1,
   ...props
 }: ToolInputProps) {
-  const { nodeState, startRecording, stopRecording } = useBuilderDynamic();
   const [localValue, setLocalValue] = useState<string | number>(
     value || customValue || "0"
   );
@@ -167,8 +171,16 @@ export function ToolInput({
   const [isMixed, setIsMixed] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
+  // Use useNodeHistory for recording operations
+
   // Use selectedIds from Jotai
   const selectedIds = useSelectedIds();
+
+  // Get node data access functions
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+  const getNodeStyle = useGetNodeStyle();
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -193,26 +205,45 @@ export function ToolInput({
   const activeMouseUpHandlerRef = useRef<((e: MouseEvent) => void) | null>(
     null
   );
-  const sessionIdRef = useRef<string | null>(null);
 
   const hasParent = useCallback(() => {
     if (!selectedIds.length) return false;
-    const selectedNode = nodeState.nodes.find(
-      (node) => node.id === selectedIds[0]
+    const parentId = getNodeParent(selectedIds[0]);
+    return !!parentId;
+  }, [selectedIds, getNodeParent]);
+
+  // Check if the node is absolutely positioned or fake fixed (which uses absolute positioning)
+  const isNodeAbsolutelyPositioned = useCallback(() => {
+    if (!selectedIds.length) return false;
+    const style = getNodeStyle(selectedIds[0]);
+    return (
+      style?.position === "absolute" ||
+      style?.isFakeFixed === "true" ||
+      style?.isAbsoluteInFrame === "true"
     );
-    return !!selectedNode?.parentId;
-  }, [selectedIds, nodeState.nodes]);
+  }, [selectedIds, getNodeStyle]);
 
   const isTextFontSize =
     props.name === "fontSize" || (isCustomMode && label === "Size");
 
   const unitOptions = useMemo(() => {
-    const selectedNode = nodeState.nodes.find((n) => n.id === selectedIds[0]);
+    if (selectedIds.length === 0) {
+      return [{ label: "px", value: "px" }];
+    }
+
+    const selectedNodeId = selectedIds[0];
+    const selectedNodeType = getNodeBasics(selectedNodeId).type;
+
+    // Check if node is absolutely positioned
+    const isAbsolute = isNodeAbsolutelyPositioned();
+
     // Check if the selected node has any children
     const hasChildren = () => {
       if (!selectedIds.length) return false;
 
-      return nodeState.nodes.some((node) => node.parentId === selectedNode?.id);
+      // Get all nodes and filter for children of the selected node
+      const allNodes = getCurrentNodes();
+      return allNodes.some((node) => node.parentId === selectedNodeId);
     };
 
     // For text font size, show px and vw
@@ -228,13 +259,17 @@ export function ToolInput({
     if (isHeightProperty) {
       return [
         { label: "Fix", value: "px" },
-        { label: "Fill", value: "fill", disabled: !hasParent() },
+        {
+          label: "Fill",
+          value: "fill",
+          disabled: !hasParent() || isAbsolute, // Disable fill for absolute elements
+        },
         { label: "%", value: "%", disabled: !hasParent() },
         { label: "Vh", value: "vh" },
         {
           label: "Fit",
           value: "auto",
-          disabled: selectedNode?.type !== "text" ? !hasChildren() : false,
+          disabled: selectedNodeType !== "text" ? !hasChildren() : false,
         },
       ];
     }
@@ -242,15 +277,26 @@ export function ToolInput({
     // Default options for other properties
     return [
       { label: "Fix", value: "px" },
-      { label: "Fill", value: "fill", disabled: !hasParent() },
+      {
+        label: "Fill",
+        value: "fill",
+        disabled: !hasParent() || isAbsolute, // Disable fill for absolute elements
+      },
       { label: "%", value: "%", disabled: !hasParent() },
       {
         label: "Fit",
         value: "auto",
-        disabled: selectedNode?.type !== "text" ? !hasChildren() : false,
+        disabled: selectedNodeType !== "text" ? !hasChildren() : false,
       },
     ];
-  }, [isTextFontSize, hasParent, props.name, selectedIds, nodeState.nodes]);
+  }, [
+    isTextFontSize,
+    hasParent,
+    props.name,
+    selectedIds,
+    getNodeBasics,
+    isNodeAbsolutelyPositioned,
+  ]);
 
   const getComputedStyleValue = useCallback(() => {
     if (isCustomMode) return null;
@@ -453,7 +499,6 @@ export function ToolInput({
     }
   }, [
     selectedIds,
-    nodeState.nodes,
     isCustomMode,
     getComputedStyleValue,
     isGridInput,
@@ -712,11 +757,6 @@ export function ToolInput({
 
     isDraggingRef.current = false;
 
-    if (sessionIdRef.current) {
-      stopRecording(sessionIdRef.current);
-      sessionIdRef.current = null;
-    }
-
     // Clean up event listeners
     if (activeMouseMoveHandlerRef.current) {
       document.removeEventListener(
@@ -730,7 +770,7 @@ export function ToolInput({
       document.removeEventListener("mouseup", activeMouseUpHandlerRef.current);
       activeMouseUpHandlerRef.current = null;
     }
-  }, [stopRecording]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -878,9 +918,6 @@ export function ToolInput({
 
     canvasOps.setIsDraggingChevrons(true);
 
-    const sessionId = startRecording();
-    sessionIdRef.current = sessionId;
-
     currentValueRef.current =
       parseFloat(localValue.toString()) || (isGridInput ? 3 : 0);
     startYRef.current = e.clientY;
@@ -922,7 +959,7 @@ export function ToolInput({
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (intervalRef.current) clearInterval(intervalRef.current);
       isDraggingRef.current = false;
-      stopRecording(sessionId);
+
       forceCleanupDrag();
 
       document.removeEventListener("mousemove", handleMouseMove);
