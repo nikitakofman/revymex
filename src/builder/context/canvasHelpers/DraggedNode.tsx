@@ -9,7 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { useBuilderRefs } from "../builderState";
 import { useSnapGrid, SnapResult } from "./SnapGrid";
-import { isAbsoluteInFrame, parseRotation } from "../utils";
+import { parseRotation } from "../utils";
 import { visualOps } from "@/builder/context/atoms/visual-store";
 import {
   useGetDraggedNode,

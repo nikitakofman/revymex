@@ -1,4 +1,4 @@
-// src/builder/context/atoms/drag-store.ts
+// src/builder/context/atoms/drag-store.ts (with selectionOrder addition)
 import { atom, createStore } from "jotai/vanilla";
 import { selectAtom } from "jotai/utils";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -78,6 +78,7 @@ export interface DragState {
   dynamicModeNodeId: string | null;
   duplicatedFromAlt: boolean;
   recordingSessionId: string | null;
+  selectionOrder: string[] | null; // Added this for stable multi-drag ordering
 }
 
 // Initial state
@@ -97,6 +98,7 @@ const initialDragState: DragState = {
   dynamicModeNodeId: null,
   duplicatedFromAlt: false,
   recordingSessionId: null,
+  selectionOrder: null, // Initialize as null
 };
 
 // Base atom for drag state
@@ -166,6 +168,11 @@ export const duplicatedFromAltAtom = selectAtom(
 export const recordingSessionIdAtom = selectAtom(
   _internalDragStateAtom,
   (state) => state.recordingSessionId
+);
+
+export const selectionOrderAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.selectionOrder
 );
 
 // Create a singleton instance of drag operations
@@ -324,6 +331,14 @@ const dragOperations = {
     }));
   },
 
+  // New method to set the selection order
+  setSelectionOrder: (selectionOrder: string[] | null) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      selectionOrder,
+    }));
+  },
+
   resetDragState: () => {
     dragStore.set(_internalDragStateAtom, {
       ...initialDragState,
@@ -333,7 +348,7 @@ const dragOperations = {
   },
 
   // Utility to get full state
-  getDragState: () => {
+  getState: () => {
     return dragStore.get(_internalDragStateAtom);
   },
 };
@@ -392,6 +407,10 @@ export const useDuplicatedFromAlt = () => {
 
 export const useRecordingSessionId = () => {
   return useAtomValue(recordingSessionIdAtom, { store: dragStore });
+};
+
+export const useSelectionOrder = () => {
+  return useAtomValue(selectionOrderAtom, { store: dragStore });
 };
 
 // Full state hook
@@ -481,6 +500,12 @@ export const useGetDuplicatedFromAlt = () => {
 export const useGetRecordingSessionId = () => {
   return useCallback(() => {
     return dragStore.get(_internalDragStateAtom).recordingSessionId;
+  }, []);
+};
+
+export const useGetSelectionOrder = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).selectionOrder;
   }, []);
 };
 

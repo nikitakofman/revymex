@@ -48,10 +48,104 @@ export const useMouseUp = () => {
     const allNodes = getCurrentNodes();
     const draggedNodeData = allNodes.find((n) => n.id === draggedNodeId);
 
+    // For absolute-in-frame and canvas elements, we need to preserve the exact position
+    // on mouse up to prevent position jumps. Get the current position from the DOM.
+    let currentPosition = null;
+    if (dragSource === "absolute-in-frame" || dragSource === "canvas") {
+      const element = document.querySelector(
+        `[data-node-id="${draggedNodeId}"]`
+      );
+      if (element) {
+        const computedStyle = window.getComputedStyle(element);
+        currentPosition = {
+          left: computedStyle.left,
+          top: computedStyle.top,
+        };
+      }
+    }
+
     // Handle absolute-in-frame elements differently
     if (dragSource === "absolute-in-frame" && startingParentId) {
-      // The position was already updated during mousemove
-      // Just check if we should convert back to pixels
+      // Preserve the exact position on mouse up
+      if (currentPosition) {
+        // Extract number values and ensure they're integers to prevent rounding issues
+        let leftValue = parseInt(currentPosition.left, 10);
+        let topValue = parseInt(currentPosition.top, 10);
+
+        // Get any active snap points and use them if they exist
+        const { activeSnapPoints } = snapOps.getState();
+
+        // Apply the active snap points if available
+        if (
+          activeSnapPoints.horizontal &&
+          activeSnapPoints.horizontal.edge === "left"
+        ) {
+          // For left edge snap, we need to calculate parent-relative coordinates
+          const element = document.querySelector(
+            `[data-node-id="${draggedNodeId}"]`
+          );
+          const parentEl = document.querySelector(
+            `[data-node-id="${startingParentId}"]`
+          );
+
+          if (element && parentEl) {
+            const transform = getTransform();
+            const containerRect = containerRef.current!.getBoundingClientRect();
+            const parentRect = parentEl.getBoundingClientRect();
+
+            // Get parent position in canvas space
+            const parentLeft =
+              (parentRect.left - containerRect.left - transform.x) /
+              transform.scale;
+
+            // Calculate the snapped position relative to parent
+            leftValue = Math.round(
+              activeSnapPoints.horizontal.position - parentLeft
+            );
+          }
+        }
+
+        if (
+          activeSnapPoints.vertical &&
+          activeSnapPoints.vertical.edge === "top"
+        ) {
+          // For top edge snap, similar process
+          const element = document.querySelector(
+            `[data-node-id="${draggedNodeId}"]`
+          );
+          const parentEl = document.querySelector(
+            `[data-node-id="${startingParentId}"]`
+          );
+
+          if (element && parentEl) {
+            const transform = getTransform();
+            const containerRect = containerRef.current!.getBoundingClientRect();
+            const parentRect = parentEl.getBoundingClientRect();
+
+            // Get parent position in canvas space
+            const parentTop =
+              (parentRect.top - containerRect.top - transform.y) /
+              transform.scale;
+
+            // Calculate the snapped position relative to parent
+            topValue = Math.round(
+              activeSnapPoints.vertical.position - parentTop
+            );
+          }
+        }
+
+        // Set the final position with the exact values to prevent jumps
+        updateNodeStyle(
+          draggedNodeId,
+          {
+            left: `${leftValue}px`,
+            top: `${topValue}px`,
+          },
+          { dontSync: true }
+        );
+      }
+
+      // Check if we should convert back to pixels
       if (draggedNode.offset.dimensionUnits) {
         restoreOriginalDimensions(
           draggedNodeId,
@@ -123,7 +217,13 @@ export const useMouseUp = () => {
       } else {
         const targetParentId = getNodeParent(targetId);
         if (!targetParentId) {
-          handleCanvasDrop(e, draggedNode, containerRef, getTransform);
+          handleCanvasDrop(
+            e,
+            draggedNode,
+            containerRef,
+            getTransform,
+            currentPosition
+          );
 
           if (isDraggingFromViewport && draggedNodeData?.sharedId) {
             syncViewports(
@@ -263,7 +363,13 @@ export const useMouseUp = () => {
         }
       }
     } else if (isOverCanvas) {
-      handleCanvasDrop(e, draggedNode, containerRef, getTransform);
+      handleCanvasDrop(
+        e,
+        draggedNode,
+        containerRef,
+        getTransform,
+        currentPosition
+      );
 
       if (isDraggingFromViewport && draggedNodeData?.sharedId) {
         syncViewports(
@@ -331,11 +437,56 @@ export const useMouseUp = () => {
     return false;
   }
 
-  function handleCanvasDrop(e, draggedNode, containerRef, getTransform) {
+  function handleCanvasDrop(
+    e,
+    draggedNode,
+    containerRef,
+    getTransform,
+    currentPosition
+  ) {
     const transform = getTransform();
     const draggedNodeId = draggedNode.node.id;
 
-    if (containerRef.current && e) {
+    moveNode(draggedNodeId, null);
+
+    // Check if there are active snap points that should be preserved
+    const { activeSnapPoints } = snapOps.getState();
+    let finalX, finalY;
+
+    // If we have current position from DOM, use those exact values (most accurate)
+    if (currentPosition) {
+      // Extract numeric values
+      finalX = parseInt(currentPosition.left, 10);
+      finalY = parseInt(currentPosition.top, 10);
+
+      // Apply snap points if available and the element is close to them
+      if (
+        activeSnapPoints.horizontal &&
+        activeSnapPoints.horizontal.edge === "left"
+      ) {
+        // Convert snap point to screen coordinates
+        const snapPointScreen = activeSnapPoints.horizontal.position;
+
+        // Only apply if the difference is small (within snap threshold)
+        if (Math.abs(finalX - snapPointScreen) <= 5) {
+          finalX = Math.round(snapPointScreen);
+        }
+      }
+
+      if (
+        activeSnapPoints.vertical &&
+        activeSnapPoints.vertical.edge === "top"
+      ) {
+        // Convert snap point to screen coordinates
+        const snapPointScreen = activeSnapPoints.vertical.position;
+
+        // Only apply if the difference is small (within snap threshold)
+        if (Math.abs(finalY - snapPointScreen) <= 5) {
+          finalY = Math.round(snapPointScreen);
+        }
+      }
+    } else if (containerRef.current && e) {
+      // Calculate position from mouse event if we don't have the current position
       const containerRect = containerRef.current.getBoundingClientRect();
 
       const canvasX =
@@ -343,28 +494,50 @@ export const useMouseUp = () => {
       const canvasY =
         (e.clientY - containerRect.top - transform.y) / transform.scale;
 
-      const finalX = canvasX - draggedNode.offset.mouseX / transform.scale;
-      const finalY = canvasY - draggedNode.offset.mouseY / transform.scale;
-
-      moveNode(draggedNodeId, null);
-
-      // Use dontSync option for canvas drops
-      updateNodeStyle(
-        draggedNodeId,
-        {
-          position: "absolute",
-          left: `${finalX}px`,
-          top: `${finalY}px`,
-          isAbsoluteInFrame: "false",
-        },
-        { dontSync: true }
+      finalX = Math.round(
+        canvasX - draggedNode.offset.mouseX / transform.scale
+      );
+      finalY = Math.round(
+        canvasY - draggedNode.offset.mouseY / transform.scale
       );
 
-      // Only update the inViewport flag
-      updateNodeFlags(draggedNodeId, {
-        inViewport: false,
-      });
+      // Apply snap points if available
+      if (
+        activeSnapPoints.horizontal &&
+        activeSnapPoints.horizontal.edge === "left"
+      ) {
+        finalX = Math.round(activeSnapPoints.horizontal.position);
+      }
+
+      if (
+        activeSnapPoints.vertical &&
+        activeSnapPoints.vertical.edge === "top"
+      ) {
+        finalY = Math.round(activeSnapPoints.vertical.position);
+      }
+    } else {
+      // Fallback (shouldn't happen)
+      const currentStyles = draggedNode.node.style;
+      finalX = parseInt(currentStyles.left, 10) || 0;
+      finalY = parseInt(currentStyles.top, 10) || 0;
     }
+
+    // Use dontSync option for canvas drops, and provide exact integer values
+    updateNodeStyle(
+      draggedNodeId,
+      {
+        position: "absolute",
+        left: `${finalX}px`,
+        top: `${finalY}px`,
+        isAbsoluteInFrame: "false",
+      },
+      { dontSync: true }
+    );
+
+    // Only update the inViewport flag
+    updateNodeFlags(draggedNodeId, {
+      inViewport: false,
+    });
   }
 
   function resetDragState() {

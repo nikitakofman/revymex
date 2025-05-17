@@ -13,6 +13,14 @@ interface SnapPoint {
   edge: string;
 }
 
+// Interface for spacing guides
+interface SpacingGuide {
+  axis: "h" | "v"; // horizontal = between columns
+  pos1: number; // world-space position of first edge
+  pos2: number; // world-space position of second edge
+  distance: number; // px between them
+}
+
 interface SnapGuidesState {
   enabled: boolean;
   snapThreshold: number;
@@ -31,7 +39,8 @@ interface SnapGuidesState {
   showChildElements: boolean; // Added this property
   limitToNodes: string[] | null; // Added to limit snapping to specific nodes
   waitForResizeMove: boolean; // Flag to wait for movement before showing guides
-  resizeDirection: string | null; // NEW: Track which direction is being resized
+  resizeDirection: string | null; // Track which direction is being resized
+  spacingGuide: SpacingGuide | null; // Track equal spacing guides
 }
 
 // Initial state
@@ -45,6 +54,7 @@ const initialSnapGuidesState: SnapGuidesState = {
   limitToNodes: null, // Default to null (no limiting)
   waitForResizeMove: false, // Default to not waiting
   resizeDirection: null, // No active resize direction initially
+  spacingGuide: null, // No active spacing guide initially
 };
 
 // Base atom for snap guides state
@@ -96,6 +106,12 @@ export const waitForResizeMoveAtom = selectAtom(
 export const resizeDirectionAtom = selectAtom(
   _internalSnapGuidesStateAtom,
   (state) => state.resizeDirection
+);
+
+// Selector for spacing guide
+export const spacingGuideAtom = selectAtom(
+  _internalSnapGuidesStateAtom,
+  (state) => state.spacingGuide
 );
 
 // Operations for the snap guides store
@@ -152,6 +168,7 @@ const snapGuidesOperations = {
       ...prev,
       activeGuides: { horizontal: [], vertical: [] },
       activeSnapPoints: { horizontal: null, vertical: null },
+      spacingGuide: null, // Also reset spacing guide
     }));
   },
 
@@ -184,6 +201,14 @@ const snapGuidesOperations = {
     snapGuidesStore.set(_internalSnapGuidesStateAtom, (prev) => ({
       ...prev,
       resizeDirection: direction,
+    }));
+  },
+
+  // Set spacing guide
+  setSpacingGuide: (guide: SpacingGuide | null) => {
+    snapGuidesStore.set(_internalSnapGuidesStateAtom, (prev) => ({
+      ...prev,
+      spacingGuide: guide,
     }));
   },
 
@@ -231,4 +256,9 @@ export const useWaitForResizeMove = () => {
 
 export const useResizeDirection = () => {
   return useAtomValue(resizeDirectionAtom, { store: snapGuidesStore });
+};
+
+// Hook for spacing guide
+export const useSpacingGuide = () => {
+  return useAtomValue(spacingGuideAtom, { store: snapGuidesStore });
 };

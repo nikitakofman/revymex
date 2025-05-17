@@ -1,3 +1,4 @@
+// src/builder/context/canvasHelpers/SnapGuides.tsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   useGetIsResizing,
@@ -69,8 +70,7 @@ function crossAxisOverlapRatio(a, b, axis: "h" | "v") {
 function collectEqualGaps(
   boxes: ReturnType<typeof getCanvasBoxes>,
   dist: number,
-  axis: "h" | "v",
-  currentViewportId: string | number | null = null
+  axis: "h" | "v"
 ) {
   const segs: { start: number; end: number; min: number; max: number }[] = [];
 
@@ -85,16 +85,6 @@ function collectEqualGaps(
     for (let j = i + 1; j < sorted.length; j++) {
       const b1 = sorted[i];
       const b2 = sorted[j];
-
-      // If we have a current viewport ID, only consider boxes in this viewport
-      if (currentViewportId) {
-        if (
-          b1.viewportId !== currentViewportId ||
-          b2.viewportId !== currentViewportId
-        ) {
-          continue;
-        }
-      }
 
       // Skip if elements don't follow the correct order
       if (axis === "h" && b2.left <= b1.right) continue;
@@ -118,7 +108,7 @@ function collectEqualGaps(
 
       // Check if the gap matches the target distance and elements are in the same layout family
       if (
-        Math.abs(gap - dist) < 0.5 &&
+        Math.abs(gap - dist) < 0.01 &&
         crossAxisOverlapRatio(b1, b2, axis) >= 0.01
       ) {
         if (axis === "h") {
@@ -179,8 +169,8 @@ const SnapGuides: React.FC = () => {
   const topmostParentIdRef = useRef<string | number | null>(null);
   const excludedChildrenIdsRef = useRef<Set<string | number>>(new Set());
 
-  // Ref to track if there are active snap points - only show guides when actively snapping
-  const hasActiveSnapRef = useRef<boolean>(false);
+  // State to track if there are active snap points - only show guides when actively snapping
+  const [isActiveSnapping, setIsActiveSnapping] = useState<boolean>(false);
 
   // Local state to store all snap positions when SHOW_ALL_GUIDES is true
   const [allGuides, setAllGuides] = useState<{
@@ -238,7 +228,6 @@ const SnapGuides: React.FC = () => {
         bottom: number;
         centerX: number;
         centerY: number;
-        viewportId?: string | number | null;
       }> = [];
 
       // Get all DOM nodes with data-node-id
@@ -273,14 +262,6 @@ const SnapGuides: React.FC = () => {
           const centerX = left + rect.width / transform.scale / 2;
           const centerY = top + rect.height / transform.scale / 2;
 
-          // Find the viewport ID this element belongs to, if any
-          // First, check if the element itself is a viewport
-          let viewportId = null;
-          const flags = getNodeFlags(nodeId);
-          if (flags && flags.isViewport) {
-            viewportId = nodeId;
-          }
-
           topLevelElements.push({
             id: nodeId,
             left,
@@ -289,7 +270,6 @@ const SnapGuides: React.FC = () => {
             bottom,
             centerX,
             centerY,
-            viewportId,
           });
         }
       });
@@ -304,7 +284,7 @@ const SnapGuides: React.FC = () => {
   /**
    * Find pairs of elements with equal spacing between them
    */
-  const findEqualSpacingPairs = (boxes, currentViewportId = null) => {
+  const findEqualSpacingPairs = (boxes) => {
     const horizontalPairs: { left: any; right: any; distance: number }[] = [];
     const verticalPairs: { top: any; bottom: any; distance: number }[] = [];
 
@@ -314,18 +294,11 @@ const SnapGuides: React.FC = () => {
         const box1 = boxes[i];
         const box2 = boxes[j];
 
-        // If we have a viewport ID, only consider boxes in this viewport
-        if (currentViewportId) {
-          if (
-            box1.viewportId !== currentViewportId ||
-            box2.viewportId !== currentViewportId
-          ) {
-            continue;
-          }
-        }
-
         // Only consider elements that are horizontal neighbors
-        if (box1.right < box2.left) {
+        if (
+          box1.right < box2.left &&
+          crossAxisOverlapRatio(box1, box2, "h") >= 0.01
+        ) {
           // Check if there's no element between them
           const hasBetween = boxes.some(
             (box) =>
@@ -335,17 +308,17 @@ const SnapGuides: React.FC = () => {
               box.right < box2.left
           );
 
-          // Only consider elements in the same layout family (with vertical overlap)
-          const isInSameFamily = crossAxisOverlapRatio(box1, box2, "h") >= 0.01;
-
-          if (!hasBetween && isInSameFamily) {
+          if (!hasBetween) {
             horizontalPairs.push({
               left: box1,
               right: box2,
               distance: box2.left - box1.right,
             });
           }
-        } else if (box2.right < box1.left) {
+        } else if (
+          box2.right < box1.left &&
+          crossAxisOverlapRatio(box1, box2, "h") >= 0.01
+        ) {
           // Check if there's no element between them
           const hasBetween = boxes.some(
             (box) =>
@@ -355,10 +328,7 @@ const SnapGuides: React.FC = () => {
               box.right < box1.left
           );
 
-          // Only consider elements in the same layout family (with vertical overlap)
-          const isInSameFamily = crossAxisOverlapRatio(box1, box2, "h") >= 0.01;
-
-          if (!hasBetween && isInSameFamily) {
+          if (!hasBetween) {
             horizontalPairs.push({
               left: box2,
               right: box1,
@@ -375,18 +345,11 @@ const SnapGuides: React.FC = () => {
         const box1 = boxes[i];
         const box2 = boxes[j];
 
-        // If we have a viewport ID, only consider boxes in this viewport
-        if (currentViewportId) {
-          if (
-            box1.viewportId !== currentViewportId ||
-            box2.viewportId !== currentViewportId
-          ) {
-            continue;
-          }
-        }
-
         // Only consider elements that are vertical neighbors
-        if (box1.bottom < box2.top) {
+        if (
+          box1.bottom < box2.top &&
+          crossAxisOverlapRatio(box1, box2, "v") >= 0.01
+        ) {
           // Check if there's no element between them
           const hasBetween = boxes.some(
             (box) =>
@@ -396,17 +359,17 @@ const SnapGuides: React.FC = () => {
               box.bottom < box2.top
           );
 
-          // Only consider elements in the same layout family (with horizontal overlap)
-          const isInSameFamily = crossAxisOverlapRatio(box1, box2, "v") >= 0.01;
-
-          if (!hasBetween && isInSameFamily) {
+          if (!hasBetween) {
             verticalPairs.push({
               top: box1,
               bottom: box2,
               distance: box2.top - box1.bottom,
             });
           }
-        } else if (box2.bottom < box1.top) {
+        } else if (
+          box2.bottom < box1.top &&
+          crossAxisOverlapRatio(box1, box2, "v") >= 0.01
+        ) {
           // Check if there's no element between them
           const hasBetween = boxes.some(
             (box) =>
@@ -416,10 +379,7 @@ const SnapGuides: React.FC = () => {
               box.bottom < box1.top
           );
 
-          // Only consider elements in the same layout family (with horizontal overlap)
-          const isInSameFamily = crossAxisOverlapRatio(box1, box2, "v") >= 0.01;
-
-          if (!hasBetween && isInSameFamily) {
+          if (!hasBetween) {
             verticalPairs.push({
               top: box2,
               bottom: box1,
@@ -458,62 +418,15 @@ const SnapGuides: React.FC = () => {
     const dragCenterX = () => dragLeft + w / 2;
     const dragCenterY = () => dragTop + h / 2;
 
-    // Find the current viewport this element is interacting with
-    let currentViewportId = null;
-    if (draggedNode && draggedNode.node) {
-      // If the dragged node has a parentId, use that to determine the viewport
-      if (draggedNode.node.parentId) {
-        // Traverse up to find the topmost parent (viewport)
-        let current = draggedNode.node.parentId;
-        while (current) {
-          const flags = getNodeFlags(current);
-          if (flags && flags.isViewport) {
-            currentViewportId = current;
-            break;
-          }
-          const parent = getNodeParent(current);
-          if (!parent) break;
-          current = parent;
-        }
-      } else {
-        // If on canvas (no parent), find the viewport this element interacts with
-        // For simplicity, just find the first viewport that contains the element
-        for (const box of boxes) {
-          const flags = getNodeFlags(box.id);
-          if (flags && flags.isViewport) {
-            if (
-              dragLeft <= box.right &&
-              dragRight >= box.left &&
-              dragTop <= box.bottom &&
-              dragBottom >= box.top
-            ) {
-              currentViewportId = box.id;
-              break;
-            }
-          }
-        }
-      }
-    }
-
     /* ---------- HORIZONTAL ---------- */
     let bestH: null | { x: number; pos1: number; pos2: number; d: number } =
       null;
 
     boxes.forEach((b1) => {
-      // If we have a viewport ID, only consider boxes in this viewport
-      if (currentViewportId && b1.viewportId !== currentViewportId) {
-        return;
-      }
-
       // neighbour must overlap vertically with dragged elm
       if (!rangesOverlap(b1.top, b1.bottom, dragTop, dragBottom)) return;
 
       boxes.forEach((b2) => {
-        // If we have a viewport ID, only consider boxes in this viewport
-        if (currentViewportId && b2.viewportId !== currentViewportId) {
-          return;
-        }
-
         if (b2.left <= b1.right) return; // keep left-to-right order
         if (!rangesOverlap(b2.top, b2.bottom, dragTop, dragBottom)) return;
 
@@ -546,7 +459,6 @@ const SnapGuides: React.FC = () => {
         bottom: dragBottom,
         centerX: bestH.x + w / 2,
         centerY: dragTop + h / 2,
-        viewportId: currentViewportId,
       };
 
       /* --- collect only the segments that overlap vertically with the
@@ -555,8 +467,7 @@ const SnapGuides: React.FC = () => {
       const segs = collectEqualGaps(
         [...boxes, tempBox],
         bestH.pos2 - bestH.pos1,
-        "h",
-        currentViewportId
+        "h"
       ).filter((s) => rangesOverlap(s.min, s.max, dragTop, dragBottom));
 
       return {
@@ -571,19 +482,9 @@ const SnapGuides: React.FC = () => {
       null;
 
     boxes.forEach((b1) => {
-      // If we have a viewport ID, only consider boxes in this viewport
-      if (currentViewportId && b1.viewportId !== currentViewportId) {
-        return;
-      }
-
       if (!rangesOverlap(b1.left, b1.right, dragLeft, dragRight)) return;
 
       boxes.forEach((b2) => {
-        // If we have a viewport ID, only consider boxes in this viewport
-        if (currentViewportId && b2.viewportId !== currentViewportId) {
-          return;
-        }
-
         if (b2.top <= b1.bottom) return;
         if (!rangesOverlap(b2.left, b2.right, dragLeft, dragRight)) return;
 
@@ -614,14 +515,12 @@ const SnapGuides: React.FC = () => {
         bottom: bestV.y + h,
         centerX: dragLeft + w / 2,
         centerY: bestV.y + h / 2,
-        viewportId: currentViewportId,
       };
 
       const segs = collectEqualGaps(
         [...boxes, tempBox],
         bestV.pos2 - bestV.pos1,
-        "v",
-        currentViewportId
+        "v"
       ).filter((s) => rangesOverlap(s.min, s.max, dragLeft, dragRight));
 
       return {
@@ -632,10 +531,7 @@ const SnapGuides: React.FC = () => {
     }
 
     // Case 2: Snap to create equal spacing to the left or right of existing pairs
-    const { horizontalPairs, verticalPairs } = findEqualSpacingPairs(
-      boxes,
-      currentViewportId
-    );
+    const { horizontalPairs, verticalPairs } = findEqualSpacingPairs(boxes);
 
     // Check horizontal pairs for left/right snapping (with additional checks)
     for (const pair of horizontalPairs) {
@@ -677,7 +573,6 @@ const SnapGuides: React.FC = () => {
             bottom: dragBottom,
             centerX: targetLeft + w / 2,
             centerY: dragTop + h / 2,
-            viewportId: currentViewportId,
           };
 
           return {
@@ -686,12 +581,7 @@ const SnapGuides: React.FC = () => {
             guide: {
               axis: "h",
               distance: spacing,
-              segments: collectEqualGaps(
-                [...boxes, tempBox],
-                spacing,
-                "h",
-                currentViewportId
-              ),
+              segments: collectEqualGaps([...boxes, tempBox], spacing, "h"),
             },
           };
         }
@@ -723,7 +613,6 @@ const SnapGuides: React.FC = () => {
             bottom: dragBottom,
             centerX: targetLeft + w / 2,
             centerY: dragTop + h / 2,
-            viewportId: currentViewportId,
           };
 
           return {
@@ -732,12 +621,7 @@ const SnapGuides: React.FC = () => {
             guide: {
               axis: "h",
               distance: spacing,
-              segments: collectEqualGaps(
-                [...boxes, tempBox],
-                spacing,
-                "h",
-                currentViewportId
-              ),
+              segments: collectEqualGaps([...boxes, tempBox], spacing, "h"),
             },
           };
         }
@@ -782,7 +666,6 @@ const SnapGuides: React.FC = () => {
             bottom: targetTop + h,
             centerX: dragLeft + w / 2,
             centerY: targetTop + h / 2,
-            viewportId: currentViewportId,
           };
 
           return {
@@ -791,12 +674,7 @@ const SnapGuides: React.FC = () => {
             guide: {
               axis: "v",
               distance: spacing,
-              segments: collectEqualGaps(
-                [...boxes, tempBox],
-                spacing,
-                "v",
-                currentViewportId
-              ),
+              segments: collectEqualGaps([...boxes, tempBox], spacing, "v"),
             },
           };
         }
@@ -830,7 +708,6 @@ const SnapGuides: React.FC = () => {
             bottom: targetTop + h,
             centerX: dragLeft + w / 2,
             centerY: targetTop + h / 2,
-            viewportId: currentViewportId,
           };
 
           return {
@@ -839,12 +716,7 @@ const SnapGuides: React.FC = () => {
             guide: {
               axis: "v",
               distance: spacing,
-              segments: collectEqualGaps(
-                [...boxes, tempBox],
-                spacing,
-                "v",
-                currentViewportId
-              ),
+              segments: collectEqualGaps([...boxes, tempBox], spacing, "v"),
             },
           };
         }
@@ -1123,11 +995,11 @@ const SnapGuides: React.FC = () => {
       snapOps.setLimitToNodes(null);
       snapOps.setShowChildElements(false);
       snapOps.resetGuides();
-      snapOps.setSpacingGuide(null);
+      snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
       snapSetupDoneRef.current = false;
       topmostParentIdRef.current = null;
       excludedChildrenIdsRef.current.clear();
-      hasActiveSnapRef.current = false;
+      setIsActiveSnapping(false);
     }
   }, [
     isDragging,
@@ -1172,7 +1044,6 @@ const SnapGuides: React.FC = () => {
           bottom: number;
           centerX: number;
           centerY: number;
-          viewportId?: string | number | null;
         }> = [];
 
         // Process each element to extract snap positions
@@ -1223,26 +1094,6 @@ const SnapGuides: React.FC = () => {
           const centerX = left + rect.width / transform.scale / 2;
           const centerY = top + rect.height / transform.scale / 2;
 
-          // Determine if this element is a viewport or within one
-          let viewportId = null;
-          const flags = getNodeFlags(nodeId);
-          if (flags && flags.isViewport) {
-            viewportId = nodeId;
-          } else {
-            // Check if this element is within a viewport
-            let current = nodeData.parentId;
-            while (current) {
-              const parentFlags = getNodeFlags(current);
-              if (parentFlags && parentFlags.isViewport) {
-                viewportId = current;
-                break;
-              }
-              const parent = getNodeParent(current);
-              if (!parent) break;
-              current = parent;
-            }
-          }
-
           // Check if this is a top-level element (no parent) for spacing calculation
           const hasParent =
             nodeData.parentId !== null && nodeData.parentId !== undefined;
@@ -1255,7 +1106,6 @@ const SnapGuides: React.FC = () => {
               bottom,
               centerX,
               centerY,
-              viewportId,
             });
           }
 
@@ -1338,15 +1188,6 @@ const SnapGuides: React.FC = () => {
               const elem1 = sortedHorizontal[i];
               const elem2 = sortedHorizontal[j];
 
-              // Only compare elements in the same viewport
-              if (
-                elem1.viewportId &&
-                elem2.viewportId &&
-                elem1.viewportId !== elem2.viewportId
-              ) {
-                continue;
-              }
-
               // Only process if elem2 is to the right of elem1
               if (elem2.left <= elem1.right) continue;
 
@@ -1412,15 +1253,6 @@ const SnapGuides: React.FC = () => {
 
               const elem1 = sortedVertical[i];
               const elem2 = sortedVertical[j];
-
-              // Only compare elements in the same viewport
-              if (
-                elem1.viewportId &&
-                elem2.viewportId &&
-                elem1.viewportId !== elem2.viewportId
-              ) {
-                continue;
-              }
 
               // Only process if elem2 is below elem1
               if (elem2.top <= elem1.bottom) continue;
@@ -1516,7 +1348,8 @@ const SnapGuides: React.FC = () => {
     ) {
       // Reset active guides and snap points in the store
       snapOps.resetGuides();
-      hasActiveSnapRef.current = false;
+      snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
+      setIsActiveSnapping(false);
       return;
     }
 
@@ -1529,7 +1362,8 @@ const SnapGuides: React.FC = () => {
 
       if (showChildElements ? !hasParent : hasParent) {
         snapOps.resetGuides();
-        hasActiveSnapRef.current = false;
+        snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
+        setIsActiveSnapping(false);
         return;
       }
     }
@@ -1544,7 +1378,8 @@ const SnapGuides: React.FC = () => {
         // Check again inside animation frame if drop zone has been activated
         if (hasActiveDropZone) {
           snapOps.resetGuides();
-          hasActiveSnapRef.current = false;
+          snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
+          setIsActiveSnapping(false);
           return;
         }
 
@@ -1553,7 +1388,8 @@ const SnapGuides: React.FC = () => {
         if (isResizing && waitForResizeMove) {
           // Still on the very first frame – no guides yet
           snapOps.resetGuides();
-          hasActiveSnapRef.current = false;
+          snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
+          setIsActiveSnapping(false);
           animationFrameRef.current = requestAnimationFrame(checkForAlignment);
           return;
         }
@@ -1608,7 +1444,8 @@ const SnapGuides: React.FC = () => {
           if (absolutePositionedIds.length === 0) {
             // No absolute elements being resized, reset guides
             snapOps.resetGuides();
-            hasActiveSnapRef.current = false;
+            snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
+            setIsActiveSnapping(false);
             return;
           }
 
@@ -1717,11 +1554,12 @@ const SnapGuides: React.FC = () => {
           });
 
           // Update the active snap state
-          hasActiveSnapRef.current = isSnapping;
+          setIsActiveSnapping(isSnapping);
 
           // If no snapping is occurring, don't show any guides
           if (!isSnapping) {
             snapOps.resetGuides();
+            snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
           }
         } else if (isDragging && draggedNode) {
           // DRAGGING CASE: From original code
@@ -1846,16 +1684,17 @@ const SnapGuides: React.FC = () => {
           }
 
           // Update the active snap state
-          hasActiveSnapRef.current = isSnapping;
+          setIsActiveSnapping(isSnapping);
 
           // If no snapping is occurring, don't show any guides
           if (!isSnapping) {
             snapOps.resetGuides();
+            snapOps.setActiveSnapPoints({ horizontal: null, vertical: null });
           }
         }
 
         // Only update guides and snap points if we have an active snap
-        if (hasActiveSnapRef.current) {
+        if (isActiveSnapping) {
           // Update active guides in the store (for visual display)
           snapOps.setActiveGuides({
             horizontal: [...new Set(newActiveGuides.horizontal)],
@@ -1876,7 +1715,6 @@ const SnapGuides: React.FC = () => {
       animationFrameRef.current = requestAnimationFrame(checkForAlignment);
     };
 
-    // Start the animation loop
     // Start the animation loop
     animationFrameRef.current = requestAnimationFrame(checkForAlignment);
 
@@ -1905,17 +1743,17 @@ const SnapGuides: React.FC = () => {
   const guidesToRender = SHOW_ALL_GUIDES ? allGuides : activeGuides;
 
   // When showing all guides or spacing, always render unless there are no guides/spacing
-  // Only show guides when actually snapping (hasActiveSnapRef.current is true)
+  // Only show guides when actually snapping (isActiveSnapping is true)
   const shouldRender = SHOW_ALL_GUIDES
     ? guidesToRender.horizontal.length > 0 || guidesToRender.vertical.length > 0
-    : (!hasActiveDropZone &&
-        hasActiveSnapRef.current &&
-        (guidesToRender.horizontal.length > 0 ||
-          guidesToRender.vertical.length > 0)) ||
-      (SHOW_SPACING &&
-        (elementSpacings.horizontal.length > 0 ||
-          elementSpacings.vertical.length > 0 ||
-          (spacingGuide !== null && hasActiveSnapRef.current)));
+    : !hasActiveDropZone &&
+      isActiveSnapping &&
+      (guidesToRender.horizontal.length > 0 ||
+        guidesToRender.vertical.length > 0 ||
+        spacingGuide !== null ||
+        (SHOW_SPACING &&
+          (elementSpacings.horizontal.length > 0 ||
+            elementSpacings.vertical.length > 0)));
 
   // Return early if no guides or spacing to render
   if (!shouldRender) {
@@ -1935,6 +1773,7 @@ const SnapGuides: React.FC = () => {
       }}
       data-snap-guides-container
     >
+      {/* Render horizontal guides */}
       {/* Render horizontal guides */}
       {guidesToRender.horizontal.map((position, i) => {
         // Apply transform to position
@@ -1985,7 +1824,7 @@ const SnapGuides: React.FC = () => {
       {SHOW_SPACING &&
         spacingGuide &&
         spacingGuide.segments &&
-        hasActiveSnapRef.current &&
+        isActiveSnapping &&
         spacingGuide.segments.map((segment, idx) =>
           spacingGuide.axis === "h" ? (
             <div key={`h-segment-${idx}`}>

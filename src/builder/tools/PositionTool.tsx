@@ -149,42 +149,37 @@ export const PositionTool = () => {
     if (isDragging && draggedNode) {
       const node = draggedNode.node;
 
-      if (isDraggingAbsoluteInFrame) {
-        // For absolute-in-frame nodes, calculate position based on mouse position and offset
-        if (
-          lastMousePosition.x !== undefined &&
-          lastMousePosition.y !== undefined
-        ) {
-          // Get the mouse position
-          const mouseX = lastMousePosition.x;
-          const mouseY = lastMousePosition.y;
-          const offset = draggedNode.offset;
+      // Always get the actual element position from the DOM
+      const element = document.querySelector(`[data-node-id="${node.id}"]`);
 
-          // Get parent node info using Jotai
-          const parentId = node.parentId;
-          if (parentId) {
-            const parentElement = document.querySelector(
-              `[data-node-id="${parentId}"]`
-            );
-            if (parentElement) {
-              const parentRect = parentElement.getBoundingClientRect();
+      if (element) {
+        // Get element's actual DOM positions
+        let left = 0;
+        let top = 0;
 
-              // Calculate position relative to parent frame
-              const x = Math.round(
-                (mouseX - parentRect.left) / transform.scale - offset.mouseX
-              );
-              const y = Math.round(
-                (mouseY - parentRect.top) / transform.scale - offset.mouseY
-              );
-
-              setRealTimePosition({ x, y });
-            }
-          }
+        if (isDraggingAbsoluteInFrame) {
+          // For absolute-in-frame, we want the computed left/top relative to parent
+          // Get the computed style
+          const computedStyle = window.getComputedStyle(element);
+          left = parseInt(computedStyle.left, 10) || 0;
+          top = parseInt(computedStyle.top, 10) || 0;
+        } else {
+          // For canvas elements, calculate from mouse position
+          const elementLeft = Math.round(
+            dragPositions.x -
+              (draggedNode?.offset.mouseX || 0) / transform.scale
+          );
+          const elementTop = Math.round(
+            dragPositions.y -
+              (draggedNode?.offset.mouseY || 0) / transform.scale
+          );
+          left = elementLeft;
+          top = elementTop;
         }
-      } else {
+
         setRealTimePosition({
-          x: Math.round(dragPositions.x),
-          y: Math.round(dragPositions.y),
+          x: Math.round(left),
+          y: Math.round(top),
         });
       }
     }
