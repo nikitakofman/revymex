@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   useGetIsResizing,
   useIsMovingCanvas,
@@ -11,6 +11,7 @@ import {
   useDragSource,
   useDragPositions,
   useDropInfo,
+  useDraggedNodes, // Added this hook to get all dragged nodes
 } from "@/builder/context/atoms/drag-store";
 import {
   useGetAllNodes,
@@ -70,15 +71,19 @@ function collectEqualGaps(
   boxes: ReturnType<typeof getCanvasBoxes>,
   dist: number,
   axis: "h" | "v",
-  currentViewportId: string | number | null = null
+  currentViewportId: string | number | null = null,
+  nodesToExclude: string[] = [] // Added parameter for nodes to exclude
 ) {
   const segs: { start: number; end: number; min: number; max: number }[] = [];
+
+  // Filter out excluded nodes first (FIX FOR ISSUE 2)
+  const filteredBoxes = boxes.filter((box) => !nodesToExclude.includes(box.id));
 
   // Sort boxes by appropriate position
   const sorted =
     axis === "h"
-      ? [...boxes].sort((a, b) => a.left - b.left)
-      : [...boxes].sort((a, b) => a.top - b.top);
+      ? [...filteredBoxes].sort((a, b) => a.left - b.left)
+      : [...filteredBoxes].sort((a, b) => a.top - b.top);
 
   // Check ALL possible pairs, not just adjacent ones
   for (let i = 0; i < sorted.length; i++) {
@@ -161,6 +166,7 @@ const SnapGuides: React.FC = () => {
   const isDragging = useIsDragging();
   const isResizing = useIsResizing();
   const draggedNode = useDraggedNode();
+  const draggedNodes = useDraggedNodes(); // Get all dragged nodes for issue #2
   const dragSource = useDragSource();
   const dragPositions = useDragPositions();
   const getAllNodes = useGetAllNodes();
@@ -183,6 +189,12 @@ const SnapGuides: React.FC = () => {
   const hasActiveSnapRef = useRef<boolean>(false);
 
   const prevDragSourceRef = useRef(dragSource);
+
+  // Track currently dragged node IDs (FIX FOR ISSUE 2)
+  const currentDraggedNodeIds = useMemo(() => {
+    if (!isDragging || !draggedNodes || draggedNodes.length === 0) return [];
+    return draggedNodes.map((node) => node.node.id);
+  }, [isDragging, draggedNodes]);
 
   // Reset the setup flag when drag source changes
   useEffect(() => {
@@ -242,6 +254,12 @@ const SnapGuides: React.FC = () => {
       // Get all node data from store
       const allNodes = getAllNodes();
 
+      // Track nodes being dragged (to exclude from spacing bands)
+      const draggedNodeIds =
+        isDragging && draggedNodes
+          ? draggedNodes.map((node) => node.node.id)
+          : [];
+
       // Collect top-level elements (no parent)
       const topLevelElements: Array<{
         id: string;
@@ -262,8 +280,8 @@ const SnapGuides: React.FC = () => {
         const nodeId = element.getAttribute("data-node-id");
         if (!nodeId) return;
 
-        // Skip if this is the dragged node
-        if (draggedNode && nodeId === draggedNode.node?.id) {
+        // Skip if this is one of the dragged nodes (current selection) - FIX FOR ISSUE 2
+        if (draggedNodeIds.includes(nodeId)) {
           return;
         }
 
@@ -317,15 +335,24 @@ const SnapGuides: React.FC = () => {
   /**
    * Find pairs of elements with equal spacing between them
    */
-  const findEqualSpacingPairs = (boxes, currentViewportId = null) => {
+  const findEqualSpacingPairs = (
+    boxes,
+    currentViewportId = null,
+    nodesToExclude = []
+  ) => {
+    // Filter out excluded nodes (FIX FOR ISSUE 2)
+    const filteredBoxes = boxes.filter(
+      (box) => !nodesToExclude.includes(box.id)
+    );
+
     const horizontalPairs: { left: any; right: any; distance: number }[] = [];
     const verticalPairs: { top: any; bottom: any; distance: number }[] = [];
 
     // Find horizontal equal spacing pairs
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const box1 = boxes[i];
-        const box2 = boxes[j];
+    for (let i = 0; i < filteredBoxes.length; i++) {
+      for (let j = i + 1; j < filteredBoxes.length; j++) {
+        const box1 = filteredBoxes[i];
+        const box2 = filteredBoxes[j];
 
         // If we have a viewport ID, only consider boxes in this viewport
         if (currentViewportId) {
@@ -340,7 +367,7 @@ const SnapGuides: React.FC = () => {
         // Only consider elements that are horizontal neighbors
         if (box1.right < box2.left) {
           // Check if there's no element between them
-          const hasBetween = boxes.some(
+          const hasBetween = filteredBoxes.some(
             (box) =>
               box !== box1 &&
               box !== box2 &&
@@ -360,7 +387,7 @@ const SnapGuides: React.FC = () => {
           }
         } else if (box2.right < box1.left) {
           // Check if there's no element between them
-          const hasBetween = boxes.some(
+          const hasBetween = filteredBoxes.some(
             (box) =>
               box !== box1 &&
               box !== box2 &&
@@ -383,10 +410,10 @@ const SnapGuides: React.FC = () => {
     }
 
     // Find vertical equal spacing pairs
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const box1 = boxes[i];
-        const box2 = boxes[j];
+    for (let i = 0; i < filteredBoxes.length; i++) {
+      for (let j = i + 1; j < filteredBoxes.length; j++) {
+        const box1 = filteredBoxes[i];
+        const box2 = filteredBoxes[j];
 
         // If we have a viewport ID, only consider boxes in this viewport
         if (currentViewportId) {
@@ -401,7 +428,7 @@ const SnapGuides: React.FC = () => {
         // Only consider elements that are vertical neighbors
         if (box1.bottom < box2.top) {
           // Check if there's no element between them
-          const hasBetween = boxes.some(
+          const hasBetween = filteredBoxes.some(
             (box) =>
               box !== box1 &&
               box !== box2 &&
@@ -421,7 +448,7 @@ const SnapGuides: React.FC = () => {
           }
         } else if (box2.bottom < box1.top) {
           // Check if there's no element between them
-          const hasBetween = boxes.some(
+          const hasBetween = filteredBoxes.some(
             (box) =>
               box !== box1 &&
               box !== box2 &&
@@ -454,7 +481,8 @@ const SnapGuides: React.FC = () => {
   function getEqualSpacingSnap(
     boxes: ReturnType<typeof getCanvasBoxes>, // all other top-level boxes
     w: number, // dragged width
-    h: number // dragged height
+    h: number, // dragged height
+    currentDraggedNodeIds: string[] = [] // IDs of all nodes in the current selection (FIX FOR ISSUE 2)
   ) {
     if (!dragPositions) return null;
 
@@ -513,6 +541,9 @@ const SnapGuides: React.FC = () => {
       null;
 
     boxes.forEach((b1) => {
+      // Skip if this box is part of the current drag selection (FIX FOR ISSUE 2)
+      if (currentDraggedNodeIds.includes(b1.id)) return;
+
       // If we have a viewport ID, only consider boxes in this viewport
       if (currentViewportId && b1.viewportId !== currentViewportId) {
         return;
@@ -522,6 +553,9 @@ const SnapGuides: React.FC = () => {
       if (!rangesOverlap(b1.top, b1.bottom, dragTop, dragBottom)) return;
 
       boxes.forEach((b2) => {
+        // Skip if this box is part of the current drag selection (FIX FOR ISSUE 2)
+        if (currentDraggedNodeIds.includes(b2.id)) return;
+
         // If we have a viewport ID, only consider boxes in this viewport
         if (currentViewportId && b2.viewportId !== currentViewportId) {
           return;
@@ -569,7 +603,8 @@ const SnapGuides: React.FC = () => {
         [...boxes, tempBox],
         bestH.pos2 - bestH.pos1,
         "h",
-        currentViewportId
+        currentViewportId,
+        currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
       ).filter((s) => rangesOverlap(s.min, s.max, dragTop, dragBottom));
 
       return {
@@ -584,6 +619,9 @@ const SnapGuides: React.FC = () => {
       null;
 
     boxes.forEach((b1) => {
+      // Skip if this box is part of the current drag selection (FIX FOR ISSUE 2)
+      if (currentDraggedNodeIds.includes(b1.id)) return;
+
       // If we have a viewport ID, only consider boxes in this viewport
       if (currentViewportId && b1.viewportId !== currentViewportId) {
         return;
@@ -592,6 +630,9 @@ const SnapGuides: React.FC = () => {
       if (!rangesOverlap(b1.left, b1.right, dragLeft, dragRight)) return;
 
       boxes.forEach((b2) => {
+        // Skip if this box is part of the current drag selection (FIX FOR ISSUE 2)
+        if (currentDraggedNodeIds.includes(b2.id)) return;
+
         // If we have a viewport ID, only consider boxes in this viewport
         if (currentViewportId && b2.viewportId !== currentViewportId) {
           return;
@@ -634,7 +675,8 @@ const SnapGuides: React.FC = () => {
         [...boxes, tempBox],
         bestV.pos2 - bestV.pos1,
         "v",
-        currentViewportId
+        currentViewportId,
+        currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
       ).filter((s) => rangesOverlap(s.min, s.max, dragLeft, dragRight));
 
       return {
@@ -647,7 +689,8 @@ const SnapGuides: React.FC = () => {
     // Case 2: Snap to create equal spacing to the left or right of existing pairs
     const { horizontalPairs, verticalPairs } = findEqualSpacingPairs(
       boxes,
-      currentViewportId
+      currentViewportId,
+      currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
     );
 
     // Check horizontal pairs for left/right snapping (with additional checks)
@@ -703,7 +746,8 @@ const SnapGuides: React.FC = () => {
                 [...boxes, tempBox],
                 spacing,
                 "h",
-                currentViewportId
+                currentViewportId,
+                currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
               ),
             },
           };
@@ -749,7 +793,8 @@ const SnapGuides: React.FC = () => {
                 [...boxes, tempBox],
                 spacing,
                 "h",
-                currentViewportId
+                currentViewportId,
+                currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
               ),
             },
           };
@@ -808,7 +853,8 @@ const SnapGuides: React.FC = () => {
                 [...boxes, tempBox],
                 spacing,
                 "v",
-                currentViewportId
+                currentViewportId,
+                currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
               ),
             },
           };
@@ -856,7 +902,8 @@ const SnapGuides: React.FC = () => {
                 [...boxes, tempBox],
                 spacing,
                 "v",
-                currentViewportId
+                currentViewportId,
+                currentDraggedNodeIds // FIX FOR ISSUE 2: Pass dragged nodes to exclude
               ),
             },
           };
@@ -1193,8 +1240,8 @@ const SnapGuides: React.FC = () => {
           const nodeId = element.getAttribute("data-node-id");
           if (!nodeId) return;
 
-          // Skip if this is the dragged node
-          if (draggedNode && nodeId === draggedNode.node?.id) {
+          // Skip if this is part of the dragged selection (FIX FOR ISSUE 2)
+          if (currentDraggedNodeIds.includes(nodeId)) {
             return;
           }
 
@@ -1326,11 +1373,16 @@ const SnapGuides: React.FC = () => {
 
         // Calculate spacing between top-level elements if SHOW_SPACING is enabled
         if (SHOW_SPACING) {
+          // First filter out any elements that are part of the current drag (FIX FOR ISSUE 2)
+          const filteredTopLevelElements = topLevelElements.filter(
+            (elem) => !currentDraggedNodeIds.includes(elem.id)
+          );
+
           // Sort elements by position for easier spacing calculation
-          const sortedHorizontal = [...topLevelElements].sort(
+          const sortedHorizontal = [...filteredTopLevelElements].sort(
             (a, b) => a.left - b.left
           );
-          const sortedVertical = [...topLevelElements].sort(
+          const sortedVertical = [...filteredTopLevelElements].sort(
             (a, b) => a.top - b.top
           );
 
@@ -1509,6 +1561,7 @@ const SnapGuides: React.FC = () => {
     limitToNodes,
     isResizing,
     getSelectedIds,
+    currentDraggedNodeIds, // FIX FOR ISSUE 2: React to changes in dragged nodes
   ]);
 
   // Check for alignment during canvas dragging or resizing
@@ -1768,7 +1821,13 @@ const SnapGuides: React.FC = () => {
 
           if (dragSource === "canvas" && !draggedNode.node.parentId) {
             const boxes = getCanvasBoxes();
-            const snap = getEqualSpacingSnap(boxes, width, height);
+            // Pass currentDraggedNodeIds to exclude from spacing calculations (FIX FOR ISSUE 2)
+            const snap = getEqualSpacingSnap(
+              boxes,
+              width,
+              height,
+              currentDraggedNodeIds
+            );
 
             if (snap) {
               spacingSnap = snap;
@@ -1890,7 +1949,6 @@ const SnapGuides: React.FC = () => {
     };
 
     // Start the animation loop
-    // Start the animation loop
     animationFrameRef.current = requestAnimationFrame(checkForAlignment);
 
     // Clean up
@@ -1912,6 +1970,7 @@ const SnapGuides: React.FC = () => {
     isResizing,
     getSelectedIds,
     getNodeStyle,
+    currentDraggedNodeIds, // FIX FOR ISSUE 2: React to changes in dragged nodes
   ]);
 
   // Determine which guides to render
@@ -1948,7 +2007,6 @@ const SnapGuides: React.FC = () => {
       }}
       data-snap-guides-container
     >
-      {/* Render horizontal guides */}
       {guidesToRender.horizontal.map((position, i) => {
         // Apply transform to position
         const transformedPos = position * transform.scale + transform.y;
@@ -1971,7 +2029,6 @@ const SnapGuides: React.FC = () => {
         );
       })}
 
-      {/* Render vertical guides */}
       {guidesToRender.vertical.map((position, i) => {
         // Apply transform to position
         const transformedPos = position * transform.scale + transform.x;
@@ -1994,7 +2051,6 @@ const SnapGuides: React.FC = () => {
         );
       })}
 
-      {/* Render all spacing guide segments */}
       {SHOW_SPACING &&
         spacingGuide &&
         spacingGuide.segments &&
@@ -2002,7 +2058,6 @@ const SnapGuides: React.FC = () => {
         spacingGuide.segments.map((segment, idx) =>
           spacingGuide.axis === "h" ? (
             <div key={`h-segment-${idx}`}>
-              {/* Horizontal spacing band */}
               <div
                 style={{
                   position: "absolute",
@@ -2016,7 +2071,6 @@ const SnapGuides: React.FC = () => {
                 data-spacing-band-horizontal
               />
 
-              {/* Distance label */}
               <div
                 style={{
                   position: "absolute",
@@ -2045,7 +2099,6 @@ const SnapGuides: React.FC = () => {
             </div>
           ) : (
             <div key={`v-segment-${idx}`}>
-              {/* Vertical spacing band */}
               <div
                 style={{
                   position: "absolute",
@@ -2061,7 +2114,6 @@ const SnapGuides: React.FC = () => {
                 data-spacing-band-vertical
               />
 
-              {/* Distance label */}
               <div
                 style={{
                   position: "absolute",

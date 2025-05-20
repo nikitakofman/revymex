@@ -1,11 +1,10 @@
-// useLineIndicatorController.js
 import { useEffect } from "react";
 import {
   useIsDragging,
   useDraggedNode,
   useDragSource,
   dragOps,
-  useIsDraggingBackToParent,
+  useGetDragBackToParentInfo,
 } from "@/builder/context/atoms/drag-store";
 import { visualOps } from "../atoms/visual-store";
 import { computeFrameDropIndicator } from "../utils";
@@ -16,11 +15,16 @@ export const useLineIndicatorController = () => {
   const dragged = useDraggedNode();
   const dragSource = useDragSource();
   const getNodeStyle = useGetNodeStyle();
-  const isDraggingBack = useIsDraggingBackToParent();
+  // NEW: Add drag back to parent info to properly handle its state
+  const getDragBackToParentInfo = useGetDragBackToParentInfo();
 
   useEffect(() => {
-    // Exit early and hide indicators if dragging back to parent
-    if (!dragging || !dragged || isDraggingBack) {
+    // NEW: Immediately check if we're dragging back to parent and hide indicators
+    if (
+      !dragging ||
+      !dragged ||
+      getDragBackToParentInfo().isDraggingBackToParent
+    ) {
       visualOps.hideLineIndicator();
       return;
     }
@@ -28,12 +32,18 @@ export const useLineIndicatorController = () => {
     // Also hide indicators if not in canvas mode
     if (dragSource !== "canvas") {
       visualOps.hideLineIndicator();
+      // NEW: Also clear drop info when not in canvas mode
+      dragOps.setDropInfo(null, null);
       return;
     }
 
     const onMove = (e: MouseEvent) => {
-      // Double-check if we start dragging back to parent during movement
-      if (dragOps.getState().dragBackToParentInfo.isDraggingBackToParent) {
+      // NEW: Check isDraggingBackToParent on every mouse move
+      const isDraggingBackToParent =
+        dragOps.getState().dragBackToParentInfo.isDraggingBackToParent;
+
+      // NEW: Immediately exit and clear all indicators/drop info if dragging back to parent
+      if (isDraggingBackToParent) {
         visualOps.hideLineIndicator();
         dragOps.setDropInfo(null, null);
         return;
@@ -55,6 +65,14 @@ export const useLineIndicatorController = () => {
 
       const frameId = frame.getAttribute("data-node-id");
       if (!frameId) {
+        visualOps.hideLineIndicator();
+        dragOps.setDropInfo(null, null);
+        return;
+      }
+
+      // NEW: Another check for drag back to parent - don't show drop indicators
+      // even if we're over a frame if we're in drag-back-to-parent mode
+      if (isDraggingBackToParent) {
         visualOps.hideLineIndicator();
         dragOps.setDropInfo(null, null);
         return;
@@ -112,5 +130,5 @@ export const useLineIndicatorController = () => {
       document.removeEventListener("mouseup", onMouseUp);
       visualOps.hideLineIndicator();
     };
-  }, [dragging, dragged, dragSource, getNodeStyle, isDraggingBack]);
+  }, [dragging, dragged, dragSource, getNodeStyle, getDragBackToParentInfo]);
 };

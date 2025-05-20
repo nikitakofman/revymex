@@ -665,3 +665,56 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
     }
   });
 }
+
+export const dynamicModeNodeIdAtom = atom<NodeId | null>(null);
+export const activeViewportInDynamicModeAtom = atom<NodeId | null>(null);
+
+export const useDynamicModeNodeId = () => {
+  return useAtomValue(dynamicModeNodeIdAtom, { store: nodeStore });
+};
+
+export const useSetDynamicModeNodeId = () => {
+  return useSetAtom(dynamicModeNodeIdAtom, { store: nodeStore });
+};
+
+export const useActiveViewportInDynamicMode = () => {
+  return useAtomValue(activeViewportInDynamicModeAtom, { store: nodeStore });
+};
+
+export const useSetActiveViewportInDynamicMode = () => {
+  return useSetAtom(activeViewportInDynamicModeAtom, { store: nodeStore });
+};
+
+// Function to check if a node is part of the dynamic mode hierarchy
+export const isInDynamicModeHierarchy = (
+  nodeId,
+  dynamicModeNodeId,
+  getNodeParent
+) => {
+  if (!dynamicModeNodeId) return false;
+  if (nodeId === dynamicModeNodeId) return true;
+
+  // Check if this is a child of the dynamic node
+  let currentParent = getNodeParent(nodeId);
+  while (currentParent) {
+    if (currentParent === dynamicModeNodeId) {
+      return true;
+    }
+    currentParent = getNodeParent(currentParent);
+  }
+
+  return false;
+};
+
+// Add these imperative getters
+export const useGetDynamicModeNodeId = () => {
+  return useCallback(() => {
+    return nodeStore.get(dynamicModeNodeIdAtom);
+  }, []);
+};
+
+export const useGetActiveViewportInDynamicMode = () => {
+  return useCallback(() => {
+    return nodeStore.get(activeViewportInDynamicModeAtom);
+  }, []);
+};

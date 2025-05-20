@@ -25,6 +25,11 @@ import {
   getCurrentNodes,
 } from "@/builder/context/atoms/node-store";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
+import {
+  enterDynamicMode,
+  setActiveViewportInDynamicMode,
+  setDynamicModeNodeId,
+} from "../atoms/node-store/operations/dynamic-operations";
 
 export const useConnect = () => {
   const getNodeBasics = useGetNodeBasics();
@@ -324,24 +329,13 @@ export const useConnect = () => {
         e.stopPropagation();
 
         if (isDynamic) {
-          if (!dynamicModeNodeId) {
-            updateNodeStyle(nodeId, { position: "absolute" });
+          // Use the getCurrentDynamicModeNodeId function from node-store
+          const currentDynamicNodeId = getDynamicModeNodeId();
 
-            const allNodes = getCurrentNodes();
-            const parentViewportId =
-              dynamicViewportId ||
-              findParentViewport(originalParentId, allNodes) ||
-              findParentViewport(parentId, allNodes);
-
-            if (parentViewportId) {
-              console.log(`Setting active viewport to: ${parentViewportId}`);
-              dynamicOps.switchDynamicViewport(parentViewportId);
-            } else {
-              console.warn("Could not determine viewport for node:", nodeId);
-              dynamicOps.switchDynamicViewport("viewport-1440");
-            }
-
-            dynamicOps.setDynamicModeNodeId(nodeId);
+          if (!currentDynamicNodeId) {
+            // Use the enterDynamicMode function from dynamic-operations
+            // This handles all the necessary operations in one call
+            enterDynamicMode(nodeId);
           }
           return;
         }
@@ -350,9 +344,10 @@ export const useConnect = () => {
           findDynamicParentInSameViewport(nodeId);
 
         if (dynamicParentInSameViewport) {
-          if (!dynamicModeNodeId) {
-            // storeDynamicNodeState(dynamicParentInSameViewport);
+          const currentDynamicNodeId = getDynamicModeNodeId();
 
+          if (!currentDynamicNodeId) {
+            // Apply absolute positioning
             updateNodeStyle(dynamicParentInSameViewport, {
               position: "absolute",
             });
@@ -376,16 +371,16 @@ export const useConnect = () => {
 
             if (parentViewportId) {
               console.log(`Setting active viewport to: ${parentViewportId}`);
-              dynamicOps.switchDynamicViewport(parentViewportId);
+              setActiveViewportInDynamicMode(parentViewportId);
             } else {
               console.warn(
                 "Could not determine viewport for node:",
                 dynamicParentInSameViewport
               );
-              dynamicOps.switchDynamicViewport("viewport-1440");
+              setActiveViewportInDynamicMode("viewport-1440");
             }
 
-            dynamicOps.setDynamicModeNodeId(dynamicParentInSameViewport);
+            setDynamicModeNodeId(dynamicParentInSameViewport);
           }
         }
       };

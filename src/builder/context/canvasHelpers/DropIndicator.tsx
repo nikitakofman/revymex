@@ -1,6 +1,9 @@
-// DropTargetHighlighter.tsx
 import { useEffect, useRef } from "react";
-import { useDropInfo, useIsDragging } from "@/builder/context/atoms/drag-store";
+import {
+  useDropInfo,
+  useIsDragging,
+  useGetDragBackToParentInfo,
+} from "@/builder/context/atoms/drag-store";
 
 // CSS styles for drop target
 const dropTargetStyles = `
@@ -22,6 +25,7 @@ const dropTargetStyles = `
 export const DropTargetHighlighter = () => {
   const dropInfo = useDropInfo(); // Use the reactive hook
   const isDragging = useIsDragging();
+  const getDragBackToParentInfo = useGetDragBackToParentInfo(); // NEW: Add drag back to parent info
   const prevTargetId = useRef<string | null>(null);
 
   // Add style to document once on mount
@@ -54,12 +58,17 @@ export const DropTargetHighlighter = () => {
       }
     }
 
-    // Only add drop target styling if position is "inside"
+    // NEW: Check if we're dragging back to parent
+    const isDraggingBackToParent =
+      getDragBackToParentInfo().isDraggingBackToParent;
+
+    // Only add drop target styling if position is "inside" AND not dragging back to parent
     const shouldHighlight =
       isDragging &&
       dropInfo &&
       dropInfo.targetId &&
-      dropInfo.position === "inside";
+      dropInfo.position === "inside" &&
+      !isDraggingBackToParent; // NEW: Added this condition
 
     // Add class to new target if exists, we're dragging, and position is "inside"
     if (shouldHighlight) {
@@ -89,7 +98,7 @@ export const DropTargetHighlighter = () => {
         prevTargetId.current = null;
       }
     };
-  }, [dropInfo, isDragging]);
+  }, [dropInfo, isDragging, getDragBackToParentInfo]); // NEW: Added getDragBackToParentInfo to dependencies
 
   // This component doesn't render anything
   return null;

@@ -6,6 +6,7 @@ import DraggedNode from "../context/canvasHelpers/DraggedNode";
 import {
   useGetDraggedNodes, // Changed from useGetDraggedNode and useGetAdditionalDraggedNodes
   useGetDragSource,
+  useGetDynamicModeNodeId,
   useGetIsDragging,
 } from "../context/atoms/drag-store";
 import {
@@ -47,6 +48,7 @@ export const NodeComponent = ({
   const getNodeParent = useGetNodeParent();
   const getNodeSharedInfo = useGetNodeSharedInfo();
   const getNodeDynamicInfo = useGetNodeDynamicInfo();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
   // Get drag state
   const getIsDragging = useGetIsDragging();
@@ -57,6 +59,8 @@ export const NodeComponent = ({
   const dynamicModeNodeId = useDynamicModeNodeId();
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
   const activeViewportId = activeViewportInDynamicMode;
+
+  console.log("dynamicModeNodeId", dynamicModeNodeId);
 
   // Check if this node is a child of a viewport
   const parentId = getNodeParent(nodeId);

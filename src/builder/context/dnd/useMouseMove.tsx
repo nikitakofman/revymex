@@ -52,6 +52,71 @@ export const useMouseMove = () => {
   const prevMousePosRef = useRef({ x: 0, y: 0 });
   const placeholderMovingRef = useRef(false);
   const lastMoveTimeRef = useRef(0);
+  // Track last transition time to prevent too-rapid transitions
+  const lastTransitionTimeRef = useRef(0);
+
+  /**
+   * Helper function to find the original parent's path
+   * This builds a complete hierarchy of parents from the starting parent
+   * up to the root, which we can use to determine if we're hovering over
+   * any element in the hierarchy.
+   */
+  const getParentHierarchy = (startingParentId) => {
+    if (!startingParentId) return [];
+
+    const hierarchy = [startingParentId];
+    let currentParent = startingParentId;
+
+    // Build a path from startingParent up to root
+    // Limited to 10 levels to prevent infinite loops
+    for (let i = 0; i < 10; i++) {
+      const parentId = getNodeParent(currentParent);
+      if (!parentId) break;
+
+      hierarchy.push(parentId);
+      currentParent = parentId;
+    }
+
+    return hierarchy;
+  };
+
+  /**
+   * Check if the mouse is over any element in the parent hierarchy
+   * This allows us to detect when we're entering any part of the parent structure
+   */
+  const isOverParentHierarchy = (e, parentHierarchy) => {
+    if (!parentHierarchy.length) return false;
+
+    const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
+
+    // Check if we're over any element in the parent hierarchy
+    for (const element of elementsUnder) {
+      const nodeId = element.getAttribute("data-node-id");
+      if (nodeId && parentHierarchy.includes(nodeId)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  /**
+   * Get path to original nested container
+   * This returns the path from the starting parent to the root
+   */
+  const getPathToNestedContainer = (startingParentId) => {
+    if (!startingParentId) return [];
+
+    const path = [];
+    let currentId = startingParentId;
+
+    while (currentId) {
+      path.unshift(currentId); // Add to front of array
+      currentId = getNodeParent(currentId);
+    }
+
+    return path;
+  };
 
   return (e: MouseEvent) => {
     if (!getIsDragging()) return;
@@ -111,17 +176,16 @@ export const useMouseMove = () => {
       // Update drag positions to move with mouse
       dragOps.setDragPositions(mouseCX, mouseCY);
 
-      // NEW SECTION: Also handle sibling reordering for the placeholders
-      // when we're in dragging back to parent mode
+      // Reduced throttling for placeholders to match regular drag overlay behavior
       const placeholderId = primaryNode.offset.placeholderId;
       if (placeholderId) {
         // Get placeholder info for multi-selection
         const placeholderInfo = dragOps.getState().placeholderInfo;
 
-        // Throttle the reordering to prevent glitches
+        // Reduced throttle time for more responsive reordering
         const now = Date.now();
         if (
-          now - lastMoveTimeRef.current < 100 ||
+          now - lastMoveTimeRef.current < 16 || // ~60fps update rate
           placeholderMovingRef.current
         ) {
           prevMousePosRef.current = { x: e.clientX, y: e.clientY };
@@ -134,7 +198,7 @@ export const useMouseMove = () => {
         placeholderMovingRef.current = true;
 
         try {
-          // Get sibling ordering for the primary placeholder
+          // Use the existing getSiblingOrdering function
           const result = getSiblingOrdering(
             e,
             placeholderId,
@@ -237,40 +301,223 @@ export const useMouseMove = () => {
         } catch (err) {
           console.error("Error in reordering:", err);
         } finally {
-          // Always clear the flag after a delay
+          // Reduced the clearing time to match higher refresh rate
           setTimeout(() => {
             placeholderMovingRef.current = false;
-          }, 100);
+          }, 16); // Matching the throttle timing
         }
+      }
+
+      // Check for transitions back to canvas
+      if (isOverCanvas) {
+        const now = Date.now();
+        // Prevent too rapid transitions (200ms minimum between transitions)
+        if (now - lastTransitionTimeRef.current < 200) {
+          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+
+        lastTransitionTimeRef.current = now;
+
+        // Reset transition flags immediately to allow for back-and-forth transitions
+        if (transitioningToParentRef.current) {
+          transitioningToParentRef.current = false;
+        }
+
+        if (transitioningToCanvasRef.current) {
+          // Already transitioning
+          prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+          return;
+        }
+
+        transitioningToCanvasRef.current = true;
+
+        // Canvas-space mouse position
+        const containerRect = containerRef.current!.getBoundingClientRect();
+        const transform = getTransform();
+        const { x: mouseCX, y: mouseCY } = screenToCanvas(
+          e,
+          containerRect,
+          transform
+        );
+
+        // CRITICAL: Update drag state BEFORE any DOM changes
+        dragOps.setIsOverCanvas(true);
+        dragOps.setDragPositions(mouseCX, mouseCY);
+        dragOps.setDragSource("canvas");
+        dragOps.setIsDraggingBackToParent(false);
+
+        // Remove placeholders
+        const placeholderInfo = dragOps.getState().placeholderInfo;
+        if (placeholderInfo) {
+          // Remove main placeholder
+          if (placeholderId) removeNode(placeholderId);
+
+          // If multi-selection, also remove additional placeholders
+          if (placeholderInfo.additionalPlaceholders) {
+            placeholderInfo.additionalPlaceholders.forEach((ph) => {
+              if (ph.placeholderId && ph.placeholderId !== placeholderId) {
+                removeNode(ph.placeholderId);
+              }
+            });
+          }
+        }
+
+        // Pre-compute every node's offset
+        const originalStyles = new Map();
+
+        draggedNodes.forEach((dragged) => {
+          const el = document.querySelector(
+            `[data-node-id="${dragged.node.id}"]`
+          );
+          if (el) {
+            const computedStyle = window.getComputedStyle(el);
+            originalStyles.set(dragged.node.id, {
+              display: computedStyle.display,
+              position: computedStyle.position,
+            });
+          }
+        });
+
+        const relOffsets = draggedNodes.map((d, i) => {
+          if (i === 0) return { dx: 0, dy: 0 };
+
+          const primaryEl = document.querySelector(
+            `[data-node-id="${draggedNodes[0].node.id}"]`
+          ) as HTMLElement | null;
+          const currentEl = document.querySelector(
+            `[data-node-id="${d.node.id}"]`
+          ) as HTMLElement | null;
+
+          if (!primaryEl || !currentEl) {
+            return { dx: i * 10, dy: i * 10 }; // fallback
+          }
+
+          const p = primaryEl.getBoundingClientRect();
+          const c = currentEl.getBoundingClientRect();
+          const dx = (c.left - p.left) / transform.scale;
+          const dy = (c.top - p.top) / transform.scale;
+          return { dx, dy };
+        });
+
+        // Set all nodes to transition: none to prevent animation artifacts
+        draggedNodes.forEach((dragged) => {
+          updateNodeStyle(
+            dragged.node.id,
+            {
+              transition: "none", // Prevent any CSS transitions
+            },
+            { dontSync: true }
+          );
+        });
+
+        // Promote nodes to the canvas in a batch
+        draggedNodes.forEach((dragged) => {
+          moveNode(dragged.node.id, null);
+          dragged.node.parentId = null;
+        });
+
+        // Position all nodes with their exact calculated coordinates
+        draggedNodes.forEach((dragged, idx) => {
+          // Get original display value
+          const originalStyle = originalStyles.get(dragged.node.id);
+          const originalDisplay = originalStyle?.display || "block";
+
+          // Calculate absolute coords in canvas space
+          const rawX =
+            mouseCX -
+            dragged.offset.mouseX / transform.scale +
+            (relOffsets[idx]?.dx || 0);
+          const rawY =
+            mouseCY -
+            dragged.offset.mouseY / transform.scale +
+            (relOffsets[idx]?.dy || 0);
+
+          // Style WITH explicit visibility and original display properties
+          updateNodeStyle(
+            dragged.node.id,
+            {
+              position: "absolute",
+              left: `${Math.round(rawX)}px`,
+              top: `${Math.round(rawY)}px`,
+              isAbsoluteInFrame: "false",
+              // Keep original display property
+              display: originalDisplay,
+              // Add visibility properties
+              visibility: "visible",
+              opacity: "1",
+              zIndex: idx === 0 ? "1000" : `${1000 - idx * 10}`, // Proper stacking
+              pointerEvents: "none", // Allow mouse events to pass through
+            },
+            { dontSync: true }
+          );
+
+          updateNodeFlags(dragged.node.id, { inViewport: false });
+        });
+
+        // Configure snap guides
+        snapOps.configureForCanvasTransition();
+
+        // Reset transition flag after a short delay
+        setTimeout(() => {
+          transitioningToCanvasRef.current = false;
+        }, 100);
+
+        prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+        return;
       }
 
       prevMousePosRef.current = { x: e.clientX, y: e.clientY };
       return;
     }
 
-    // Handle dragging back to original parent
+    // Enhanced drag-back-to-parent detection with hierarchy support
     if (dragSource === "canvas") {
       const originalParentId = dragBackInfo.originalParentId;
       const originalIndices = dragBackInfo.draggedNodesOriginalIndices;
 
       if (originalParentId) {
-        // Detect if over original parent
+        // Get the complete path to the nested container - includes all parents
+        const parentPath = getPathToNestedContainer(originalParentId);
+
+        // Get the parent hierarchy (all containers from original parent up to root)
+        const parentHierarchy = getParentHierarchy(originalParentId);
+
+        // Check if mouse is over ANY element in the parent hierarchy
+        // This activates as soon as we enter any part of the parent structure
+        let isOverAnyParent = isOverParentHierarchy(e, parentHierarchy);
+
+        // For logging - helps with debugging
+        if (isOverAnyParent) {
+          console.log("Over parent hierarchy:", parentHierarchy);
+        }
+
+        // Standard check for being directly over original parent
         const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-        const isOverOriginalParent = elementsUnder.some((el) => {
+
+        // First check for direct hit on original parent (keeping original logic)
+        let isOverOriginalParent = elementsUnder.some((el) => {
           const nodeId = el.getAttribute("data-node-id");
           return nodeId === originalParentId;
         });
 
-        console.log(
-          "isOverOriginalParent",
-          isOverOriginalParent,
-          "originalParentId",
-          originalParentId
-        );
+        // Use the broader parent hierarchy detection
+        const shouldTransitionToParent =
+          isOverAnyParent && !transitioningToParentRef.current;
 
-        // If over original parent and not already transitioning
-        if (isOverOriginalParent && !transitioningToParentRef.current) {
+        // Prevent rapid transitions
+        const now = Date.now();
+        if (
+          shouldTransitionToParent &&
+          now - lastTransitionTimeRef.current >= 200
+        ) {
+          lastTransitionTimeRef.current = now;
           transitioningToParentRef.current = true;
+
+          // Reset the other transition flag immediately
+          if (transitioningToCanvasRef.current) {
+            transitioningToCanvasRef.current = false;
+          }
 
           console.log("Transitioning back to parent:", originalParentId);
 
@@ -287,14 +534,12 @@ export const useMouseMove = () => {
           // 3. Reset canvas state
           dragOps.setIsOverCanvas(false);
 
-          // 4. Create new placeholders for each dragged node
-          const placeholders = [];
-          let mainPlaceholder = null;
-
-          // Sort dragged nodes by their original indices if available
-          const orderedDraggedNodes = [...draggedNodes];
+          // 4. Get nodes sorted by original indices
+          const originalIndices = dragBackInfo.draggedNodesOriginalIndices;
+          let orderedDraggedNodes = [...draggedNodes];
 
           if (originalIndices.size > 0) {
+            // Sort by original indices
             orderedDraggedNodes.sort((a, b) => {
               const indexA = originalIndices.get(a.node.id) ?? 999;
               const indexB = originalIndices.get(b.node.id) ?? 999;
@@ -302,12 +547,16 @@ export const useMouseMove = () => {
             });
           }
 
-          // Create a placeholder for each dragged node
+          // 5. Create new placeholders for each dragged node in the proper order
+          const placeholders = [];
+          let mainPlaceholder = null;
+
+          // Create placeholders for each dragged node in the sorted order
           for (let i = 0; i < orderedDraggedNodes.length; i++) {
             const nodeInfo = orderedDraggedNodes[i];
             const currentId = nodeInfo.node.id;
 
-            // Find the element in the DOM (should now be on canvas)
+            // Find the element in the DOM
             const element = document.querySelector(
               `[data-node-id="${currentId}"]`
             ) as HTMLElement;
@@ -321,82 +570,80 @@ export const useMouseMove = () => {
               transform: getTransform(),
             });
 
+            // Store placeholder with original index
             placeholders.push({
               id: placeholder.id,
               nodeId: currentId,
-              // If we have original index, use it
-              index: originalIndices.get(currentId) ?? 0,
+              index: originalIndices.get(currentId) ?? i,
             });
 
-            // Set main placeholder (for primary dragged node)
+            // Set placeholder for primary node
             if (currentId === primaryNode.node.id) {
               mainPlaceholder = placeholder;
             }
           }
 
-          // Sort placeholders by original index
+          // Sort placeholders by original index if needed
           placeholders.sort((a, b) => a.index - b.index);
 
-          // Insert all placeholders in the parent at their original indices
-          if (placeholders.length > 0) {
-            // Get current parent children
-            const parentChildren = getNodeChildren(originalParentId);
+          // FIXED APPROACH #1: Add all placeholders first, then reorder them
+          // This avoids the stale parentChildren.length issue
 
-            for (let i = 0; i < placeholders.length; i++) {
-              // Add placeholder to parent
-              addNode(placeholders[i].id, originalParentId);
+          // Step 1: Add all placeholders to the parent container first
+          placeholders.forEach((placeholder) => {
+            addNode(placeholder.id, originalParentId);
+          });
 
-              // Position at original index if possible
-              const targetIndex = Math.min(
-                placeholders[i].index,
-                parentChildren.length
-              );
-              moveNode(placeholders[i].id, originalParentId, targetIndex);
-            }
+          // Step 2: Now reorder them to their correct positions
+          placeholders.forEach((placeholder) => {
+            // Now we can safely move to the original index
+            moveNode(placeholder.id, originalParentId, placeholder.index);
+          });
 
-            // Update primary node offset with main placeholder
-            if (mainPlaceholder) {
-              const updatedPrimaryNode = {
-                ...primaryNode,
+          // Update primary node offset with main placeholder
+          if (mainPlaceholder) {
+            const updatedPrimaryNode = {
+              ...primaryNode,
+              offset: {
+                ...primaryNode.offset,
+                placeholderId: mainPlaceholder.id,
+                startingParentId: originalParentId,
+              },
+            };
+
+            // Update all dragged nodes
+            const updatedDraggedNodes = draggedNodes.map((node, idx) => {
+              if (idx === 0) return updatedPrimaryNode;
+              return {
+                ...node,
                 offset: {
-                  ...primaryNode.offset,
-                  placeholderId: mainPlaceholder.id,
+                  ...node.offset,
                   startingParentId: originalParentId,
                 },
               };
+            });
 
-              // Update all dragged nodes
-              const updatedDraggedNodes = draggedNodes.map((node, idx) => {
-                if (idx === 0) return updatedPrimaryNode;
-                return {
-                  ...node,
-                  offset: {
-                    ...node.offset,
-                    startingParentId: originalParentId,
-                  },
-                };
-              });
+            dragOps.setDraggedNodes(updatedDraggedNodes);
+          }
 
-              dragOps.setDraggedNodes(updatedDraggedNodes);
-            }
+          // Create placeholder info for the operation
+          if (mainPlaceholder) {
+            // Use the sorted order of node IDs
+            const nodeOrder = orderedDraggedNodes.map((info) => info.node.id);
 
-            // Create placeholder info for the operation
-            if (mainPlaceholder) {
-              const nodeOrder = orderedDraggedNodes.map((info) => info.node.id);
-              const placeholderInfo = {
-                mainPlaceholderId: mainPlaceholder.id,
-                nodeOrder: nodeOrder,
-                additionalPlaceholders: placeholders.map((p) => ({
-                  placeholderId: p.id,
-                  nodeId: p.nodeId,
-                })),
-                targetId: null,
-                position: null,
-              };
+            const placeholderInfo = {
+              mainPlaceholderId: mainPlaceholder.id,
+              nodeOrder: nodeOrder,
+              additionalPlaceholders: placeholders.map((p) => ({
+                placeholderId: p.id,
+                nodeId: p.nodeId,
+              })),
+              targetId: null,
+              position: null,
+            };
 
-              // Store placeholder info in drag state
-              dragOps.setPlaceholderInfo(placeholderInfo);
-            }
+            // Store placeholder info in drag state
+            dragOps.setPlaceholderInfo(placeholderInfo);
           }
 
           // Reset transitioning flag after a short delay
@@ -512,36 +759,51 @@ export const useMouseMove = () => {
         transform
       );
 
+      // Get drop info and active snap points once
+      const dropInfo = getDropInfo();
+      const hasActiveDropZone = dropInfo && dropInfo.targetId !== null;
+      const { enabled, activeSnapPoints } = hasActiveDropZone
+        ? {
+            enabled: false,
+            activeSnapPoints: { horizontal: null, vertical: null },
+          }
+        : snapOps.getState();
+
+      // Calculate mouse speed once
+      const mouseSpeed = {
+        x: Math.abs(e.clientX - prevMousePosRef.current.x),
+        y: Math.abs(e.clientY - prevMousePosRef.current.y),
+      };
+
+      // STEP 1: Calculate raw position for primary node
+      const primaryRawX = mouseCX - primaryNode.offset.mouseX / transform.scale;
+      const primaryRawY = mouseCY - primaryNode.offset.mouseY / transform.scale;
+
+      // STEP 2: Calculate snapped position for primary node
+      const dimensions = extractNodeDimensions(primaryNode.node.style);
+      const { x: primarySnapX, y: primarySnapY } = calculateSnappedPosition(
+        primaryRawX,
+        primaryRawY,
+        dimensions,
+        mouseSpeed,
+        activeSnapPoints,
+        enabled,
+        hasActiveDropZone
+      );
+
+      // STEP 3: Calculate the snap delta (difference between raw and snapped positions)
+      const snapDeltaX = primarySnapX - primaryRawX;
+      const snapDeltaY = primarySnapY - primaryRawY;
+
+      // STEP 4: Apply the same snap delta to all nodes to maintain relative positions
       draggedNodes.forEach((dragged, index) => {
-        const rawCX = mouseCX - dragged.offset.mouseX / transform.scale;
-        const rawCY = mouseCY - dragged.offset.mouseY / transform.scale;
+        // Calculate raw position for this node
+        const rawX = mouseCX - dragged.offset.mouseX / transform.scale;
+        const rawY = mouseCY - dragged.offset.mouseY / transform.scale;
 
-        const dropInfo = getDropInfo();
-        const hasActiveDropZone = dropInfo && dropInfo.targetId !== null;
-
-        const { enabled, activeSnapPoints } = hasActiveDropZone
-          ? {
-              enabled: false,
-              activeSnapPoints: { horizontal: null, vertical: null },
-            }
-          : snapOps.getState();
-
-        const dimensions = extractNodeDimensions(dragged.node.style);
-
-        const mouseSpeed = {
-          x: Math.abs(e.clientX - prevMousePosRef.current.x),
-          y: Math.abs(e.clientY - prevMousePosRef.current.y),
-        };
-
-        const { x: finalX, y: finalY } = calculateSnappedPosition(
-          rawCX,
-          rawCY,
-          dimensions,
-          mouseSpeed,
-          index === 0 ? activeSnapPoints : { horizontal: null, vertical: null },
-          enabled,
-          hasActiveDropZone
-        );
+        // Apply the same snap delta to maintain relative positions
+        const finalX = rawX + snapDeltaX;
+        const finalY = rawY + snapDeltaY;
 
         updateNodeStyle(
           dragged.node.id,
@@ -570,20 +832,34 @@ export const useMouseMove = () => {
       placeholderInfo.additionalPlaceholders &&
       placeholderInfo.additionalPlaceholders.length > 0;
 
-    // Modified condition to handle both parent and viewport sources
+    // Better parent-to-canvas transition
     if (
       isOverCanvas &&
       (dragSource === "parent" || dragSource === "viewport")
     ) {
-      // FIXED: Parent/viewport to canvas transition logic
+      // Prevent rapid transitions
+      const now = Date.now();
+      if (now - lastTransitionTimeRef.current < 200) {
+        prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      lastTransitionTimeRef.current = now;
+
+      // Reset transition flags immediately to allow for back-and-forth transitions
+      if (transitioningToParentRef.current) {
+        transitioningToParentRef.current = false;
+      }
 
       // Prevent multiple transitions
-      if (transitioningToCanvasRef.current) return;
+      if (transitioningToCanvasRef.current) {
+        prevMousePosRef.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
       transitioningToCanvasRef.current = true;
 
-      /* ---------------------------------------------------------------------------
-       *  0. Calculate canvas-space mouse position FIRST
-       * ------------------------------------------------------------------------- */
+      // Calculate canvas-space mouse position FIRST
       const containerRect = containerRef.current!.getBoundingClientRect();
       const transform = getTransform();
 
@@ -594,17 +870,13 @@ export const useMouseMove = () => {
         transform
       );
 
-      /* ---------------------------------------------------------------------------
-       *  1. CRITICAL FIX: Update drag state BEFORE any DOM changes
-       *     This immediately unmounts the overlay to prevent jumps
-       * ------------------------------------------------------------------------- */
+      // CRITICAL: Update drag state BEFORE any DOM changes
+      // This immediately unmounts the overlay to prevent jumps
       dragOps.setIsOverCanvas(true);
       dragOps.setDragPositions(mouseCX, mouseCY);
       dragOps.setDragSource("canvas"); // This immediately unmounts DragOverlay
 
-      /* ---------------------------------------------------------------------------
-       *  2. Remove placeholders AFTER drag state is updated
-       * ------------------------------------------------------------------------- */
+      // Remove placeholders AFTER drag state is updated
       // Remove main placeholder
       if (placeholderId) removeNode(placeholderId);
 
@@ -617,9 +889,7 @@ export const useMouseMove = () => {
         });
       }
 
-      /* ---------------------------------------------------------------------------
-       *  3. Pre-compute every node's offset
-       * ------------------------------------------------------------------------- */
+      // Pre-compute every node's offset
       // Capture original styles
       const originalStyles = new Map();
 
@@ -657,9 +927,7 @@ export const useMouseMove = () => {
         return { dx, dy };
       });
 
-      /* ---------------------------------------------------------------------------
-       *  4. Set all nodes to transition: none to prevent animation artifacts
-       * ------------------------------------------------------------------------- */
+      // Set all nodes to transition: none to prevent animation artifacts
       draggedNodes.forEach((dragged) => {
         updateNodeStyle(
           dragged.node.id,
@@ -670,23 +938,19 @@ export const useMouseMove = () => {
         );
       });
 
-      /* ---------------------------------------------------------------------------
-       *  5. Promote nodes to the canvas in a batch
-       * ------------------------------------------------------------------------- */
+      // Promote nodes to the canvas in a batch
       draggedNodes.forEach((dragged) => {
         moveNode(dragged.node.id, null);
         dragged.node.parentId = null;
       });
 
-      /* ---------------------------------------------------------------------------
-       *  6. Position all nodes with their exact calculated coordinates
-       * ------------------------------------------------------------------------- */
+      // Position all nodes with their exact calculated coordinates
       draggedNodes.forEach((dragged, idx) => {
         // Get original display value
         const originalStyle = originalStyles.get(dragged.node.id);
         const originalDisplay = originalStyle?.display || "block";
 
-        // B. calculate absolute coords in canvas space
+        // Calculate absolute coords in canvas space
         const rawX =
           mouseCX -
           dragged.offset.mouseX / transform.scale +
@@ -696,7 +960,7 @@ export const useMouseMove = () => {
           dragged.offset.mouseY / transform.scale +
           (relOffsets[idx]?.dy || 0);
 
-        // C. style WITH explicit visibility and original display properties
+        // Style WITH explicit visibility and original display properties
         updateNodeStyle(
           dragged.node.id,
           {
@@ -721,6 +985,11 @@ export const useMouseMove = () => {
       // Configure snap guides
       snapOps.configureForCanvasTransition();
 
+      // Reset transition flag after a shorter delay
+      setTimeout(() => {
+        transitioningToCanvasRef.current = false;
+      }, 75); // Reduced from 100ms for better responsiveness
+
       return; // Don't fall through to sibling-ordering logic
     } else if (isOverCanvas) {
       // Regular transition to canvas (not from parent/viewport)
@@ -744,11 +1013,11 @@ export const useMouseMove = () => {
       dragOps.setDragSource("canvas");
       dragOps.setDragPositions(x, y);
     } else {
-      // IMPROVED SIBLING REORDERING LOGIC - FIXED FOR ALL DIRECTIONS
+      // SIBLING REORDERING LOGIC
 
-      // Throttle the reordering to prevent glitches
+      // Reduce throttling for more responsive reordering to match drag overlay
       const now = Date.now();
-      if (now - lastMoveTimeRef.current < 100 || placeholderMovingRef.current) {
+      if (now - lastMoveTimeRef.current < 16 || placeholderMovingRef.current) {
         return;
       }
 
@@ -759,6 +1028,7 @@ export const useMouseMove = () => {
 
       try {
         // Get sibling ordering for the primary placeholder
+        // Use the existing implementation without modifications
         const result = getSiblingOrdering(
           e,
           placeholderId,
@@ -855,10 +1125,10 @@ export const useMouseMove = () => {
       } catch (err) {
         console.error("Error in reordering:", err);
       } finally {
-        // Always clear the flag after a delay
+        // Clear the flag very quickly to match drag overlay responsiveness
         setTimeout(() => {
           placeholderMovingRef.current = false;
-        }, 100);
+        }, 16); // Match the throttle time for consistency
       }
     }
 
