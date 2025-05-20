@@ -182,6 +182,19 @@ const SnapGuides: React.FC = () => {
   // Ref to track if there are active snap points - only show guides when actively snapping
   const hasActiveSnapRef = useRef<boolean>(false);
 
+  const prevDragSourceRef = useRef(dragSource);
+
+  // Reset the setup flag when drag source changes
+  useEffect(() => {
+    if (isDragging && prevDragSourceRef.current !== dragSource) {
+      console.log(
+        `Drag source changed from ${prevDragSourceRef.current} to ${dragSource}, reconfiguring snap guides`
+      );
+      snapSetupDoneRef.current = false; // Reset the flag to force reconfiguration
+      prevDragSourceRef.current = dragSource; // Update the previous value
+    }
+  }, [isDragging, dragSource]);
+
   // Local state to store all snap positions when SHOW_ALL_GUIDES is true
   const [allGuides, setAllGuides] = useState<{
     horizontal: number[];

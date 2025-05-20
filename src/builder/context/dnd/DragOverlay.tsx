@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import {
-  useDraggedNode,
+  useDraggedNodes,
   useIsDragging,
   useDragSource,
   useIsOverCanvas,
+  useIsDraggingBackToParent,
 } from "../atoms/drag-store";
 import { NodeComponent } from "@/builder/registry/renderNodes";
 import { useTransform } from "../atoms/canvas-interaction-store";
@@ -19,12 +20,13 @@ const deg = (rotate: string | number | undefined) => {
 };
 
 const DragOverlay = () => {
-  const dragged = useDraggedNode();
+  const draggedNodes = useDraggedNodes();
   const dragging = useIsDragging();
   const dragSource = useDragSource();
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
   const transform = useTransform();
   const isOverCanvas = useIsOverCanvas();
+  const isDraggingBackToParent = useIsDraggingBackToParent();
 
   // Listen to global mousemove
   useEffect(() => {
@@ -33,66 +35,86 @@ const DragOverlay = () => {
     return () => document.removeEventListener("mousemove", h);
   }, []);
 
-  // Don't render if we don't have a dragged node or we're not dragging
-  if (!dragged || !dragging) return null;
+  // Don't render if we don't have dragged nodes or we're not dragging
+  if (draggedNodes.length === 0 || !dragging) return null;
 
-  // Don't render the overlay if we're dragging directly on canvas
-  if (dragSource === "canvas" || dragSource === "absolute-in-frame")
+  // KEY CHANGE: Don't render the overlay if:
+  // 1. We're dragging directly on canvas, OR
+  // 2. We're dragging back to parent (let the real node be visible)
+  if (
+    dragSource === "canvas" ||
+    dragSource === "absolute-in-frame" ||
+    isDraggingBackToParent
+  )
     return null;
 
-  // Unpack what useDragStart gave us
-  const { mouseX, mouseY, width, height, rotate, isSimpleRotation } =
-    dragged.offset;
+  // Get the primary dragged node for position reference
+  const primaryNode = draggedNodes[0];
 
-  // Convert the canvas-offset back to current screen pixels
-  let left = mouse.x - mouseX;
-  let top = mouse.y - mouseY;
-
-  if (isSimpleRotation) {
-    // Calculate rotation adjustments for 2D rotation
-    const rotRad = (deg(rotate) * Math.PI) / 180;
-
-    // Calculate effective dimensions after rotation
-    const effW =
-      Math.abs(width * Math.cos(rotRad)) + Math.abs(height * Math.sin(rotRad));
-    const effH =
-      Math.abs(height * Math.cos(rotRad)) + Math.abs(width * Math.sin(rotRad));
-
-    // Calculate shift caused by rotation
-    const rotShiftX = (effW - width) / 2;
-    const rotShiftY = (effH - height) / 2;
-
-    // Add rotation shift
-    left += rotShiftX * transform.scale;
-    top += rotShiftY * transform.scale;
-  }
-
+  // Render overlays for all dragged nodes
   return (
-    <div
-      style={{
-        position: "fixed",
-        left: `${left}px`,
-        top: `${top}px`,
-        pointerEvents: "none",
-        zIndex: 9999,
-      }}
-      data-drag-overlay
-      data-node-dragged={dragged.node.id}
-    >
-      <div
-        style={{
-          transform: `scale(${transform.scale})`,
-          transformOrigin: "top left",
-        }}
-      >
-        <NodeComponent
-          nodeId={dragged.node.id}
-          filter="outOfViewport"
-          preview={true}
-          style={!isSimpleRotation ? { transform: "none" } : undefined}
-        />
-      </div>
-    </div>
+    <>
+      {draggedNodes.map((dragged, index) => {
+        // Unpack what useDragStart gave us
+        const { mouseX, mouseY, width, height, rotate, isSimpleRotation } =
+          dragged.offset;
+
+        // FIXED: Use constant offsets captured at drag start
+        // but use let instead of const since we need to modify these values
+        let left = mouse.x - mouseX;
+        let top = mouse.y - mouseY;
+
+        if (isSimpleRotation) {
+          // Calculate rotation adjustments for 2D rotation
+          const rotRad = (deg(rotate) * Math.PI) / 180;
+
+          // Calculate effective dimensions after rotation
+          const effW =
+            Math.abs(width * Math.cos(rotRad)) +
+            Math.abs(height * Math.sin(rotRad));
+          const effH =
+            Math.abs(height * Math.cos(rotRad)) +
+            Math.abs(width * Math.sin(rotRad));
+
+          // Calculate shift caused by rotation
+          const rotShiftX = (effW - width) / 2;
+          const rotShiftY = (effH - height) / 2;
+
+          // Add rotation shift
+          left += rotShiftX * transform.scale;
+          top += rotShiftY * transform.scale;
+        }
+
+        return (
+          <div
+            key={dragged.node.id}
+            style={{
+              position: "fixed",
+              left: `${left}px`,
+              top: `${top}px`,
+              pointerEvents: "none",
+              zIndex: 9999,
+            }}
+            data-drag-overlay
+            data-node-dragged={dragged.node.id}
+          >
+            <div
+              style={{
+                transform: `scale(${transform.scale})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <NodeComponent
+                nodeId={dragged.node.id}
+                filter="outOfViewport"
+                preview={true}
+                style={!isSimpleRotation ? { transform: "none" } : undefined}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 };
 

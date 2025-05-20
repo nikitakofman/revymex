@@ -1,19 +1,31 @@
-// src/builder/context/atoms/drag-store.ts
 import { atom, createStore } from "jotai/vanilla";
 import { selectAtom } from "jotai/utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback } from "react";
 import { Node } from "../../reducer/nodeDispatcher";
+import { NodeId } from "./node-store";
 
-// Create a separate store for drag state
 export const dragStore = createStore();
 
-// Type definitions
 export interface Offset {
   x: number;
   y: number;
   mouseX: number;
   mouseY: number;
+  width?: number;
+  height?: number;
+  rotate?: string;
+  isSimpleRotation?: boolean;
+  nodeType?: string;
+  placeholderId?: string | null;
+  startingParentId?: string | null;
+  dimensionUnits?: any;
+  isAbsoluteInFrame?: boolean;
+  originalPositionType?: string;
+  initialPosition?: {
+    left: number;
+    top: number;
+  };
   parentRotation?: number;
   elementQuery?: object;
 }
@@ -43,15 +55,20 @@ export interface DropInfo {
   dropY?: number;
 }
 
+export interface DragBackToParentInfo {
+  isDraggingBackToParent: boolean;
+  originalParentId: NodeId | null;
+  draggedNodesOriginalIndices: Map<NodeId, number>;
+}
+
 export interface DragState {
   isDragging: boolean;
   isOverCanvas: boolean;
-  draggedNode: DraggedNodeInfo | null;
-  draggedItem: string | null;
-  additionalDraggedNodes: Array<{
+  draggedNodes: Array<{
     node: Node;
     offset: Offset;
-  }> | null;
+  }>;
+  draggedItem: string | null;
   dropInfo: DropInfo | null;
   lastMouseX: number;
   lastMouseY: number;
@@ -78,15 +95,15 @@ export interface DragState {
   dynamicModeNodeId: string | null;
   duplicatedFromAlt: boolean;
   recordingSessionId: string | null;
+
+  dragBackToParentInfo: DragBackToParentInfo;
 }
 
-// Initial state
 const initialDragState: DragState = {
   isDragging: false,
   isOverCanvas: false,
-  draggedNode: null,
+  draggedNodes: [],
   draggedItem: null,
-  additionalDraggedNodes: null,
   dropInfo: null,
   lastMouseX: 0,
   lastMouseY: 0,
@@ -97,12 +114,16 @@ const initialDragState: DragState = {
   dynamicModeNodeId: null,
   duplicatedFromAlt: false,
   recordingSessionId: null,
+
+  dragBackToParentInfo: {
+    isDraggingBackToParent: false,
+    originalParentId: null,
+    draggedNodesOriginalIndices: new Map(),
+  },
 };
 
-// Base atom for drag state
 export const _internalDragStateAtom = atom<DragState>(initialDragState);
 
-// Individual property atoms for fine-grained subscriptions
 export const isDraggingAtom = selectAtom(
   _internalDragStateAtom,
   (state) => state.isDragging
@@ -113,19 +134,39 @@ export const isOverCanvasAtom = selectAtom(
   (state) => state.isOverCanvas
 );
 
-export const draggedNodeAtom = selectAtom(
+export const draggedNodesAtom = selectAtom(
   _internalDragStateAtom,
-  (state) => state.draggedNode
+  (state) => state.draggedNodes
+);
+
+export const dragBackToParentInfoAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.dragBackToParentInfo
+);
+
+export const isDraggingBackToParentAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.dragBackToParentInfo.isDraggingBackToParent
+);
+
+export const originalParentIdAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.dragBackToParentInfo.originalParentId
+);
+
+export const draggedNodesOriginalIndicesAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => state.dragBackToParentInfo.draggedNodesOriginalIndices
+);
+
+export const primaryDraggedNodeAtom = selectAtom(
+  _internalDragStateAtom,
+  (state) => (state.draggedNodes.length > 0 ? state.draggedNodes[0] : null)
 );
 
 export const draggedItemAtom = selectAtom(
   _internalDragStateAtom,
   (state) => state.draggedItem
-);
-
-export const additionalDraggedNodesAtom = selectAtom(
-  _internalDragStateAtom,
-  (state) => state.additionalDraggedNodes
 );
 
 export const dropInfoAtom = selectAtom(
@@ -168,7 +209,6 @@ export const recordingSessionIdAtom = selectAtom(
   (state) => state.recordingSessionId
 );
 
-// Create a singleton instance of drag operations
 const dragOperations = {
   setIsDragging: (isDragging: boolean) => {
     dragStore.set(_internalDragStateAtom, (prev) => ({
@@ -191,11 +231,100 @@ const dragOperations = {
     }));
   },
 
-  setDraggedNode: (node: Node, offset: Offset) => {
+  setDraggedNodes: (
+    nodes: Array<{
+      node: Node;
+      offset: Offset;
+    }>
+  ) => {
     dragStore.set(_internalDragStateAtom, (prev) => ({
       ...prev,
-      draggedNode: { node, offset },
+      draggedNodes: nodes,
     }));
+  },
+
+  setDragBackToParentInfo: (info: Partial<DragBackToParentInfo>) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      dragBackToParentInfo: {
+        ...prev.dragBackToParentInfo,
+        ...info,
+      },
+    }));
+  },
+
+  setIsDraggingBackToParent: (isDraggingBackToParent: boolean) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      dragBackToParentInfo: {
+        ...prev.dragBackToParentInfo,
+        isDraggingBackToParent,
+      },
+    }));
+  },
+
+  setOriginalParentId: (originalParentId: NodeId | null) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      dragBackToParentInfo: {
+        ...prev.dragBackToParentInfo,
+        originalParentId,
+      },
+    }));
+  },
+
+  setDraggedNodesOriginalIndices: (indices: Map<NodeId, number>) => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      dragBackToParentInfo: {
+        ...prev.dragBackToParentInfo,
+        draggedNodesOriginalIndices: indices,
+      },
+    }));
+  },
+
+  addDraggedNodeOriginalIndex: (nodeId: NodeId, index: number) => {
+    dragStore.set(_internalDragStateAtom, (prev) => {
+      const newIndices = new Map(
+        prev.dragBackToParentInfo.draggedNodesOriginalIndices
+      );
+      newIndices.set(nodeId, index);
+      return {
+        ...prev,
+        dragBackToParentInfo: {
+          ...prev.dragBackToParentInfo,
+          draggedNodesOriginalIndices: newIndices,
+        },
+      };
+    });
+  },
+
+  resetDragBackToParentInfo: () => {
+    dragStore.set(_internalDragStateAtom, (prev) => ({
+      ...prev,
+      dragBackToParentInfo: {
+        isDraggingBackToParent: false,
+        originalParentId: null,
+        draggedNodesOriginalIndices: new Map(),
+      },
+    }));
+  },
+
+  setDraggedNode: (node: Node, offset: Offset) => {
+    dragStore.set(_internalDragStateAtom, (prev) => {
+      const newDraggedNodes = [...prev.draggedNodes];
+
+      if (newDraggedNodes.length === 0) {
+        newDraggedNodes.push({ node, offset });
+      } else {
+        newDraggedNodes[0] = { node, offset };
+      }
+
+      return {
+        ...prev,
+        draggedNodes: newDraggedNodes,
+      };
+    });
   },
 
   setAdditionalDraggedNodes: (
@@ -204,10 +333,37 @@ const dragOperations = {
       offset: Offset;
     }>
   ) => {
-    dragStore.set(_internalDragStateAtom, (prev) => ({
-      ...prev,
-      additionalDraggedNodes: nodes,
-    }));
+    dragStore.set(_internalDragStateAtom, (prev) => {
+      if (prev.draggedNodes.length === 0) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        draggedNodes: [prev.draggedNodes[0], ...nodes],
+      };
+    });
+  },
+
+  addDraggedNode: (node: Node, offset: Offset) => {
+    dragStore.set(_internalDragStateAtom, (prev) => {
+      const existingIndex = prev.draggedNodes.findIndex(
+        (item) => item.node.id === node.id
+      );
+
+      let newDraggedNodes = [...prev.draggedNodes];
+
+      if (existingIndex >= 0) {
+        newDraggedNodes[existingIndex] = { node, offset };
+      } else {
+        newDraggedNodes.push({ node, offset });
+      }
+
+      return {
+        ...prev,
+        draggedNodes: newDraggedNodes,
+      };
+    });
   },
 
   setDraggedItem: (item: string | null) => {
@@ -269,7 +425,7 @@ const dragOperations = {
 
   setDragPositions: (x: number, y: number) => {
     dragStore.set(_internalDragStateAtom, (prev) => {
-      if (!prev.draggedNode) return prev;
+      if (prev.draggedNodes.length === 0) return prev;
       return {
         ...prev,
         dragPositions: { x, y },
@@ -327,21 +483,18 @@ const dragOperations = {
   resetDragState: () => {
     dragStore.set(_internalDragStateAtom, {
       ...initialDragState,
-      // Preserve nodeDimensions as they might be needed across drags
+
       nodeDimensions: dragStore.get(_internalDragStateAtom).nodeDimensions,
     });
   },
 
-  // Utility to get full state
-  getDragState: () => {
+  getState: () => {
     return dragStore.get(_internalDragStateAtom);
   },
 };
 
-// Export the singleton instance directly
 export const dragOps = dragOperations;
 
-// Hooks for components to use the drag state
 export const useIsDragging = () => {
   return useAtomValue(isDraggingAtom, { store: dragStore });
 };
@@ -350,16 +503,32 @@ export const useIsOverCanvas = () => {
   return useAtomValue(isOverCanvasAtom, { store: dragStore });
 };
 
+export const useDraggedNodes = () => {
+  return useAtomValue(draggedNodesAtom, { store: dragStore });
+};
+
+export const useDragBackToParentInfo = () => {
+  return useAtomValue(dragBackToParentInfoAtom, { store: dragStore });
+};
+
+export const useIsDraggingBackToParent = () => {
+  return useAtomValue(isDraggingBackToParentAtom, { store: dragStore });
+};
+
+export const useOriginalParentId = () => {
+  return useAtomValue(originalParentIdAtom, { store: dragStore });
+};
+
+export const useDraggedNodesOriginalIndices = () => {
+  return useAtomValue(draggedNodesOriginalIndicesAtom, { store: dragStore });
+};
+
 export const useDraggedNode = () => {
-  return useAtomValue(draggedNodeAtom, { store: dragStore });
+  return useAtomValue(primaryDraggedNodeAtom, { store: dragStore });
 };
 
 export const useDraggedItem = () => {
   return useAtomValue(draggedItemAtom, { store: dragStore });
-};
-
-export const useAdditionalDraggedNodes = () => {
-  return useAtomValue(additionalDraggedNodesAtom, { store: dragStore });
 };
 
 export const useDropInfo = () => {
@@ -394,12 +563,10 @@ export const useRecordingSessionId = () => {
   return useAtomValue(recordingSessionIdAtom, { store: dragStore });
 };
 
-// Full state hook
 export const useDragState = () => {
   return useAtomValue(_internalDragStateAtom, { store: dragStore });
 };
 
-// Imperative getters
 export const useGetDragState = () => {
   return useCallback(() => {
     return dragStore.get(_internalDragStateAtom);
@@ -418,21 +585,56 @@ export const useGetDragSource = () => {
   }, []);
 };
 
+export const useGetDraggedNodes = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).draggedNodes;
+  }, []);
+};
+
+export const useGetDragBackToParentInfo = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).dragBackToParentInfo;
+  }, []);
+};
+
+export const useGetIsDraggingBackToParent = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).dragBackToParentInfo
+      .isDraggingBackToParent;
+  }, []);
+};
+
+export const useGetOriginalParentId = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).dragBackToParentInfo
+      .originalParentId;
+  }, []);
+};
+
+export const useGetDraggedNodesOriginalIndices = () => {
+  return useCallback(() => {
+    return dragStore.get(_internalDragStateAtom).dragBackToParentInfo
+      .draggedNodesOriginalIndices;
+  }, []);
+};
+
+export const useGetDraggedNode = () => {
+  return useCallback(() => {
+    const nodes = dragStore.get(_internalDragStateAtom).draggedNodes;
+    return nodes.length > 0 ? nodes[0] : null;
+  }, []);
+};
+
 export const useGetAdditionalDraggedNodes = () => {
   return useCallback(() => {
-    return dragStore.get(_internalDragStateAtom).additionalDraggedNodes;
+    const nodes = dragStore.get(_internalDragStateAtom).draggedNodes;
+    return nodes.length > 1 ? nodes.slice(1) : null;
   }, []);
 };
 
 export const useGetIsDragging = () => {
   return useCallback(() => {
     return dragStore.get(_internalDragStateAtom).isDragging;
-  }, []);
-};
-
-export const useGetDraggedNode = () => {
-  return useCallback(() => {
-    return dragStore.get(_internalDragStateAtom).draggedNode;
   }, []);
 };
 
@@ -484,12 +686,10 @@ export const useGetRecordingSessionId = () => {
   }, []);
 };
 
-// Optional set functions for components that need to directly update state
 export const useSetDragState = () => {
   return useSetAtom(_internalDragStateAtom, { store: dragStore });
 };
 
-// Debug function
 export const debugDragStore = () => {
   console.log("Drag Store State:", dragStore.get(_internalDragStateAtom));
 };

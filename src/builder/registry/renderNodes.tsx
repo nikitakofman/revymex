@@ -3,10 +3,9 @@ import { Frame } from "./elements/FrameElement";
 import { ImageElement } from "./elements/ImageElement";
 import TextElement from "./elements/TextElement";
 import DraggedNode from "../context/canvasHelpers/DraggedNode";
-import { VideoElement } from "./elements/VideoElement";
 import {
-  useGetAdditionalDraggedNodes,
-  useGetDraggedNode,
+  useGetDraggedNodes, // Changed from useGetDraggedNode and useGetAdditionalDraggedNodes
+  useGetDragSource,
   useGetIsDragging,
 } from "../context/atoms/drag-store";
 import {
@@ -51,8 +50,8 @@ export const NodeComponent = ({
 
   // Get drag state
   const getIsDragging = useGetIsDragging();
-  const getDraggedNode = useGetDraggedNode();
-  const getAdditionalDraggedNodes = useGetAdditionalDraggedNodes();
+  const getDraggedNodes = useGetDraggedNodes(); // Changed from getDraggedNode
+  const getDragSource = useGetDragSource();
 
   // Get viewport state
   const dynamicModeNodeId = useDynamicModeNodeId();
@@ -65,9 +64,10 @@ export const NodeComponent = ({
 
   // Check if node is being dragged - DO THIS AFTER ALL HOOKS ARE CALLED
   const isDragging = getIsDragging();
-  const draggedNode = getDraggedNode();
-  const additionalDraggedNodes = getAdditionalDraggedNodes();
-  const isDragged = isDragging && draggedNode?.node.id === nodeId;
+  const draggedNodes = getDraggedNodes(); // Changed from separated dragged nodes
+  const isDragged =
+    isDragging && draggedNodes.some((info) => info.node.id === nodeId); // Changed from draggedNode?.node.id === nodeId
+  const dragSource = getDragSource();
 
   const isViewportDescendant = () => {
     let currentId = nodeId;
@@ -127,17 +127,17 @@ export const NodeComponent = ({
   }
 
   // Skip rendering this node if it's being dragged and this isn't a preview
-  if (isDragged && !preview) {
+  if (isDragged && !preview && !(dragSource === "canvas" && !node.parentId)) {
     return null;
   }
 
-  // Skip rendering non-dragged versions of additional dragged nodes
-  if (
-    !preview &&
-    additionalDraggedNodes?.some((info) => info.node.id === nodeId)
-  ) {
-    return null;
-  }
+  // REMOVED: No longer need this separate check for additional dragged nodes
+  // if (
+  //   !preview &&
+  //   additionalDraggedNodes?.some((info) => info.node.id === nodeId)
+  // ) {
+  //   return null;
+  // }
 
   // Handle placeholder nodes - render them regardless of filters
   if (basics.type === "placeholder") {

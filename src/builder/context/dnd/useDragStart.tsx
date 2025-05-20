@@ -11,7 +11,8 @@ import {
   moveNode,
 } from "../atoms/node-store/operations/insert-operations";
 import { useGetNodeFlags } from "../atoms/node-store";
-import { getDimensionUnits, convertDimensionsToPx } from "./dnd-utils";
+import { collectDraggedNodesInfo } from "./dnd-utils";
+import { useGetSelectedIds } from "../atoms/select-store";
 
 export const useDragStart = () => {
   const getNode = useGetNode();
@@ -20,6 +21,7 @@ export const useDragStart = () => {
   const getTransform = useGetTransform();
   const getNodeFlags = useGetNodeFlags();
   const getNodeStyle = useGetNodeStyle();
+  const getSelectedIds = useGetSelectedIds();
 
   return (
     e: React.MouseEvent,
@@ -33,22 +35,27 @@ export const useDragStart = () => {
 
     const nodeId = nodeObj.id;
     const node = getNode(nodeId);
-    const nodeType = nodeObj.type || node.type;
     const nodeStyle = getNodeStyle(nodeId);
     const nodeFlags = getNodeFlags(nodeId);
 
     const parentId = getNodeParent(nodeId);
     const isOnCanvas = !parentId && !nodeFlags.inViewport;
 
-    // Check isAbsoluteInFrame from style instead of flags
-    // Include both absolute and fixed as "absolute in frame" for drag handling
+    // Reset drag back to parent state on new drag operation
+    dragOps.setDragBackToParentInfo({
+      isDraggingBackToParent: false,
+      originalParentId: parentId,
+      draggedNodesOriginalIndices: new Map(),
+    });
+
+    // Determine absolute in frame
     const isAbsoluteInFrame =
       (nodeStyle.isAbsoluteInFrame === "true" ||
         nodeStyle.position === "fixed" ||
         nodeStyle.position === "absolute") &&
       parentId;
 
-    // Simplified drag source determination
+    // Set drag source
     if (isOnCanvas) {
       dragOps.setDragSource("canvas");
     } else if (
@@ -61,104 +68,171 @@ export const useDragStart = () => {
     } else if (fromToolbarType) {
       dragOps.setDragSource("toolbar");
     } else if (isAbsoluteInFrame) {
-      // Use "absolute-in-frame" for both absolute and fixed
       dragOps.setDragSource("absolute-in-frame");
     } else {
       dragOps.setDragSource("parent");
     }
 
-    const element = document.querySelector(
-      `[data-node-id="${nodeId}"]`
-    ) as HTMLElement;
-    if (!element) return;
+    // Get selected IDs
+    const selectedIds = getSelectedIds();
+    const isMultiSelection =
+      selectedIds.includes(nodeId) && selectedIds.length > 1;
 
-    const dimensionUnits = getDimensionUnits(element, node.style);
+    // Filter selected nodes based on same context (parent container or canvas)
+    const validSelectedIds = isMultiSelection
+      ? selectedIds.filter((id) => {
+          const idParent = getNodeParent(id);
+          const idFlags = getNodeFlags(id);
+          const idStyle = getNodeStyle(id);
 
-    // Only convert dimensions for non-absolute elements
-    const needsConversion = parentId && !isOnCanvas && !isAbsoluteInFrame;
-    if (needsConversion) {
-      convertDimensionsToPx(nodeId, element, dimensionUnits);
+          // Check if node is in same context as primary node
+          const idIsOnCanvas = !idParent && !idFlags.inViewport;
+          const idIsAbsoluteInFrame =
+            (idStyle.isAbsoluteInFrame === "true" ||
+              idStyle.position === "fixed" ||
+              idStyle.position === "absolute") &&
+            idParent;
+
+          // Only include nodes in same parent or all on canvas
+          if (isOnCanvas) {
+            return idIsOnCanvas;
+          } else if (isAbsoluteInFrame) {
+            return idIsAbsoluteInFrame && idParent === parentId;
+          } else {
+            return idParent === parentId && !idIsAbsoluteInFrame;
+          }
+        })
+      : [nodeId];
+
+    // For nodes in the same parent, sort them by their DOM order
+    if (parentId && validSelectedIds.length > 1) {
+      const siblings = getNodeChildren(parentId);
+      validSelectedIds.sort(
+        (a, b) => siblings.indexOf(a) - siblings.indexOf(b)
+      );
     }
 
-    const style = window.getComputedStyle(element);
-    const width = parseFloat(style.width) || element.offsetWidth;
-    const height = parseFloat(style.height) || element.offsetHeight;
+    // Store original indices for all dragged nodes
+    if (parentId) {
+      const originalIndices = new Map<NodeId, number>();
+      const siblings = getNodeChildren(parentId);
 
-    const transformStr = style.transform || "none";
-    const isSimpleRotation =
-      !transformStr.includes("skew") &&
-      !transformStr.includes("perspective") &&
-      !transformStr.includes("3d") &&
-      !transformStr.includes("matrix");
-
-    let rotate = "0deg";
-    if (isSimpleRotation) {
-      rotate =
-        style.rotate ||
-        (transformStr.includes("rotate") ? transformStr : "0deg");
-    }
-
-    const elementRect = element.getBoundingClientRect();
-
-    const mouseOffsetX = e.clientX - elementRect.left;
-    const mouseOffsetY = e.clientY - elementRect.top;
-
-    const transform = getTransform();
-
-    let placeholder = null;
-
-    // Only create placeholder for non-absolute elements
-    if (!isAbsoluteInFrame && !isOnCanvas) {
-      placeholder = createPlaceholder({
-        node,
-        element,
-        transform,
+      validSelectedIds.forEach((id) => {
+        const index = siblings.indexOf(id);
+        if (index !== -1) {
+          originalIndices.set(id, index);
+        }
       });
 
-      if (parentId) {
-        const siblings = getNodeChildren(parentId);
-        const index = siblings.indexOf(nodeId);
+      // Store in drag state
+      dragOps.setDraggedNodesOriginalIndices(originalIndices);
+    }
 
-        if (index !== -1) {
-          addNode(placeholder.id, parentId);
-          moveNode(placeholder.id, parentId, index);
+    // Create placeholders for all selected nodes if needed
+    const placeholders = [];
+    let mainPlaceholder = null;
+
+    if (!isAbsoluteInFrame && !isOnCanvas) {
+      // Create placeholders for each selected node
+      for (let i = 0; i < validSelectedIds.length; i++) {
+        const currentId = validSelectedIds[i];
+        const currentNode = getNode(currentId);
+        const currentParentId = getNodeParent(currentId);
+
+        if (!currentNode || !currentParentId) continue;
+
+        const element = document.querySelector(
+          `[data-node-id="${currentId}"]`
+        ) as HTMLElement;
+
+        if (!element) continue;
+
+        // Create placeholder for this node
+        const placeholder = createPlaceholder({
+          node: currentNode,
+          element,
+          transform: getTransform(),
+        });
+
+        placeholders.push({
+          id: placeholder.id,
+          nodeId: currentId,
+          index: getNodeChildren(currentParentId).indexOf(currentId),
+        });
+
+        // Set main placeholder (for the node that initiated the drag)
+        if (currentId === nodeId) {
+          mainPlaceholder = placeholder;
+        }
+      }
+
+      // Sort placeholders by their index
+      placeholders.sort((a, b) => a.index - b.index);
+
+      // Add all placeholders sequentially to maintain order
+      if (parentId && placeholders.length > 0) {
+        // Insert all placeholders at the position of the first selected node
+        const firstIndex = placeholders[0].index;
+
+        for (let i = 0; i < placeholders.length; i++) {
+          // Add placeholder to parent
+          addNode(placeholders[i].id, parentId);
+
+          // Position at sequential indices starting from first index
+          moveNode(placeholders[i].id, parentId, firstIndex + i);
         }
       }
     }
 
-    // Capture initial position for absolute/fixed elements
-    let initialLeft = 0;
-    let initialTop = 0;
+    // Use utility to collect all nodes to drag
+    const draggedNodesInfo = collectDraggedNodesInfo(
+      nodeId,
+      validSelectedIds,
+      getNode,
+      getNodeParent,
+      getNodeFlags,
+      getNodeStyle,
+      e,
+      getTransform
+    );
 
-    if (isAbsoluteInFrame && parentId) {
-      // Get the current position
-      initialLeft = parseFloat(style.left) || 0;
-      initialTop = parseFloat(style.top) || 0;
+    // Store all placeholder info for the dragged nodes
+    if (draggedNodesInfo.draggedNodes.length > 0 && placeholders.length > 0) {
+      // Set main placeholder ID on primary node
+      if (mainPlaceholder) {
+        draggedNodesInfo.draggedNodes[0].offset.placeholderId =
+          mainPlaceholder.id;
+      }
+
+      // Create placeholder info for the drag operation
+      const placeholderInfo = {
+        mainPlaceholderId: mainPlaceholder ? mainPlaceholder.id : null,
+        nodeOrder: validSelectedIds,
+        additionalPlaceholders: placeholders.map((p) => ({
+          placeholderId: p.id,
+          nodeId: p.nodeId,
+        })),
+        targetId: null,
+        position: null,
+      };
+
+      // Store placeholder info in drag state
+      dragOps.setPlaceholderInfo(placeholderInfo);
     }
 
-    // Remember original position type to maintain it during the drag
-    const originalPositionType = nodeStyle.position || "static";
-
+    // Set dragging state
     dragOps.setIsDragging(true);
-    dragOps.setDraggedNode(node, {
-      x: 0,
-      y: 0,
-      mouseX: mouseOffsetX,
-      mouseY: mouseOffsetY,
-      width,
-      height,
-      rotate,
-      isSimpleRotation,
-      nodeType,
-      placeholderId: placeholder?.id,
-      startingParentId: parentId,
-      dimensionUnits,
-      isAbsoluteInFrame,
-      originalPositionType, // Store the original position type to maintain it
-      initialPosition: {
-        left: initialLeft,
-        top: initialTop,
-      },
-    });
+
+    // Set all dragged nodes
+    dragOps.setDraggedNodes(draggedNodesInfo.draggedNodes);
+
+    // Debug: Log drag back to parent info
+    console.log("Drag start - Original parent:", parentId);
+    console.log(
+      "Drag start - Original indices:",
+      Object.fromEntries([
+        ...dragOps.getState().dragBackToParentInfo.draggedNodesOriginalIndices,
+      ])
+    );
   };
 };

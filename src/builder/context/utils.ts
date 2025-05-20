@@ -785,12 +785,15 @@ export const getFilteredElementsUnderMouseDuringDrag = (
   className: string
 ): boolean => {
   const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-  const filteredElements = elementsUnder.filter((el) => {
-    const isDraggedElement =
-      el.getAttribute("data-node-id") === String(draggedNodeId);
-    const isChildOfDragged = el.closest(`[data-node-id="${draggedNodeId}"]`);
-    return !isDraggedElement && !isChildOfDragged;
-  });
+  const filteredElements = elementsUnder
+    // Ignore the drag overlay
+    .filter((el) => !el.hasAttribute("data-drag-overlay"))
+    .filter((el) => {
+      const isDraggedElement =
+        el.getAttribute("data-node-id") === String(draggedNodeId);
+      const isChildOfDragged = el.closest(`[data-node-id="${draggedNodeId}"]`);
+      return !isDraggedElement && !isChildOfDragged;
+    });
 
   return filteredElements[0].classList.contains(className);
 };

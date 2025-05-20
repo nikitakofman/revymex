@@ -1,8 +1,9 @@
-// src/builder/context/utils/dragStartUtils.ts
-
+// src/builder/context/utils/dnd-utils.ts
 import { getCurrentNodes, NodeId } from "../atoms/node-store";
 import { dragOps } from "../atoms/drag-store";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
+import { updateNodeFlags } from "../atoms/node-store/operations/update-operations";
+import { moveNode } from "../atoms/node-store/operations/insert-operations";
 
 /**
  * Converts a CSS transform origin token to pixels
@@ -142,6 +143,20 @@ export const screenToCanvas = (
   y: (e.clientY - containerRect.top - transform.y) / transform.scale,
 });
 
+// Get parent element's position in canvas space
+export const getParentOffsetInCanvas = (
+  parentEl: HTMLElement,
+  containerRect: DOMRect,
+  transform: { x: number; y: number; scale: number }
+) => ({
+  x:
+    (parentEl.getBoundingClientRect().left - containerRect.left - transform.x) /
+    transform.scale,
+  y:
+    (parentEl.getBoundingClientRect().top - containerRect.top - transform.y) /
+    transform.scale,
+});
+
 // utils/orderingUtils.ts
 
 export interface TargetInfo {
@@ -155,20 +170,28 @@ export const getSiblingOrdering = (
   draggedNodeId: string,
   getNodeParent: (id: string) => string | null,
   getNodeChildren: (id: string | null) => string[],
-  getNodeStyle: (id: string) => any, // Changed parameter to get node style instead of flags
+  getNodeStyle: (id: string) => any,
   lastTarget: TargetInfo | null,
-  prevMousePos: { x: number; y: number }
+  prevMousePos: { x: number; y: number },
+  placeholderInfo?: any // Add placeholder info parameter
 ) => {
   const parentId = getNodeParent(placeholderId);
   if (!parentId) return null;
 
-  // Get all siblings except placeholder and dragged node
+  // Get all siblings except placeholders and dragged nodes
   let allChildren = getNodeChildren(parentId);
 
+  // Get all placeholder IDs from placeholderInfo if available
+  const allPlaceholderIds = placeholderInfo?.additionalPlaceholders?.map(
+    (p) => p.placeholderId
+  ) || [placeholderId];
+  const allDraggedNodeIds = placeholderInfo?.nodeOrder || [draggedNodeId];
+
+  // Filter out all placeholders and dragged nodes
   let siblings = allChildren.filter(
     (id) =>
-      id !== placeholderId &&
-      id !== draggedNodeId &&
+      !allPlaceholderIds.includes(id) &&
+      !allDraggedNodeIds.includes(id) &&
       !id.includes("placeholder")
   );
 
@@ -345,6 +368,7 @@ export const getSiblingOrdering = (
     targetInfo,
     parentId,
     isColumn,
+    placeholderInfo, // Include placeholder info in the result
   };
 };
 
@@ -658,3 +682,637 @@ export const extractNodeDimensions = (style: any): NodeDimensions => {
 
   return { width, height };
 };
+
+// NEW MULTI-DRAG UTILITY FUNCTIONS
+
+/**
+ * Collect information for all selected nodes to be dragged
+ */
+export function collectDraggedNodesInfo(
+  primaryNodeId: NodeId,
+  selectedIds: string[],
+  getNode: (id: string) => any,
+  getNodeParent: (id: string) => string | null,
+  getNodeFlags: (id: string) => any,
+  getNodeStyle: (id: string) => any,
+  e: React.MouseEvent,
+  getTransform: () => any
+) {
+  const isMultiDrag =
+    selectedIds.includes(primaryNodeId) && selectedIds.length > 1;
+  const draggedNodes = [];
+
+  // Process primary node first
+  const primaryNode = getNode(primaryNodeId);
+  if (!primaryNode) return { draggedNodes: [], isMultiDrag: false };
+
+  const primaryNodeStyle = getNodeStyle(primaryNodeId);
+  const primaryNodeFlags = getNodeFlags(primaryNodeId);
+  const primaryParentId = getNodeParent(primaryNodeId);
+
+  // Determine context
+  const isOnCanvas = !primaryParentId && !primaryNodeFlags.inViewport;
+  const isAbsoluteInFrame =
+    (primaryNodeStyle.isAbsoluteInFrame === "true" ||
+      primaryNodeStyle.position === "fixed" ||
+      primaryNodeStyle.position === "absolute") &&
+    primaryParentId;
+
+  const primaryElement = document.querySelector(
+    `[data-node-id="${primaryNodeId}"]`
+  ) as HTMLElement;
+
+  if (!primaryElement) return { draggedNodes: [], isMultiDrag: false };
+
+  // Process primary node
+  const primaryOffset = processElementForDrag(
+    primaryElement,
+    primaryNode,
+    e,
+    primaryParentId,
+    isOnCanvas,
+    isAbsoluteInFrame,
+    primaryNodeStyle,
+    getTransform
+  );
+
+  // Add primary node to the list
+  draggedNodes.push({
+    node: primaryNode,
+    offset: primaryOffset,
+  });
+
+  // If not multi-drag, return just the primary node
+  if (!isMultiDrag) {
+    return { draggedNodes, isMultiDrag: false };
+  }
+
+  // Process additional nodes for multi-drag
+  const additionalNodeIds = selectedIds.filter((id) => id !== primaryNodeId);
+
+  for (const selectedId of additionalNodeIds) {
+    const selectedNode = getNode(selectedId);
+    if (!selectedNode) continue;
+
+    const selectedElement = document.querySelector(
+      `[data-node-id="${selectedId}"]`
+    ) as HTMLElement;
+
+    if (!selectedElement) continue;
+
+    const selectedNodeStyle = getNodeStyle(selectedId);
+    const selectedNodeFlags = getNodeFlags(selectedId);
+    const selectedParentId = getNodeParent(selectedId);
+
+    // Determine context for this node
+    const nodeIsOnCanvas = !selectedParentId && !selectedNodeFlags.inViewport;
+    const nodeIsAbsoluteInFrame =
+      (selectedNodeStyle.isAbsoluteInFrame === "true" ||
+        selectedNodeStyle.position === "fixed" ||
+        selectedNodeStyle.position === "absolute") &&
+      selectedParentId;
+
+    // Only add nodes that are in the same context as the primary node
+    if (
+      isOnCanvas !== nodeIsOnCanvas ||
+      isAbsoluteInFrame !== nodeIsAbsoluteInFrame ||
+      (primaryParentId !== selectedParentId && !isOnCanvas)
+    ) {
+      continue;
+    }
+
+    // Process this element for drag
+    const nodeOffset = processElementForDrag(
+      selectedElement,
+      selectedNode,
+      e,
+      selectedParentId,
+      nodeIsOnCanvas,
+      nodeIsAbsoluteInFrame,
+      selectedNodeStyle,
+      getTransform
+    );
+
+    // Add this node to the list
+    draggedNodes.push({
+      node: selectedNode,
+      offset: nodeOffset,
+    });
+  }
+
+  return { draggedNodes, isMultiDrag: true };
+}
+
+/**
+ * Process an HTML element for dragging, gathering necessary metrics
+ */
+function processElementForDrag(
+  element: HTMLElement,
+  node: any,
+  e: React.MouseEvent,
+  parentId: string | null,
+  isOnCanvas: boolean,
+  isAbsoluteInFrame: boolean,
+  nodeStyle: any,
+  getTransform: () => any
+) {
+  const dimensionUnits = getDimensionUnits(element, node.style);
+
+  // Only convert dimensions for non-absolute elements
+  const needsConversion = parentId && !isOnCanvas && !isAbsoluteInFrame;
+  if (needsConversion) {
+    convertDimensionsToPx(node.id, element, dimensionUnits);
+  }
+
+  const style = window.getComputedStyle(element);
+  const width = parseFloat(style.width) || element.offsetWidth;
+  const height = parseFloat(style.height) || element.offsetHeight;
+
+  const transformStr = style.transform || "none";
+  const isSimpleRotation =
+    !transformStr.includes("skew") &&
+    !transformStr.includes("perspective") &&
+    !transformStr.includes("3d") &&
+    !transformStr.includes("matrix");
+
+  let rotate = "0deg";
+  if (isSimpleRotation) {
+    rotate =
+      style.rotate || (transformStr.includes("rotate") ? transformStr : "0deg");
+  }
+
+  const elementRect = element.getBoundingClientRect();
+
+  const mouseOffsetX = e.clientX - elementRect.left;
+  const mouseOffsetY = e.clientY - elementRect.top;
+
+  // Capture initial position for absolute/fixed elements
+  let initialLeft = 0;
+  let initialTop = 0;
+
+  if (isAbsoluteInFrame && parentId) {
+    initialLeft = parseFloat(style.left) || 0;
+    initialTop = parseFloat(style.top) || 0;
+  }
+
+  // Original position type
+  const originalPositionType = nodeStyle.position || "static";
+
+  return {
+    x: 0,
+    y: 0,
+    mouseX: mouseOffsetX,
+    mouseY: mouseOffsetY,
+    width,
+    height,
+    rotate,
+    isSimpleRotation,
+    nodeType: node.type,
+    startingParentId: parentId,
+    dimensionUnits,
+    isAbsoluteInFrame,
+    originalPositionType,
+    initialPosition: {
+      left: initialLeft,
+      top: initialTop,
+    },
+  };
+}
+
+/**
+ * Updates styles for all nodes in a drag operation
+ */
+export function updateDraggedNodesStyles(
+  draggedNodes: Array<{ node: any; offset: any }>,
+  primaryStyleUpdates: Record<string, string>,
+  options: { dontSync?: boolean } = {}
+) {
+  if (draggedNodes.length === 0) return;
+
+  // Update primary node
+  const primaryNode = draggedNodes[0];
+  const primaryElement = document.querySelector(
+    `[data-node-id="${primaryNode.node.id}"]`
+  );
+
+  if (!primaryElement) return;
+
+  // Get current and new positions for primary node
+  const computedStyle = window.getComputedStyle(primaryElement);
+  const currentLeft = parseFloat(computedStyle.left) || 0;
+  const currentTop = parseFloat(computedStyle.top) || 0;
+  const newLeft = parseFloat(primaryStyleUpdates.left) || 0;
+  const newTop = parseFloat(primaryStyleUpdates.top) || 0;
+
+  // Calculate delta
+  const deltaX = newLeft - currentLeft;
+  const deltaY = newTop - currentTop;
+
+  // Update primary node
+  updateNodeStyle(primaryNode.node.id, primaryStyleUpdates, options);
+
+  // Update additional nodes
+  for (let i = 1; i < draggedNodes.length; i++) {
+    const node = draggedNodes[i];
+    const element = document.querySelector(`[data-node-id="${node.node.id}"]`);
+
+    if (!element) continue;
+
+    // Get current position
+    const nodeStyle = window.getComputedStyle(element);
+    const nodeLeft = parseFloat(nodeStyle.left) || 0;
+    const nodeTop = parseFloat(nodeStyle.top) || 0;
+
+    // Apply the same delta
+    updateNodeStyle(
+      node.node.id,
+      {
+        ...primaryStyleUpdates,
+        left: `${Math.round(nodeLeft + deltaX)}px`,
+        top: `${Math.round(nodeTop + deltaY)}px`,
+      },
+      options
+    );
+  }
+}
+
+/**
+ * Get positions of all dragged nodes
+ */
+export function getDraggedNodesPositions(draggedNodes: Array<{ node: any }>) {
+  const positions: Record<string, { left: string; top: string }> = {};
+
+  draggedNodes.forEach((nodeInfo) => {
+    const element = document.querySelector(
+      `[data-node-id="${nodeInfo.node.id}"]`
+    );
+    if (element) {
+      const computedStyle = window.getComputedStyle(element);
+      positions[nodeInfo.node.id] = {
+        left: computedStyle.left,
+        top: computedStyle.top,
+      };
+    }
+  });
+
+  return positions;
+}
+
+export function handleCanvasDropForNodes(
+  e,
+  draggedNodes,
+  containerRef,
+  getTransform,
+  nodePositions,
+  isDraggingFromViewport
+) {
+  const transform = getTransform();
+  const containerRect = containerRef.current?.getBoundingClientRect();
+
+  // Process each node
+  draggedNodes.forEach((draggedNode, index) => {
+    const nodeId = draggedNode.node.id;
+    const currentPosition = nodePositions[nodeId];
+
+    // Move node to canvas if not absolute-in-frame
+    if (
+      !draggedNode.offset.isAbsoluteInFrame ||
+      !draggedNode.offset.startingParentId
+    ) {
+      moveNode(nodeId, null);
+    }
+
+    // Determine position
+    let finalX, finalY;
+
+    // If we have position info from DOM
+    if (currentPosition) {
+      finalX = parseInt(currentPosition.left, 10);
+      finalY = parseInt(currentPosition.top, 10);
+    }
+    // For viewport to canvas, calculate from mouse position
+    else if (isDraggingFromViewport && containerRect && e) {
+      // Primary node uses direct mouse offset
+      if (index === 0) {
+        const canvasX =
+          (e.clientX - containerRect.left - transform.x) / transform.scale;
+        const canvasY =
+          (e.clientY - containerRect.top - transform.y) / transform.scale;
+
+        finalX = Math.round(
+          canvasX - draggedNode.offset.mouseX / transform.scale
+        );
+        finalY = Math.round(
+          canvasY - draggedNode.offset.mouseY / transform.scale
+        );
+      }
+      // Additional nodes maintain relative positioning from primary
+      else {
+        const primaryNode = draggedNodes[0];
+        const primaryEl = document.querySelector(
+          `[data-node-id="${primaryNode.node.id}"]`
+        );
+        const currentEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+
+        if (primaryEl && currentEl) {
+          // Get relative position from DOM
+          const primaryRect = primaryEl.getBoundingClientRect();
+          const currentRect = currentEl.getBoundingClientRect();
+
+          const offsetX =
+            (currentRect.left - primaryRect.left) / transform.scale;
+          const offsetY = (currentRect.top - primaryRect.top) / transform.scale;
+
+          // Calculate position based on primary node's position
+          const canvasX =
+            (e.clientX - containerRect.left - transform.x) / transform.scale;
+          const canvasY =
+            (e.clientY - containerRect.top - transform.y) / transform.scale;
+
+          const primaryX = Math.round(
+            canvasX - primaryNode.offset.mouseX / transform.scale
+          );
+          const primaryY = Math.round(
+            canvasY - primaryNode.offset.mouseY / transform.scale
+          );
+
+          finalX = primaryX + offsetX;
+          finalY = primaryY + offsetY;
+        } else {
+          // Fallback with simple offset
+          const canvasX =
+            (e.clientX - containerRect.left - transform.x) / transform.scale;
+          const canvasY =
+            (e.clientY - containerRect.top - transform.y) / transform.scale;
+
+          finalX =
+            Math.round(canvasX - draggedNode.offset.mouseX / transform.scale) +
+            index * 10;
+          finalY =
+            Math.round(canvasY - draggedNode.offset.mouseY / transform.scale) +
+            index * 10;
+        }
+      }
+    }
+    // Fallback
+    else {
+      const currentStyles = draggedNode.node.style;
+      finalX = parseInt(currentStyles.left, 10) || 0;
+      finalY = parseInt(currentStyles.top, 10) || 0;
+    }
+
+    // Apply snap points for primary node
+    const { activeSnapPoints } = snapOps.getState();
+    if (index === 0) {
+      if (
+        activeSnapPoints.horizontal &&
+        activeSnapPoints.horizontal.edge === "left" &&
+        Math.abs(finalX - activeSnapPoints.horizontal.position) <= 5
+      ) {
+        finalX = Math.round(activeSnapPoints.horizontal.position);
+      }
+
+      if (
+        activeSnapPoints.vertical &&
+        activeSnapPoints.vertical.edge === "top" &&
+        Math.abs(finalY - activeSnapPoints.vertical.position) <= 5
+      ) {
+        finalY = Math.round(activeSnapPoints.vertical.position);
+      }
+    }
+
+    // Update node style based on its type
+    if (
+      draggedNode.offset.isAbsoluteInFrame &&
+      draggedNode.offset.startingParentId
+    ) {
+      // For absolute-in-frame nodes, keep them in their parent
+      updateNodeStyle(
+        nodeId,
+        {
+          position: draggedNode.offset.originalPositionType || "absolute",
+          left: `${finalX}px`,
+          top: `${finalY}px`,
+          isAbsoluteInFrame: "true",
+        },
+        { dontSync: true }
+      );
+    } else {
+      // For regular nodes
+      updateNodeStyle(
+        nodeId,
+        {
+          position: "absolute",
+          left: `${finalX}px`,
+          top: `${finalY}px`,
+          isAbsoluteInFrame: "false",
+        },
+        { dontSync: true }
+      );
+
+      // Update viewport flag
+      updateNodeFlags(nodeId, {
+        inViewport: false,
+      });
+    }
+
+    // Restore dimensions if needed
+    if (draggedNode.offset.dimensionUnits) {
+      restoreOriginalDimensions(nodeId, draggedNode.offset.dimensionUnits);
+    }
+  });
+}
+
+/**
+ * Handle canvas drop for multiple dragged nodes
+ */
+/**
+ * Handle canvas drop for multiple dragged nodes
+ */
+/**
+ * Handle canvas drop for multiple dragged nodes
+ */
+export function handleDraggedNodesCanvasDrop(
+  draggedNodes: Array<{ node: any; offset: any }>,
+  positions: Record<string, { left: string; top: string }>,
+  activeSnapPoints: any = { horizontal: null, vertical: null },
+  containerRef?: any,
+  e?: MouseEvent,
+  getTransform?: () => any,
+  isDraggingFromViewport?: boolean
+) {
+  // Make sure we have positions info
+  const needPositionCalculation =
+    (Object.keys(positions).length === 0 || isDraggingFromViewport) &&
+    e &&
+    containerRef &&
+    getTransform;
+
+  // Calculate positions if needed (especially important for viewport to canvas)
+  if (needPositionCalculation) {
+    const transform = getTransform();
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    // Calculate position for primary node based on mouse position
+    const primaryNode = draggedNodes[0];
+
+    const canvasX =
+      (e.clientX - containerRect.left - transform.x) / transform.scale;
+    const canvasY =
+      (e.clientY - containerRect.top - transform.y) / transform.scale;
+
+    const finalX = Math.round(
+      canvasX - primaryNode.offset.mouseX / transform.scale
+    );
+    const finalY = Math.round(
+      canvasY - primaryNode.offset.mouseY / transform.scale
+    );
+
+    // Store positions
+    positions[primaryNode.node.id] = {
+      left: `${finalX}px`,
+      top: `${finalY}px`,
+    };
+
+    // Calculate relative positions for other nodes compared to primary
+    if (draggedNodes.length > 1) {
+      const primaryElement = document.querySelector(
+        `[data-node-id="${primaryNode.node.id}"]`
+      );
+      if (primaryElement) {
+        const primaryRect = primaryElement.getBoundingClientRect();
+
+        for (let i = 1; i < draggedNodes.length; i++) {
+          const node = draggedNodes[i];
+          const element = document.querySelector(
+            `[data-node-id="${node.node.id}"]`
+          );
+
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            // Calculate offset from primary element
+            const offsetX = rect.left - primaryRect.left;
+            const offsetY = rect.top - primaryRect.top;
+
+            // Apply same offset to calculated position
+            positions[node.node.id] = {
+              left: `${finalX + offsetX / transform.scale}px`,
+              top: `${finalY + offsetY / transform.scale}px`,
+            };
+          } else {
+            // If element not found, place with an offset from primary
+            positions[node.node.id] = {
+              left: `${finalX + 10 * i}px`,
+              top: `${finalY + 10 * i}px`,
+            };
+          }
+        }
+      } else {
+        // If primary element not found, add simple offsets
+        for (let i = 1; i < draggedNodes.length; i++) {
+          positions[draggedNodes[i].node.id] = {
+            left: `${finalX + 10 * i}px`,
+            top: `${finalY + 10 * i}px`,
+          };
+        }
+      }
+    }
+  }
+
+  // Process each dragged node
+  draggedNodes.forEach((nodeInfo, index) => {
+    const nodeId = nodeInfo.node.id;
+
+    // Move node to canvas only if not absolute-in-frame inside a parent
+    if (
+      !nodeInfo.offset.isAbsoluteInFrame ||
+      !nodeInfo.offset.startingParentId
+    ) {
+      moveNode(nodeId, null);
+    }
+
+    const nodePosition = positions[nodeId];
+    if (!nodePosition) return;
+
+    // Extract numeric values
+    let finalX = parseInt(nodePosition.left, 10);
+    let finalY = parseInt(nodePosition.top, 10);
+
+    // Primary node gets snapping (first node)
+    if (index === 0) {
+      // Apply snap points if available and the element is close to them
+      if (
+        activeSnapPoints.horizontal &&
+        activeSnapPoints.horizontal.edge === "left"
+      ) {
+        // Apply snapping if close enough
+        if (Math.abs(finalX - activeSnapPoints.horizontal.position) <= 5) {
+          finalX = Math.round(activeSnapPoints.horizontal.position);
+        }
+      }
+
+      if (
+        activeSnapPoints.vertical &&
+        activeSnapPoints.vertical.edge === "top"
+      ) {
+        // Apply snapping if close enough
+        if (Math.abs(finalY - activeSnapPoints.vertical.position) <= 5) {
+          finalY = Math.round(activeSnapPoints.vertical.position);
+        }
+      }
+    }
+
+    // Handle absolute-in-frame elements differently
+    if (nodeInfo.offset.isAbsoluteInFrame && nodeInfo.offset.startingParentId) {
+      // Keep it in its parent and maintain absolute positioning
+      updateNodeStyle(
+        nodeId,
+        {
+          position: nodeInfo.offset.originalPositionType || "absolute",
+          left: `${finalX}px`,
+          top: `${finalY}px`,
+          isAbsoluteInFrame: "true", // Important to maintain absoluteInFrame flag
+        },
+        { dontSync: true }
+      );
+    } else {
+      // Update style for non-absolute-in-frame elements
+      updateNodeStyle(
+        nodeId,
+        {
+          position: "absolute",
+          left: `${finalX}px`,
+          top: `${finalY}px`,
+          isAbsoluteInFrame: "false",
+        },
+        { dontSync: true }
+      );
+
+      // Update flags
+      updateNodeFlags(nodeId, {
+        inViewport: false,
+      });
+    }
+
+    // Restore dimensions if needed
+    if (nodeInfo.offset.dimensionUnits) {
+      restoreOriginalDimensions(nodeId, nodeInfo.offset.dimensionUnits);
+    }
+  });
+}
+
+/**
+ * Restores dimensions for all dragged nodes
+ */
+export function restoreDimensionsForDraggedNodes(
+  draggedNodes: Array<{ node: any; offset: any }>
+) {
+  draggedNodes.forEach((nodeInfo) => {
+    if (nodeInfo.offset.dimensionUnits) {
+      restoreOriginalDimensions(
+        nodeInfo.node.id,
+        nodeInfo.offset.dimensionUnits
+      );
+    }
+  });
+}

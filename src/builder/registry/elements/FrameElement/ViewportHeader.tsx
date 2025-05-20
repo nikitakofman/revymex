@@ -87,7 +87,10 @@ export const ViewportHeader: React.FC<ViewportHeaderProps> = ({ nodeId }) => {
     // Set up an interval to track the position during drag
     dragPositionInterval.current = setInterval(() => {
       const dragPositions = getDragPositions();
-      const dragged = dragOps.getDragState().draggedNode;
+      // FIXED: Use getState().draggedNodes instead of getDragState().draggedNode
+      const dragState = dragOps.getState();
+      const primaryDraggedNode =
+        dragState.draggedNodes.length > 0 ? dragState.draggedNodes[0] : null;
       const currentTransform = transform;
 
       // Check for the dragged element
@@ -112,12 +115,16 @@ export const ViewportHeader: React.FC<ViewportHeaderProps> = ({ nodeId }) => {
       } else if (
         dragPositions &&
         (dragPositions.x !== 0 || dragPositions.y !== 0) &&
-        dragged
+        primaryDraggedNode
       ) {
         // Convert pointer position to element origin by subtracting the mouse offset
         lastPositionRef.current = {
-          x: dragPositions.x - dragged.offset.mouseX / currentTransform.scale,
-          y: dragPositions.y - dragged.offset.mouseY / currentTransform.scale,
+          x:
+            dragPositions.x -
+            primaryDraggedNode.offset.mouseX / currentTransform.scale,
+          y:
+            dragPositions.y -
+            primaryDraggedNode.offset.mouseY / currentTransform.scale,
         };
       }
     }, 50); // Poll every 50ms during drag

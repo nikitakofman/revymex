@@ -204,6 +204,23 @@ const snapGuidesOperations = {
     }));
   },
 
+  configureForCanvasTransition: () => {
+    // Reset any existing guides
+    snapGuidesStore.set(_internalSnapGuidesStateAtom, (prev) => ({
+      ...prev,
+      // For canvas mode: don't show child elements, no node limitations
+      showChildElements: false,
+      limitToNodes: null,
+      // Reset guides and snap points
+      activeGuides: { horizontal: [], vertical: [] },
+      activeSnapPoints: { horizontal: null, vertical: null },
+      spacingGuide: null,
+      // Reset resize-related flags
+      waitForResizeMove: false,
+      resizeDirection: null,
+    }));
+  },
+
   // Set spacing guide
   setSpacingGuide: (guide: SpacingGuide | null) => {
     snapGuidesStore.set(_internalSnapGuidesStateAtom, (prev) => ({

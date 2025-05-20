@@ -62,6 +62,8 @@ interface BuilderRefsContextType {
   popupRef: RefObject<HTMLDivElement | null>;
   draggingOverCanvasRef: RefObject<boolean>;
   hasLeftViewportRef: RefObject<boolean>;
+  transitioningToCanvasRef: RefObject<boolean>;
+  transitioningToParentRef: RefObject<boolean>;
 }
 
 export interface RecordingSession {
@@ -104,6 +106,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const draggingOverCanvasRef = useRef<boolean>(false);
   const hasLeftViewportRef = useRef<boolean>(false);
+  const transitioningToCanvasRef = useRef<boolean>(false);
+  const transitioningToParentRef = useRef<boolean>(false);
 
   const [operations, setOperations] = useState<Operation[]>([]);
   const operationsRef = useRef<Operation[]>([]);
@@ -203,6 +207,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       popupRef,
       draggingOverCanvasRef,
       hasLeftViewportRef,
+      transitioningToCanvasRef,
+      transitioningToParentRef,
     }),
     [] // Empty dependency array - this value never changes
   );

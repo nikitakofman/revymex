@@ -1,9 +1,11 @@
+// useLineIndicatorController.js
 import { useEffect } from "react";
 import {
   useIsDragging,
   useDraggedNode,
   useDragSource,
   dragOps,
+  useIsDraggingBackToParent,
 } from "@/builder/context/atoms/drag-store";
 import { visualOps } from "../atoms/visual-store";
 import { computeFrameDropIndicator } from "../utils";
@@ -14,16 +16,29 @@ export const useLineIndicatorController = () => {
   const dragged = useDraggedNode();
   const dragSource = useDragSource();
   const getNodeStyle = useGetNodeStyle();
+  const isDraggingBack = useIsDraggingBackToParent();
 
   useEffect(() => {
-    if (!dragging || !dragged) return;
+    // Exit early and hide indicators if dragging back to parent
+    if (!dragging || !dragged || isDraggingBack) {
+      visualOps.hideLineIndicator();
+      return;
+    }
 
+    // Also hide indicators if not in canvas mode
     if (dragSource !== "canvas") {
       visualOps.hideLineIndicator();
       return;
     }
 
     const onMove = (e: MouseEvent) => {
+      // Double-check if we start dragging back to parent during movement
+      if (dragOps.getState().dragBackToParentInfo.isDraggingBackToParent) {
+        visualOps.hideLineIndicator();
+        dragOps.setDropInfo(null, null);
+        return;
+      }
+
       const els = document.elementsFromPoint(e.clientX, e.clientY);
 
       const frame = els.find(
@@ -97,5 +112,5 @@ export const useLineIndicatorController = () => {
       document.removeEventListener("mouseup", onMouseUp);
       visualOps.hideLineIndicator();
     };
-  }, [dragging, dragged, dragSource, getNodeStyle]);
+  }, [dragging, dragged, dragSource, getNodeStyle, isDraggingBack]);
 };
