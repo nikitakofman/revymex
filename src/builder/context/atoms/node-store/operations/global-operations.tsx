@@ -8,7 +8,6 @@ import {
   nodeParentAtom,
   nodeSharedInfoAtom,
   nodeDynamicInfoAtom,
-  nodeVariantInfoAtom,
   nodeSyncFlagsAtom,
   nodeDynamicStateAtom,
   changedNodesAtom,
@@ -66,7 +65,7 @@ export function pushNodes(nodes: Node[]) {
         sharedId: node.sharedId,
       });
 
-      // Dynamic info
+      // Merged dynamic info (including variant properties)
       nodeStore.set(nodeDynamicInfoAtom(node.id), {
         dynamicParentId: node.dynamicParentId,
         dynamicViewportId: node.dynamicViewportId,
@@ -75,10 +74,7 @@ export function pushNodes(nodes: Node[]) {
         dynamicFamilyId: node.dynamicFamilyId,
         originalParentId: node.originalParentId,
         originalState: node.originalState,
-      });
-
-      // Variant info
-      nodeStore.set(nodeVariantInfoAtom(node.id), {
+        // Include variant properties in the dynamic info
         variantParentId: node.variantParentId,
         variantInfo: node.variantInfo,
         variantResponsiveId: node.variantResponsiveId,
@@ -158,6 +154,21 @@ export function createNodeInStore(nodeData) {
     isViewport,
     viewportName,
     viewportWidth,
+    isDynamic,
+    isAbsoluteInFrame,
+    isVariant,
+    // Dynamic info properties
+    dynamicParentId,
+    dynamicViewportId,
+    dynamicConnections,
+    dynamicPosition,
+    dynamicFamilyId,
+    originalParentId,
+    originalState,
+    // Include variant properties
+    variantParentId,
+    variantInfo,
+    variantResponsiveId,
   } = nodeData;
 
   // Add to node IDs list
@@ -180,6 +191,9 @@ export function createNodeInStore(nodeData) {
     isViewport,
     viewportName,
     viewportWidth,
+    isDynamic,
+    isAbsoluteInFrame,
+    isVariant,
   });
 
   // Set node parent
@@ -188,6 +202,26 @@ export function createNodeInStore(nodeData) {
   // Set shared info if present
   if (sharedId) {
     nodeStore.set(nodeSharedInfoAtom(id), { sharedId });
+  }
+
+  // Set merged dynamic info (including variant properties)
+  const dynamicInfo = {
+    dynamicParentId,
+    dynamicViewportId,
+    dynamicConnections,
+    dynamicPosition,
+    dynamicFamilyId,
+    originalParentId,
+    originalState,
+    // Include variant properties
+    variantParentId,
+    variantInfo,
+    variantResponsiveId,
+  };
+
+  // Only set if there are non-undefined values
+  if (Object.values(dynamicInfo).some((v) => v !== undefined)) {
+    nodeStore.set(nodeDynamicInfoAtom(id), dynamicInfo);
   }
 
   // Set sync flags

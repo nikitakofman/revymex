@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useMemo, useEffect } from "react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
 import { Monitor, Tablet, Smartphone } from "lucide-react";
 import { createPortal } from "react-dom";
 import Button from "@/components/ui/button";
@@ -12,9 +11,25 @@ import {
   useActiveViewportInDynamicMode,
   dynamicOps,
 } from "@/builder/context/atoms/dynamic-store";
+import {
+  useGetNodeIds,
+  useGetNodeBasics,
+  useGetNodeFlags,
+  useGetNodeParent,
+  useGetNodeSharedInfo,
+  useGetNodeDynamicInfo,
+  useGetNodeStyle,
+} from "@/builder/context/atoms/node-store";
 
 export const DynamicToolbar: React.FC = () => {
-  const { nodeState, nodeDisp } = useBuilderDynamic();
+  // Use node store hooks instead of nodeState
+  const getNodeIds = useGetNodeIds();
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+  const getNodeSharedInfo = useGetNodeSharedInfo();
+  const getNodeDynamicInfo = useGetNodeDynamicInfo();
+  const getNodeStyle = useGetNodeStyle();
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();
@@ -25,11 +40,51 @@ export const DynamicToolbar: React.FC = () => {
   // Initial node ID when first entering dynamic mode
   const [initialNodeId, setInitialNodeId] = useState<string | null>(null);
   const [activeViewportId, setActiveViewportId] = useState<string | null>(
-    activeViewportInDynamicMode
+    activeViewportInDynamicMode as string | null
   );
 
+  // Add a state variable for viewports to ensure updates trigger re-renders
+  const [viewportsList, setViewportsList] = useState<
+    Array<{
+      id: string | number;
+      viewportWidth: number;
+      viewportName: string;
+      type: string;
+    }>
+  >([]);
+
+  // Force an update of the viewports state whenever entering dynamic mode
   useEffect(() => {
-    setActiveViewportId(activeViewportInDynamicMode);
+    if (dynamicModeNodeId) {
+      const nodeIds = getNodeIds();
+      const viewports = [];
+
+      // Collect viewport information
+      for (const id of nodeIds) {
+        const flags = getNodeFlags(id);
+        if (flags.isViewport) {
+          const basics = getNodeBasics(id);
+          viewports.push({
+            id: id,
+            viewportWidth: flags.viewportWidth || 0,
+            viewportName: flags.viewportName || `${flags.viewportWidth}px`,
+            type: basics.type,
+          });
+        }
+      }
+
+      // Sort by viewport width (descending)
+      const sortedViewports = viewports.sort(
+        (a, b) => (b.viewportWidth || 0) - (a.viewportWidth || 0)
+      );
+
+      console.log("Updated viewports on dynamic mode change:", sortedViewports);
+      setViewportsList(sortedViewports);
+    }
+  }, [dynamicModeNodeId, getNodeIds, getNodeFlags, getNodeBasics]);
+
+  useEffect(() => {
+    setActiveViewportId(activeViewportInDynamicMode as string | null);
 
     return () => {
       setActiveViewportId(null);
@@ -41,29 +96,18 @@ export const DynamicToolbar: React.FC = () => {
     Record<string, string[]>
   >({});
 
-  // Get all available viewports from the node state
-  const viewports = useMemo(() => {
-    return nodeState.nodes
-      .filter((node) => node.isViewport)
-      .sort((a, b) => {
-        // Sort by viewport width (descending)
-        const widthA = a.viewportWidth || 0;
-        const widthB = b.viewportWidth || 0;
-        return widthB - widthA;
-      });
-  }, [nodeState.nodes]);
-
   // Helper function to find parent viewport
-  function findParentViewport(nodeId, nodes) {
+  function findParentViewport(nodeId, allNodeIds) {
     if (!nodeId) return null;
 
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return null;
+    let currentId = nodeId;
+    while (currentId) {
+      const flags = getNodeFlags(currentId);
+      if (flags.isViewport) {
+        return currentId;
+      }
 
-    if (node.isViewport) return node.id;
-
-    if (node.parentId) {
-      return findParentViewport(node.parentId, nodes);
+      currentId = getNodeParent(currentId);
     }
 
     return null;
@@ -77,77 +121,98 @@ export const DynamicToolbar: React.FC = () => {
       // Save the initial node ID
       setInitialNodeId(dynamicModeNodeId as string);
 
-      // Get the current node
-      const currentNode = nodeState.nodes.find(
-        (n) => n.id === dynamicModeNodeId
-      );
-      if (!currentNode) return;
+      // Get all node IDs
+      const allNodeIds = getNodeIds();
 
       // Set the default viewport
       const parentViewport = findParentViewport(
-        currentNode.parentId,
-        nodeState.nodes
+        getNodeParent(dynamicModeNodeId),
+        allNodeIds
       );
+
       if (parentViewport) {
         setActiveViewportId(parentViewport as string);
-        dynamicOps.switchDynamicViewport(parentViewport as string);
+        dynamicOps.switchDynamicViewport(parentViewport);
       }
 
       // Initialize mapping with the current node
       const initialMapping: Record<string, string[]> = {};
 
       // Find all related nodes for every viewport
-      viewports.forEach((viewport) => {
+      viewportsList.forEach((viewport) => {
         const viewportNodes: string[] = [];
+        const currentNodeSharedInfo = getNodeSharedInfo(dynamicModeNodeId);
+        const currentNodeDynamicInfo = getNodeDynamicInfo(dynamicModeNodeId);
 
         // First add the initial node if it belongs to this viewport
         if (
-          currentNode.dynamicViewportId === viewport.id ||
-          findParentViewport(currentNode.parentId, nodeState.nodes) ===
+          currentNodeDynamicInfo.dynamicViewportId === viewport.id ||
+          findParentViewport(getNodeParent(dynamicModeNodeId), allNodeIds) ===
             viewport.id
         ) {
-          viewportNodes.push(currentNode.id as string);
+          viewportNodes.push(dynamicModeNodeId as string);
         }
 
         // Get all nodes with same sharedId
-        if (currentNode.sharedId) {
-          const sharedNodes = nodeState.nodes.filter(
-            (n) =>
-              n.sharedId === currentNode.sharedId &&
-              n.id !== currentNode.id &&
-              (n.dynamicViewportId === viewport.id ||
-                findParentViewport(n.parentId, nodeState.nodes) === viewport.id)
-          );
+        if (currentNodeSharedInfo.sharedId) {
+          // Loop through all nodes
+          for (const id of allNodeIds) {
+            const sharedInfo = getNodeSharedInfo(id);
+            const dynamicInfo = getNodeDynamicInfo(id);
+            const flags = getNodeFlags(id);
 
-          viewportNodes.push(...sharedNodes.map((n) => n.id as string));
+            if (
+              sharedInfo.sharedId === currentNodeSharedInfo.sharedId &&
+              id !== dynamicModeNodeId &&
+              (dynamicInfo.dynamicViewportId === viewport.id ||
+                findParentViewport(getNodeParent(id), allNodeIds) ===
+                  viewport.id)
+            ) {
+              viewportNodes.push(id as string);
+            }
+          }
         }
 
         // Get all nodes with same dynamicFamilyId
-        if (currentNode.dynamicFamilyId) {
-          const familyNodes = nodeState.nodes.filter(
-            (n) =>
-              n.dynamicFamilyId === currentNode.dynamicFamilyId &&
-              n.id !== currentNode.id &&
-              !viewportNodes.includes(n.id as string) &&
-              (n.dynamicViewportId === viewport.id ||
-                findParentViewport(n.parentId, nodeState.nodes) === viewport.id)
-          );
+        if (currentNodeDynamicInfo.dynamicFamilyId) {
+          // Loop through all nodes
+          for (const id of allNodeIds) {
+            if (viewportNodes.includes(id as string)) continue;
 
-          viewportNodes.push(...familyNodes.map((n) => n.id as string));
+            const dynamicInfo = getNodeDynamicInfo(id);
+
+            if (
+              dynamicInfo.dynamicFamilyId ===
+                currentNodeDynamicInfo.dynamicFamilyId &&
+              id !== dynamicModeNodeId &&
+              (dynamicInfo.dynamicViewportId === viewport.id ||
+                findParentViewport(getNodeParent(id), allNodeIds) ===
+                  viewport.id)
+            ) {
+              viewportNodes.push(id as string);
+            }
+          }
         }
 
         // Get all nodes with same variantResponsiveId
-        if (currentNode.variantResponsiveId) {
-          const variantNodes = nodeState.nodes.filter(
-            (n) =>
-              n.variantResponsiveId === currentNode.variantResponsiveId &&
-              n.id !== currentNode.id &&
-              !viewportNodes.includes(n.id as string) &&
-              (n.dynamicViewportId === viewport.id ||
-                findParentViewport(n.parentId, nodeState.nodes) === viewport.id)
-          );
+        if (currentNodeDynamicInfo.variantResponsiveId) {
+          // Loop through all nodes
+          for (const id of allNodeIds) {
+            if (viewportNodes.includes(id as string)) continue;
 
-          viewportNodes.push(...variantNodes.map((n) => n.id as string));
+            const dynamicInfo = getNodeDynamicInfo(id);
+
+            if (
+              dynamicInfo.variantResponsiveId ===
+                currentNodeDynamicInfo.variantResponsiveId &&
+              id !== dynamicModeNodeId &&
+              (dynamicInfo.dynamicViewportId === viewport.id ||
+                findParentViewport(getNodeParent(id), allNodeIds) ===
+                  viewport.id)
+            ) {
+              viewportNodes.push(id as string);
+            }
+          }
         }
 
         // Only add non-empty mappings
@@ -159,7 +224,16 @@ export const DynamicToolbar: React.FC = () => {
       console.log("Initial viewport mapping:", initialMapping);
       setViewportNodeIds(initialMapping);
     }
-  }, [dynamicModeNodeId, initialNodeId, nodeState.nodes, viewports]);
+  }, [
+    dynamicModeNodeId,
+    initialNodeId,
+    getNodeIds,
+    getNodeSharedInfo,
+    getNodeDynamicInfo,
+    getNodeFlags,
+    getNodeParent,
+    viewportsList, // Use viewportsList instead of viewports
+  ]);
 
   // Function to get the best node to display for a viewport
   const getBestNodeForViewport = useCallback(
@@ -167,28 +241,32 @@ export const DynamicToolbar: React.FC = () => {
       if (!nodeIds || nodeIds.length === 0) return null;
 
       // First try to find a dynamic, non-variant base node
-      const baseNode = nodeState.nodes.find(
-        (n) =>
-          nodeIds.includes(n.id as string) &&
-          n.isDynamic &&
-          !n.isVariant &&
-          n.dynamicViewportId === viewportId
-      );
+      for (const id of nodeIds) {
+        const flags = getNodeFlags(id);
+        const dynamicInfo = getNodeDynamicInfo(id);
 
-      if (baseNode) return baseNode.id;
+        if (
+          flags.isDynamic &&
+          !flags.isVariant &&
+          dynamicInfo.dynamicViewportId === viewportId
+        ) {
+          return id;
+        }
+      }
 
       // Next try any node with the viewportId
-      const viewportNode = nodeState.nodes.find(
-        (n) =>
-          nodeIds.includes(n.id as string) && n.dynamicViewportId === viewportId
-      );
+      for (const id of nodeIds) {
+        const dynamicInfo = getNodeDynamicInfo(id);
 
-      if (viewportNode) return viewportNode.id;
+        if (dynamicInfo.dynamicViewportId === viewportId) {
+          return id;
+        }
+      }
 
       // Last resort, just use the first node
       return nodeIds[0];
     },
-    [nodeState.nodes]
+    [getNodeFlags, getNodeDynamicInfo]
   );
 
   // Function to switch to a different viewport
@@ -220,109 +298,163 @@ export const DynamicToolbar: React.FC = () => {
       console.log(`No valid mapping for ${viewportId}, searching by shared ID`);
 
       // Get the current dynamic node to find its sharedId
-      const currentDynamicNode = nodeState.nodes.find(
-        (n) => n.id === dynamicModeNodeId
-      );
-
-      if (!currentDynamicNode) {
-        console.log("Current dynamic node not found");
+      if (!dynamicModeNodeId) {
+        console.log("No current dynamic node");
         return;
       }
 
+      const currentNodeSharedInfo = getNodeSharedInfo(dynamicModeNodeId);
+      const currentNodeDynamicInfo = getNodeDynamicInfo(dynamicModeNodeId);
+
       console.log("Current node information:");
       console.log(
-        `Node ${currentDynamicNode.id}: sharedId=${currentDynamicNode.sharedId}, dynamicFamilyId=${currentDynamicNode.dynamicFamilyId}, variantResponsiveId=${currentDynamicNode.variantResponsiveId}`
+        `Node ${dynamicModeNodeId}: sharedId=${currentNodeSharedInfo.sharedId}, dynamicFamilyId=${currentNodeDynamicInfo.dynamicFamilyId}, variantResponsiveId=${currentNodeDynamicInfo.variantResponsiveId}`
       );
 
-      // Improved search strategy with specific priority order:
-      // 1. First try to find the primary dynamic base node for this viewport
+      // Improved search strategy with specific priority order
       let counterpart = null;
+      const allNodeIds = getNodeIds();
 
-      if (currentDynamicNode.sharedId) {
-        counterpart = nodeState.nodes.find(
-          (n) =>
-            n.sharedId === currentDynamicNode.sharedId &&
-            n.dynamicViewportId === viewportId &&
-            n.isDynamic &&
-            !n.isVariant // Prefer non-variant base nodes!
-        );
+      // 1. First try to find by sharedId
+      if (currentNodeSharedInfo.sharedId) {
+        // Try to find non-variant base node
+        for (const id of allNodeIds) {
+          const sharedInfo = getNodeSharedInfo(id);
+          const dynamicInfo = getNodeDynamicInfo(id);
+          const flags = getNodeFlags(id);
+
+          if (
+            sharedInfo.sharedId === currentNodeSharedInfo.sharedId &&
+            dynamicInfo.dynamicViewportId === viewportId &&
+            flags.isDynamic &&
+            !flags.isVariant
+          ) {
+            counterpart = id;
+            break;
+          }
+        }
 
         // If not found, try any node with the sharedId for this viewport
         if (!counterpart) {
-          counterpart = nodeState.nodes.find(
-            (n) =>
-              n.sharedId === currentDynamicNode.sharedId &&
-              n.dynamicViewportId === viewportId
-          );
+          for (const id of allNodeIds) {
+            const sharedInfo = getNodeSharedInfo(id);
+            const dynamicInfo = getNodeDynamicInfo(id);
+
+            if (
+              sharedInfo.sharedId === currentNodeSharedInfo.sharedId &&
+              dynamicInfo.dynamicViewportId === viewportId
+            ) {
+              counterpart = id;
+              break;
+            }
+          }
         }
       }
 
       // 2. If not found, try by variantResponsiveId
-      if (!counterpart && currentDynamicNode.variantResponsiveId) {
+      if (!counterpart && currentNodeDynamicInfo.variantResponsiveId) {
         // First try to find a non-variant base node
-        counterpart = nodeState.nodes.find(
-          (n) =>
-            n.variantResponsiveId === currentDynamicNode.variantResponsiveId &&
-            n.dynamicViewportId === viewportId &&
-            !n.isVariant
-        );
+        for (const id of allNodeIds) {
+          const dynamicInfo = getNodeDynamicInfo(id);
+          const flags = getNodeFlags(id);
+
+          if (
+            dynamicInfo.variantResponsiveId ===
+              currentNodeDynamicInfo.variantResponsiveId &&
+            dynamicInfo.dynamicViewportId === viewportId &&
+            !flags.isVariant
+          ) {
+            counterpart = id;
+            break;
+          }
+        }
 
         // If still not found, try any node
         if (!counterpart) {
-          counterpart = nodeState.nodes.find(
-            (n) =>
-              n.variantResponsiveId ===
-                currentDynamicNode.variantResponsiveId &&
-              n.dynamicViewportId === viewportId
-          );
+          for (const id of allNodeIds) {
+            const dynamicInfo = getNodeDynamicInfo(id);
+
+            if (
+              dynamicInfo.variantResponsiveId ===
+                currentNodeDynamicInfo.variantResponsiveId &&
+              dynamicInfo.dynamicViewportId === viewportId
+            ) {
+              counterpart = id;
+              break;
+            }
+          }
         }
       }
 
       // 3. If not found, try by dynamicFamilyId
-      if (!counterpart && currentDynamicNode.dynamicFamilyId) {
+      if (!counterpart && currentNodeDynamicInfo.dynamicFamilyId) {
         // First try to find a non-variant base node
-        counterpart = nodeState.nodes.find(
-          (n) =>
-            n.dynamicFamilyId === currentDynamicNode.dynamicFamilyId &&
-            n.dynamicViewportId === viewportId &&
-            !n.isVariant
-        );
+        for (const id of allNodeIds) {
+          const dynamicInfo = getNodeDynamicInfo(id);
+          const flags = getNodeFlags(id);
+
+          if (
+            dynamicInfo.dynamicFamilyId ===
+              currentNodeDynamicInfo.dynamicFamilyId &&
+            dynamicInfo.dynamicViewportId === viewportId &&
+            !flags.isVariant
+          ) {
+            counterpart = id;
+            break;
+          }
+        }
 
         // If still not found, try any node
         if (!counterpart) {
-          counterpart = nodeState.nodes.find(
-            (n) =>
-              n.dynamicFamilyId === currentDynamicNode.dynamicFamilyId &&
-              n.dynamicViewportId === viewportId
-          );
+          for (const id of allNodeIds) {
+            const dynamicInfo = getNodeDynamicInfo(id);
+
+            if (
+              dynamicInfo.dynamicFamilyId ===
+                currentNodeDynamicInfo.dynamicFamilyId &&
+              dynamicInfo.dynamicViewportId === viewportId
+            ) {
+              counterpart = id;
+              break;
+            }
+          }
         }
       }
 
       // 4. If still not found, try by original parent relationship
-      if (!counterpart && currentDynamicNode.sharedId) {
-        counterpart = nodeState.nodes.find(
-          (n) =>
-            n.sharedId === currentDynamicNode.sharedId &&
-            (findParentViewport(n.originalParentId, nodeState.nodes) ===
-              viewportId ||
-              findParentViewport(n.parentId, nodeState.nodes) === viewportId)
-        );
+      if (!counterpart && currentNodeSharedInfo.sharedId) {
+        for (const id of allNodeIds) {
+          const sharedInfo = getNodeSharedInfo(id);
+          const dynamicInfo = getNodeDynamicInfo(id);
+
+          if (sharedInfo.sharedId === currentNodeSharedInfo.sharedId) {
+            const isInViewport =
+              findParentViewport(dynamicInfo.originalParentId, allNodeIds) ===
+                viewportId ||
+              findParentViewport(getNodeParent(id), allNodeIds) === viewportId;
+
+            if (isInViewport) {
+              counterpart = id;
+              break;
+            }
+          }
+        }
       }
 
       if (counterpart) {
-        console.log(`Found counterpart: ${counterpart.id}`);
-        dynamicOps.setDynamicModeNodeId(counterpart.id);
+        console.log(`Found counterpart: ${counterpart}`);
+        dynamicOps.setDynamicModeNodeId(counterpart);
 
         // Update mapping for future use
         setViewportNodeIds((prev) => {
           const updatedMapping = { ...prev };
 
           if (!updatedMapping[viewportId]) {
-            updatedMapping[viewportId] = [counterpart.id];
-          } else if (!updatedMapping[viewportId].includes(counterpart.id)) {
+            updatedMapping[viewportId] = [counterpart];
+          } else if (!updatedMapping[viewportId].includes(counterpart)) {
             updatedMapping[viewportId] = [
               ...updatedMapping[viewportId],
-              counterpart.id,
+              counterpart,
             ];
           }
 
@@ -333,10 +465,14 @@ export const DynamicToolbar: React.FC = () => {
       }
     },
     [
-      nodeState.nodes,
       viewportNodeIds,
       dynamicModeNodeId,
       getBestNodeForViewport,
+      getNodeIds,
+      getNodeSharedInfo,
+      getNodeDynamicInfo,
+      getNodeFlags,
+      getNodeParent,
     ]
   );
 
@@ -359,10 +495,9 @@ export const DynamicToolbar: React.FC = () => {
         size="sm"
         className="outline outline-[var(--accent-secondary)]"
         onClick={() => {
-          nodeDisp.resetDynamicNodePositions();
+          // Exit dynamic mode - restoration is handled inside setDynamicModeNodeId
           dynamicOps.setDynamicModeNodeId(null);
           setSelectedIds([]);
-          dynamicOps.switchDynamicViewport(null);
           setActiveViewportId(null);
           setViewportNodeIds({});
           setInitialNodeId(null);
@@ -377,9 +512,8 @@ export const DynamicToolbar: React.FC = () => {
         height="20px"
       />
 
-      {/* Viewport buttons */}
       <div className="flex gap-2">
-        {viewports.map((viewport) => (
+        {viewportsList.map((viewport) => (
           <Button
             key={viewport.id}
             size="sm"

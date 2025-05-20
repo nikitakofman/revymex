@@ -23,9 +23,16 @@ import {
 } from "../atoms/context-menu-store";
 import { modalOps } from "../atoms/modal-store";
 import {
+  batchNodeUpdates,
+  getCurrentNodes,
+  nodeDynamicInfoAtom,
   NodeId,
+  nodeStore,
+  updateNodeDynamicInfo,
   useGetAllNodes,
   useGetNode,
+  useGetNodeSharedInfo,
+  useGetSharedNodes,
 } from "@/builder/context/atoms/node-store";
 import { updateNodeFlags } from "../atoms/node-store/operations/update-operations";
 import {
@@ -34,6 +41,8 @@ import {
   duplicateSubtree,
 } from "../atoms/node-store/operations/insert-operations";
 import { updateNodeStyle } from "../atoms/node-store/operations/style-operations";
+import { nanoid } from "nanoid";
+import { useGetDescendants } from "../atoms/node-store/hierarchy-store";
 
 const Separator = () => (
   <div className="h-[1px] bg-[var(--border-light)] mx-2 my-1" />
@@ -97,6 +106,9 @@ export const ContextMenu = () => {
   const getSelectedIds = useGetSelectedIds();
   const getAllNodes = useGetAllNodes();
   const getNode = useGetNode();
+  const getNodeSharedInfo = useGetNodeSharedInfo();
+  const getSharedNodes = useGetSharedNodes();
+  const getDescendants = useGetDescendants();
 
   // Using useLayoutEffect to position the menu before browser paint
   useLayoutEffect(() => {
@@ -177,14 +189,101 @@ export const ContextMenu = () => {
     [getNode]
   );
 
-  // Helper for making a node dynamic
-  const makeNodeDynamic = useCallback((nodeId: NodeId) => {
-    // Update node flags to set isDynamic to true
-    updateNodeFlags(nodeId, { isDynamic: true });
+  const makeNodeDynamic = useCallback(
+    (nodeId: NodeId) => {
+      // Get shared info and all nodes
+      const sharedInfo = getNodeSharedInfo(nodeId);
+      const allNodes = getCurrentNodes();
 
-    // Any additional dynamic processing can be handled here
-    // For now, we've removed the dynamic family logic as requested
-  }, []);
+      // Generate IDs
+      const dynamicFamilyId = nanoid();
+      const variantResponsiveId = nanoid(); // Generate a common variant responsive ID
+
+      // Map to track what nodes belong to which viewport
+      const viewportMapping = new Map<NodeId, NodeId>();
+
+      // Helper function to find viewport for a node
+      const findViewportForNode = (id: NodeId): NodeId | null => {
+        let currentId = id;
+        while (currentId) {
+          const node = allNodes.find((n) => n.id === currentId);
+          if (!node) break;
+
+          if (node.isViewport) {
+            return currentId;
+          }
+
+          currentId = node.parentId;
+        }
+        return null;
+      };
+
+      // Function to set dynamic properties on a node and its subtree
+      const setDynamicPropsForSubtree = (
+        rootId: NodeId,
+        viewportId: NodeId | null
+      ) => {
+        // Get all descendants
+        const descendants = getDescendants(rootId);
+
+        // Add the root node itself
+        const nodesToUpdate = [rootId, ...Array.from(descendants)];
+
+        // Update all nodes in the subtree
+        for (const id of nodesToUpdate) {
+          // Make node dynamic
+          updateNodeFlags(id, { isDynamic: true });
+
+          // Set dynamic info
+          updateNodeDynamicInfo(id, {
+            dynamicFamilyId,
+            dynamicViewportId: viewportId,
+            variantResponsiveId,
+          });
+        }
+      };
+
+      // First, determine which viewport this node belongs to
+      const nodeViewportId = findViewportForNode(nodeId);
+
+      if (sharedInfo && sharedInfo.sharedId) {
+        // Case: Node has shared ID - make all shared nodes dynamic
+        const sharedNodes = getSharedNodes(sharedInfo.sharedId);
+
+        if (sharedNodes.length > 0) {
+          // First, find which viewport each shared node belongs to
+          sharedNodes.forEach((id) => {
+            const viewportId = findViewportForNode(id);
+            if (viewportId) {
+              viewportMapping.set(id, viewportId);
+            }
+          });
+
+          // Now update all shared nodes and their descendants
+          batchNodeUpdates(() => {
+            sharedNodes.forEach((id) => {
+              // Find viewport for this node
+              const viewportId = viewportMapping.get(id);
+
+              // Update this node and all its descendants
+              setDynamicPropsForSubtree(id, viewportId);
+            });
+          });
+        }
+      } else {
+        // Case: Single node without shared ID
+        batchNodeUpdates(() => {
+          // Update this node and all its descendants
+          setDynamicPropsForSubtree(nodeId, nodeViewportId);
+        });
+      }
+
+      console.log(
+        `Made node(s) and their subtrees dynamic with family ID: ${dynamicFamilyId} and variantResponsiveId: ${variantResponsiveId}`
+      );
+    },
+    [getNodeSharedInfo, getSharedNodes, getDescendants]
+  );
 
   const getMenuItems = useCallback(() => {
     if (isViewportHeaderMenu) {
@@ -260,7 +359,7 @@ export const ContextMenu = () => {
           windowsShortcut: "Ctrl+A",
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
-            // Handle select all
+
             contextMenuOps.hideContextMenu();
           },
         },

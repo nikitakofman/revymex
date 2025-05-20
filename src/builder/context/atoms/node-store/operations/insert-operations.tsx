@@ -702,3 +702,261 @@ function isDescendantOf(nodeId: NodeId, ancestorId: NodeId): boolean {
   }
   return false;
 }
+/**
+ * Creates a variant from a specific node across all viewports, duplicating the exact hierarchy
+ * @param sourceNodeId ID of the node to create variants for (base or variant)
+ * @param activeViewportId Current active viewport ID in dynamic mode
+ * @returns ID of the variant created in the current viewport
+ */
+export function createDynamicVariant(
+  sourceNodeId: NodeId,
+  activeViewportId: NodeId
+): NodeId | null {
+  // 1. Get source node
+  const allNodes = getCurrentNodes();
+  const sourceNode = allNodes.find((n) => n.id === sourceNodeId);
+
+  if (!sourceNode) {
+    console.error("Source node not found");
+    return null;
+  }
+
+  // 2. Get the family ID this node belongs to
+  const familyId = sourceNode.dynamicFamilyId || nanoid();
+
+  // 3. Generate shared responsive ID for all new variants
+  const variantResponsiveId = nanoid();
+
+  // 4. Validate active viewport
+  const currentViewportId = activeViewportId;
+  if (!currentViewportId) {
+    console.error("No active viewport in dynamic mode");
+    return null;
+  }
+
+  // 5. Find corresponding nodes in other viewports
+  // If the source is a variant, find variants with same variantResponsiveId
+  // If the source is a base node, find other base nodes in other viewports
+  const viewportToSourceMap = new Map<NodeId, NodeId>();
+
+  // Add the source node for the current viewport
+  viewportToSourceMap.set(currentViewportId, sourceNodeId);
+
+  // Find all viewports
+  const viewports = allNodes.filter((n) => n.isViewport).map((n) => n.id);
+
+  // Based on whether the source is a variant or base node, find counterparts differently
+  if (sourceNode.isVariant) {
+    // Source is a variant - find variants with same variantResponsiveId in other viewports
+    const sourceVariantResponsiveId = sourceNode.variantResponsiveId;
+
+    if (sourceVariantResponsiveId) {
+      for (const viewport of viewports) {
+        if (viewport === currentViewportId) continue; // Skip current viewport
+
+        // Find a variant in this viewport with the same variantResponsiveId
+        const matchingVariant = allNodes.find(
+          (n) =>
+            n.isVariant &&
+            n.variantResponsiveId === sourceVariantResponsiveId &&
+            n.dynamicViewportId === viewport
+        );
+
+        if (matchingVariant) {
+          viewportToSourceMap.set(viewport, matchingVariant.id);
+        }
+      }
+    }
+  } else {
+    // Source is a base node - find base nodes in the same family in other viewports
+    const sharedId = sourceNode.sharedId;
+
+    if (sharedId) {
+      // Try to find by shared ID first
+      for (const viewport of viewports) {
+        if (viewport === currentViewportId) continue; // Skip current viewport
+
+        // Find a base node in this viewport with the same sharedId
+        const matchingNode = allNodes.find(
+          (n) =>
+            !n.isVariant &&
+            n.isDynamic &&
+            n.sharedId === sharedId &&
+            n.dynamicViewportId === viewport
+        );
+
+        if (matchingNode) {
+          viewportToSourceMap.set(viewport, matchingNode.id);
+        }
+      }
+    }
+
+    // If some viewports still don't have a source, try by family ID
+    for (const viewport of viewports) {
+      if (viewportToSourceMap.has(viewport)) continue; // Skip if already found
+
+      // Find any base node in this viewport with the same family ID
+      const matchingNode = allNodes.find(
+        (n) =>
+          !n.isVariant &&
+          n.isDynamic &&
+          n.dynamicFamilyId === familyId &&
+          n.dynamicViewportId === viewport
+      );
+
+      if (matchingNode) {
+        viewportToSourceMap.set(viewport, matchingNode.id);
+      }
+    }
+  }
+
+  console.log(
+    "Source nodes by viewport:",
+    Object.fromEntries(viewportToSourceMap)
+  );
+
+  // 6. Create variants in each viewport that has a source node
+  const variantIds = new Map<NodeId, NodeId>();
+
+  // Keep track of all ID mappings from source to variant
+  const idMappingsByViewport = new Map<NodeId, Map<NodeId, NodeId>>();
+
+  batchNodeUpdates(() => {
+    // Process each viewport independently
+    for (const [
+      viewportId,
+      viewportSourceId,
+    ] of viewportToSourceMap.entries()) {
+      console.log(
+        `Creating variant in viewport ${viewportId} from source ${viewportSourceId}`
+      );
+
+      // Create a new ID mapping for this viewport
+      const idMap = new Map<NodeId, NodeId>();
+      idMappingsByViewport.set(viewportId, idMap);
+
+      // Create a shared ID mapping for this variant hierarchy
+      const sharedIdMap = new Map<string, string>();
+
+      // Function to create a variant node with proper properties
+      const createVariantNode = (
+        srcId: NodeId,
+        parentId: NodeId | null,
+        isRoot: boolean
+      ): NodeId => {
+        // Get source node data
+        const src = allNodes.find((n) => n.id === srcId);
+        if (!src) return null;
+
+        // Generate new variant ID
+        const variantId = nanoid();
+
+        // Generate new shared ID
+        let newSharedId = undefined;
+        if (src.sharedId) {
+          if (!sharedIdMap.has(src.sharedId)) {
+            sharedIdMap.set(src.sharedId, `shared-${nanoid(8)}`);
+          }
+          newSharedId = sharedIdMap.get(src.sharedId);
+        }
+
+        // Deep clone style
+        let newStyle = JSON.parse(JSON.stringify(src.style || {}));
+
+        // Update position for root variant
+        if (isRoot) {
+          // For root variants, position absolutely in the viewport
+          newStyle.position = "absolute";
+
+          // Determine position based on source
+          if (src.style?.position === "absolute") {
+            // Offset from existing absolute position
+            const leftVal = parseInt(src.style.left as string) || 0;
+            const topVal = parseInt(src.style.top as string) || 0;
+            newStyle.left = `${leftVal + 20}px`;
+            newStyle.top = `${topVal + 20}px`;
+          } else {
+            // Position near center of viewport
+            const viewport = allNodes.find((n) => n.id === viewportId);
+            if (viewport?.style) {
+              const viewportWidth =
+                parseInt(viewport.style.width as string) || 1000;
+              const viewportHeight =
+                parseInt(viewport.style.height as string) || 1000;
+              newStyle.left = `${Math.max(20, viewportWidth / 3)}px`;
+              newStyle.top = `${Math.max(20, viewportHeight / 3)}px`;
+            } else {
+              // Fallback positioning
+              newStyle.left = "100px";
+              newStyle.top = "100px";
+            }
+          }
+        }
+
+        // Create the node with proper properties
+        createNodeInStore({
+          ...JSON.parse(JSON.stringify(src)), // Deep clone base properties
+          id: variantId,
+          parentId: parentId,
+          style: newStyle,
+          sharedId: newSharedId,
+          isDynamic: true,
+          isVariant: true,
+          dynamicFamilyId: familyId,
+          dynamicViewportId: viewportId,
+          variantParentId: srcId,
+          variantResponsiveId: variantResponsiveId,
+        });
+
+        // Add to parent
+        addNode(variantId, parentId);
+
+        // Track mapping from source to variant
+        idMap.set(srcId, variantId);
+
+        return variantId;
+      };
+
+      // Function to recursively duplicate children, using our current variant as the new parent
+      const duplicateChildren = (sourceId: NodeId, newParentId: NodeId) => {
+        const children =
+          hierarchyStore.get(childrenMapAtom).get(sourceId) || [];
+
+        if (children.length > 0) {
+          console.log(
+            `Duplicating ${children.length} children of ${sourceId} under ${newParentId}`
+          );
+        }
+
+        // Process each child
+        for (const childId of children) {
+          // Create a variant of this child with the new parent
+          const childVariantId = createVariantNode(childId, newParentId, false);
+
+          if (childVariantId) {
+            // Recursively handle this child's children
+            duplicateChildren(childId, childVariantId);
+          }
+        }
+      };
+
+      // Create the root variant, placing it directly in the viewport
+      const rootVariantId = createVariantNode(
+        viewportSourceId,
+        viewportId,
+        true
+      );
+
+      // Store the root variant ID for this viewport
+      if (rootVariantId) {
+        variantIds.set(viewportId, rootVariantId);
+
+        // Now process all children of the source node
+        duplicateChildren(viewportSourceId, rootVariantId);
+      }
+    }
+  });
+
+  // Return the variant created in current viewport
+  return variantIds.get(currentViewportId) || null;
+}

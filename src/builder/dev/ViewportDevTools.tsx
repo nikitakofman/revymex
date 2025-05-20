@@ -27,7 +27,6 @@ import {
   nodeParentAtom,
   nodeSharedInfoAtom,
   nodeDynamicInfoAtom,
-  nodeVariantInfoAtom,
   nodeSyncFlagsAtom,
   nodeDynamicStateAtom,
   getCurrentNodes,
@@ -55,7 +54,6 @@ function getDetailedNode(nodeId: NodeId) {
   const parentId = nodeStore.get(nodeParentAtom(nodeId));
   const sharedInfo = nodeStore.get(nodeSharedInfoAtom(nodeId));
   const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(nodeId));
-  const variantInfo = nodeStore.get(nodeVariantInfoAtom(nodeId));
   const syncFlags = nodeStore.get(nodeSyncFlagsAtom(nodeId));
   const dynamicState = nodeStore.get(nodeDynamicStateAtom(nodeId));
 
@@ -80,9 +78,9 @@ function getDetailedNode(nodeId: NodeId) {
     originalParentId: dynamicInfo.originalParentId,
     originalState: dynamicInfo.originalState,
     // Variant info
-    variantParentId: variantInfo.variantParentId,
-    variantInfo: variantInfo.variantInfo,
-    variantResponsiveId: variantInfo.variantResponsiveId,
+    variantParentId: dynamicInfo.variantParentId,
+    variantInfo: dynamicInfo.variantInfo,
+    variantResponsiveId: dynamicInfo.variantResponsiveId,
     // Flags
     isViewport: flags.isViewport,
     viewportWidth: flags.viewportWidth,

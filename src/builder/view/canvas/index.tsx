@@ -33,9 +33,7 @@ import { contextMenuOps } from "@/builder/context/atoms/context-menu-store";
 import {
   canvasOps,
   useGetIsSelectionBoxActive,
-  useIsEditingText,
 } from "@/builder/context/atoms/canvas-interaction-store";
-import { useDynamicModeNodeId } from "@/builder/context/atoms/dynamic-store";
 import CanvasController from "@/builder/context/canvas-controller";
 import {
   initNodeStateFromInitialState,
@@ -44,15 +42,10 @@ import {
   getCurrentNodes,
 } from "@/builder/context/atoms/node-store";
 import { nodeInitialState } from "@/builder/reducer/state";
-import {
-  childrenMapAtom,
-  hierarchyStore,
-  parentMapAtom,
-} from "@/builder/context/atoms/node-store/hierarchy-store";
+
 import DragOverlay from "@/builder/context/dnd/DragOverlay";
 import TextEditor from "@/builder/registry/elements/TextElement/TextEditor";
 import SnapGuides from "@/builder/context/canvasHelpers/snapGrids/SnapGuides";
-import DropIndicator from "@/builder/context/canvasHelpers/DropIndicator";
 import PreviewPlay from "../preview/preview-play";
 import { DropTargetHighlighter } from "@/builder/context/canvasHelpers/DropIndicator";
 
@@ -65,7 +58,6 @@ const Canvas = () => {
   const isPreviewOpen = useIsPreviewOpen();
   const getIsSelectionBoxActive = useGetIsSelectionBoxActive();
   const { clearSelection } = selectOps;
-  const dynamicModeNodeId = useDynamicModeNodeId();
 
   // Initialize atoms on first render
   useEffect(() => {
@@ -203,13 +195,8 @@ const Canvas = () => {
                   transformOrigin: "0 0",
                 }}
               >
-                {dynamicModeNodeId ? (
-                  <RenderNodes filter="dynamicMode" />
-                ) : (
-                  <RenderNodes filter="outOfViewport" />
-                )}
+                <RenderNodes filter="outOfViewport" />
                 <TextEditor />
-
                 <LineIndicator />
                 <ContextMenu />
               </div>

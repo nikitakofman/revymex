@@ -1,30 +1,53 @@
-// src/builder/context/atoms/dynamic-store.ts
+// Modified dynamic-store.ts with additional dynamicPositions tracking
 import { atom, createStore } from "jotai/vanilla";
 import { selectAtom } from "jotai/utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback } from "react";
+import {
+  NodeId,
+  nodeStore,
+  nodeStyleAtom,
+  nodeParentAtom,
+  nodeFlagsAtom,
+  nodeSharedInfoAtom,
+  sharedIdBucketsAtom,
+} from "./node-store";
+import { updateNodeStyle } from "./node-store/operations/style-operations";
 
-// Create a separate store for dynamic mode state
 export const dynamicStore = createStore();
 
-// Type definitions
+// Adding dynamicPositions to store temporary positions in dynamic mode
 export interface DynamicState {
-  // Dynamic mode states
   dynamicModeNodeId: string | number | null;
   activeViewportInDynamicMode: string | number | null;
+  storedNodePositions: Record<
+    string | number,
+    {
+      position?: string;
+      left?: string;
+      top?: string;
+    }
+  >;
+  // New field for temporary positions while in dynamic mode
+  dynamicPositions: Record<
+    string | number,
+    {
+      left: string;
+      top: string;
+    }
+  >;
 }
 
-// Initial state
 const initialDynamicState: DynamicState = {
   dynamicModeNodeId: null,
   activeViewportInDynamicMode: null,
+  storedNodePositions: {},
+  dynamicPositions: {},
 };
 
-// Base atom for dynamic state
 export const _internalDynamicStateAtom =
   atom<DynamicState>(initialDynamicState);
 
-// Individual property atoms for fine-grained subscriptions
 export const dynamicModeNodeIdAtom = selectAtom(
   _internalDynamicStateAtom,
   (state) => state.dynamicModeNodeId
@@ -35,39 +58,189 @@ export const activeViewportInDynamicModeAtom = selectAtom(
   (state) => state.activeViewportInDynamicMode
 );
 
-export const connectionTypeModalAtom = selectAtom(
+export const storedNodePositionsAtom = selectAtom(
   _internalDynamicStateAtom,
-  (state) => state.connectionTypeModal
+  (state) => state.storedNodePositions
 );
 
-// Create a singleton instance of dynamic mode operations
+export const dynamicPositionsAtom = selectAtom(
+  _internalDynamicStateAtom,
+  (state) => state.dynamicPositions
+);
+
 const dynamicOperations = {
-  // Dynamic mode operations
+  // Store the original position properties before entering dynamic mode
+  storeDynamicNodeState: (nodeId: NodeId) => {
+    if (!nodeId) return;
+
+    // Get node style from nodeStore
+    const nodeStyle = nodeStore.get(nodeStyleAtom(nodeId));
+    const nodeSharedInfo = nodeStore.get(nodeSharedInfoAtom(nodeId));
+
+    // Store position properties
+    dynamicStore.set(_internalDynamicStateAtom, (prev) => {
+      const storedNodePositions = { ...prev.storedNodePositions };
+
+      // Store this node's position, left, and top
+      storedNodePositions[nodeId] = {
+        position: nodeStyle.position,
+        left: nodeStyle.left,
+        top: nodeStyle.top,
+      };
+
+      // If node has sharedId, also store positions for all shared nodes
+      if (nodeSharedInfo.sharedId) {
+        const sharedIdBuckets = nodeStore.get(sharedIdBucketsAtom);
+        const sharedNodes = sharedIdBuckets.get(nodeSharedInfo.sharedId);
+
+        if (sharedNodes) {
+          for (const id of sharedNodes) {
+            if (id !== nodeId) {
+              // Skip the original node we already stored
+              const sharedNodeStyle = nodeStore.get(nodeStyleAtom(id));
+
+              storedNodePositions[id] = {
+                position: sharedNodeStyle.position,
+                left: sharedNodeStyle.left,
+                top: sharedNodeStyle.top,
+              };
+            }
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        storedNodePositions,
+      };
+    });
+
+    console.log("Stored original position for node:", nodeId);
+  },
+
+  // Set temporary dynamic position for a node (for dragging in dynamic mode)
+  setDynamicPosition: (nodeId: NodeId, left: string, top: string) => {
+    dynamicStore.set(_internalDynamicStateAtom, (prev) => {
+      const dynamicPositions = { ...prev.dynamicPositions };
+      dynamicPositions[nodeId] = { left, top };
+      return {
+        ...prev,
+        dynamicPositions,
+      };
+    });
+  },
+
+  // Get dynamic position for a node if available
+  getDynamicPosition: (nodeId: NodeId) => {
+    const state = dynamicStore.get(_internalDynamicStateAtom);
+    return state.dynamicPositions[nodeId];
+  },
+
+  // Clear dynamic position for a node
+  clearDynamicPosition: (nodeId: NodeId) => {
+    dynamicStore.set(_internalDynamicStateAtom, (prev) => {
+      const dynamicPositions = { ...prev.dynamicPositions };
+      delete dynamicPositions[nodeId];
+      return {
+        ...prev,
+        dynamicPositions,
+      };
+    });
+  },
+
+  // Restore the original position properties when exiting dynamic mode
+  restoreDynamicNodePositions: () => {
+    const { storedNodePositions } = dynamicStore.get(_internalDynamicStateAtom);
+
+    console.log("Stored positions to restore:", storedNodePositions);
+
+    // If there are no stored positions, log warning and return
+    if (Object.keys(storedNodePositions).length === 0) {
+      console.warn("No stored positions found to restore");
+      return;
+    }
+
+    // Batch update all stored node positions
+    for (const [nodeId, state] of Object.entries(storedNodePositions)) {
+      // Restore position properties
+      const styleUpdates: Record<string, string | undefined> = {};
+
+      if (state.position !== undefined) {
+        styleUpdates.position = state.position;
+
+        // IMPORTANT: If original position was "relative" or something other than "absolute",
+        // we should clear left/top values to prevent unwanted offsets
+        if (
+          state.position === "relative" ||
+          state.position === "static" ||
+          (state.position !== "absolute" && state.position !== "fixed")
+        ) {
+          styleUpdates.left = "";
+          styleUpdates.top = "";
+        } else {
+          // Only set left/top if the original position was absolute/fixed
+          if (state.left !== undefined) {
+            styleUpdates.left = state.left;
+          }
+
+          if (state.top !== undefined) {
+            styleUpdates.top = state.top;
+          }
+        }
+      } else {
+        // If position wasn't stored, still restore left/top as they were
+        if (state.left !== undefined) {
+          styleUpdates.left = state.left;
+        }
+
+        if (state.top !== undefined) {
+          styleUpdates.top = state.top;
+        }
+      }
+
+      console.log(`Restoring position for node ${nodeId}:`, styleUpdates);
+      updateNodeStyle(nodeId, styleUpdates);
+    }
+
+    // Clear stored positions after restoration
+    dynamicStore.set(_internalDynamicStateAtom, (prev) => ({
+      ...prev,
+      storedNodePositions: {},
+      dynamicPositions: {}, // Also clear dynamic positions
+    }));
+
+    console.log("Restored all node positions");
+  },
+
   setDynamicModeNodeId: (
     nodeId: string | number | null,
-    resetNodePositions?: () => void,
     defaultViewportId?: string | number
   ) => {
+    const currentNodeId = dynamicStore.get(
+      _internalDynamicStateAtom
+    ).dynamicModeNodeId;
+
+    // If exiting dynamic mode (current is not null, new one is null)
+    if (currentNodeId && !nodeId) {
+      console.log("Exiting dynamic mode, restoring positions");
+      dynamicOperations.restoreDynamicNodePositions();
+    }
+
     dynamicStore.set(_internalDynamicStateAtom, (prev) => {
-      // If exiting dynamic mode and resetting positions
-      if (!nodeId && resetNodePositions) {
-        resetNodePositions();
+      if (!nodeId) {
         return {
           ...prev,
           dynamicModeNodeId: null,
           activeViewportInDynamicMode: null,
+          dynamicPositions: {}, // Clear dynamic positions when exiting
         };
-      }
-      // If entering dynamic mode with a default viewport
-      else if (nodeId && defaultViewportId) {
+      } else if (nodeId && defaultViewportId) {
         return {
           ...prev,
           dynamicModeNodeId: nodeId,
           activeViewportInDynamicMode: defaultViewportId,
         };
-      }
-      // Just update the nodeId
-      else {
+      } else {
         return {
           ...prev,
           dynamicModeNodeId: nodeId,
@@ -76,27 +249,32 @@ const dynamicOperations = {
     });
   },
 
-  /**
-   * Sets the active viewport in dynamic mode
-   * @param viewportId The ID of the viewport to switch to
-   */
-  switchDynamicViewport: (viewportId: string | number) => {
+  switchDynamicViewport: (viewportId: string | number | null) => {
     dynamicStore.set(_internalDynamicStateAtom, (prev) => ({
       ...prev,
       activeViewportInDynamicMode: viewportId,
     }));
   },
 
-  // Utility to get full state
   getState: () => {
     return dynamicStore.get(_internalDynamicStateAtom);
   },
 };
 
-// Export the singleton instance directly
 export const dynamicOps = dynamicOperations;
 
-// Hooks for components to use the dynamic state
+// Add hooks for the new dynamicPositions atom
+export const useDynamicPositions = () => {
+  return useAtomValue(dynamicPositionsAtom, { store: dynamicStore });
+};
+
+export const useGetDynamicPositions = () => {
+  return useCallback(() => {
+    return dynamicStore.get(_internalDynamicStateAtom).dynamicPositions;
+  }, []);
+};
+
+// Keep all the existing hooks
 export const useDynamicModeNodeId = () => {
   return useAtomValue(dynamicModeNodeIdAtom, { store: dynamicStore });
 };
@@ -105,12 +283,10 @@ export const useActiveViewportInDynamicMode = () => {
   return useAtomValue(activeViewportInDynamicModeAtom, { store: dynamicStore });
 };
 
-// Full state hook
 export const useDynamicStateAll = () => {
   return useAtomValue(_internalDynamicStateAtom, { store: dynamicStore });
 };
 
-// Imperative getters
 export const useGetDynamicState = () => {
   return useCallback(() => {
     return dynamicStore.get(_internalDynamicStateAtom);
@@ -130,15 +306,6 @@ export const useGetActiveViewportInDynamicMode = () => {
   }, []);
 };
 
-// Optional set functions for components that need to directly update state
 export const useSetDynamicState = () => {
   return useSetAtom(_internalDynamicStateAtom, { store: dynamicStore });
-};
-
-// Debug function
-export const debugDynamicStore = () => {
-  console.log(
-    "Dynamic Store State:",
-    dynamicStore.get(_internalDynamicStateAtom)
-  );
 };

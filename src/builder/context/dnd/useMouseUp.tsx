@@ -20,13 +20,18 @@ import { updateNodeFlags } from "../atoms/node-store/operations/update-operation
 import { useBuilderRefs } from "@/builder/context/builderState";
 import { visualOps } from "../atoms/visual-store";
 import { syncViewports } from "../atoms/node-store/operations/sync-operations";
-import { getCurrentNodes, useGetNodeStyle } from "../atoms/node-store";
+import {
+  getCurrentNodes,
+  useGetNodeStyle,
+  useGetNodeFlags,
+} from "../atoms/node-store";
 import {
   restoreOriginalDimensions,
   getDraggedNodesPositions,
   restoreDimensionsForDraggedNodes,
 } from "./dnd-utils";
 import { snapOps } from "../atoms/snap-guides-store";
+import { useGetDynamicModeNodeId } from "../atoms/dynamic-store";
 
 export const useMouseUp = () => {
   const getDraggedNodes = useGetDraggedNodes();
@@ -37,6 +42,9 @@ export const useMouseUp = () => {
   const getDragSource = useGetDragSource();
   const getDropInfo = useGetDropInfo();
   const getNodeStyle = useGetNodeStyle();
+  const getNodeFlags = useGetNodeFlags();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+
   const { containerRef, transitioningToCanvasRef, transitioningToParentRef } =
     useBuilderRefs();
 
@@ -81,6 +89,12 @@ export const useMouseUp = () => {
     const draggedNodes = getDraggedNodes();
     if (draggedNodes.length === 0) return;
 
+    // Get dynamic mode state
+    const dynamicModeNodeId = getDynamicModeNodeId
+      ? getDynamicModeNodeId()
+      : null;
+    const isInDynamicMode = !!dynamicModeNodeId;
+
     const primaryNode = draggedNodes[0];
     const isMultiDrag = draggedNodes.length > 1;
 
@@ -105,6 +119,17 @@ export const useMouseUp = () => {
     const allNodes = getCurrentNodes();
     const draggedNodeData = allNodes.find((n) => n.id === draggedNodeId);
 
+    // Check if this is a dynamic variant
+    const isDynamicVariant =
+      draggedNodeData?.isVariant && draggedNodeData?.isDynamic;
+
+    console.log(
+      "Mouse up - Dynamic mode:",
+      isInDynamicMode,
+      "Is variant:",
+      isDynamicVariant
+    );
+
     const allNodePositions = getDraggedNodesPositions(draggedNodes);
 
     const placeholderInfo = dragOps.getState().placeholderInfo;
@@ -118,6 +143,47 @@ export const useMouseUp = () => {
       primaryNode.offset.startingParentId || getNodeParent(draggedNodeId);
     const dragStartingViewport = findTopViewport(dragStartingParent);
     const isDraggingFromViewport = !!dragStartingViewport;
+
+    // Skip all canvas drop operations if in dynamic mode and handling a variant
+    if (isInDynamicMode && isDynamicVariant && isOverCanvas) {
+      console.log("Skipping canvas drop for dynamic variant");
+
+      // Just update the visual style without moving the node
+      draggedNodes.forEach((draggedNode) => {
+        const nodeId = draggedNode.node.id;
+        const nodePosition = allNodePositions[nodeId];
+
+        if (nodePosition) {
+          // Apply visual style changes only
+          updateNodeStyle(
+            nodeId,
+            {
+              position: "absolute",
+              left: nodePosition.left,
+              top: nodePosition.top,
+            },
+            { dontSync: true }
+          );
+        }
+      });
+
+      // Clean up any placeholders
+      if (primaryNode.offset.placeholderId) {
+        removeNode(primaryNode.offset.placeholderId);
+
+        if (hasMultiplePlaceholders) {
+          allPlaceholderIds.forEach((id) => {
+            if (id !== primaryNode.offset.placeholderId) {
+              removeNode(id);
+            }
+          });
+        }
+      }
+
+      // Reset drag state
+      resetDragState();
+      return;
+    }
 
     if (dragSource === "absolute-in-frame" && startingParentId) {
       const { activeSnapPoints } = snapOps.getState();
@@ -244,7 +310,9 @@ export const useMouseUp = () => {
             containerRef,
             getTransform,
             allNodePositions,
-            isDraggingFromViewport
+            isDraggingFromViewport,
+            isInDynamicMode,
+            isDynamicVariant
           );
 
           if (isDraggingFromViewport && draggedNodeData?.sharedId) {
@@ -471,7 +539,9 @@ export const useMouseUp = () => {
         containerRef,
         getTransform,
         allNodePositions,
-        isDraggingFromViewport
+        isDraggingFromViewport,
+        isInDynamicMode,
+        isDynamicVariant
       );
 
       if (isDraggingFromViewport && draggedNodeData?.sharedId) {
@@ -521,7 +591,9 @@ export const useMouseUp = () => {
     containerRef,
     getTransform,
     nodePositions,
-    isDraggingFromViewport
+    isDraggingFromViewport,
+    isInDynamicMode = false,
+    isDynamicVariant = false
   ) {
     const transform = getTransform();
     const containerRect = containerRef.current?.getBoundingClientRect();
@@ -539,11 +611,19 @@ export const useMouseUp = () => {
       const nodeId = draggedNode.node.id;
       const currentPosition = nodePositions[nodeId];
 
+      // CRITICAL: Skip moveNode for dynamic variants or in dynamic mode
       if (
-        !draggedNode.offset.isAbsoluteInFrame ||
-        !draggedNode.offset.startingParentId
+        !isInDynamicMode &&
+        !isDynamicVariant &&
+        (!draggedNode.offset.isAbsoluteInFrame ||
+          !draggedNode.offset.startingParentId)
       ) {
+        console.log(`Moving node ${nodeId} to canvas (null parent)`);
         moveNode(nodeId, null);
+      } else {
+        console.log(
+          `Skipping moveNode for ${nodeId} - in dynamic mode or is variant`
+        );
       }
 
       let finalX, finalY;
@@ -656,7 +736,18 @@ export const useMouseUp = () => {
       finalX = isNaN(finalX) ? 0 : Math.round(finalX);
       finalY = isNaN(finalY) ? 0 : Math.round(finalY);
 
-      if (
+      if (isInDynamicMode || isDynamicVariant) {
+        // For dynamic mode or variants, just update the position without changing parent relationships
+        updateNodeStyle(
+          nodeId,
+          {
+            position: "absolute",
+            left: `${finalX}px`,
+            top: `${finalY}px`,
+          },
+          { dontSync: true }
+        );
+      } else if (
         draggedNode.offset.isAbsoluteInFrame &&
         draggedNode.offset.startingParentId
       ) {
@@ -682,9 +773,12 @@ export const useMouseUp = () => {
           { dontSync: true }
         );
 
-        updateNodeFlags(nodeId, {
-          inViewport: false,
-        });
+        // Only update flags for non-dynamic nodes
+        if (!isInDynamicMode && !isDynamicVariant) {
+          updateNodeFlags(nodeId, {
+            inViewport: false,
+          });
+        }
       }
 
       if (draggedNode.offset.dimensionUnits) {

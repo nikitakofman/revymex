@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useBuilder } from "@/builder/context/builderState";
 import { Plus } from "lucide-react";
 import { nanoid } from "nanoid";
 import {
@@ -18,7 +17,30 @@ import {
   useNodeFlags,
   useNodeDynamicInfo,
   useGetNode,
+  useGetNodeBasics,
+  useGetNodeStyle,
+  useGetNodeDynamicInfo,
+  useGetNodeFlags,
+  useGetNodeParent,
+  nodeStore,
+  nodeIdsAtom,
+  useGetNodeIds,
+  nodeSharedInfoAtom,
+  useGetNodeSharedInfo,
+  updateNodeDynamicInfo,
+  getCurrentNodes,
+  batchNodeUpdates,
 } from "../atoms/node-store";
+import {
+  childrenMapAtom,
+  hierarchyStore,
+} from "../atoms/node-store/hierarchy-store";
+import {
+  createDynamicVariant,
+  duplicateNode,
+  duplicateSubtree,
+} from "../atoms/node-store/operations/insert-operations";
+import { updateNodeFlags } from "../atoms/node-store/operations/update-operations";
 
 interface AddVariantsUIProps {
   nodeId: NodeId;
@@ -30,6 +52,15 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
   const flags = useNodeFlags(nodeId);
   const { isDynamic = false, isVariant = false } = flags;
 
+  // Use imperative getters for better performance
+  const getNodeBasics = useGetNodeBasics();
+  const getNodeStyle = useGetNodeStyle();
+  const getNodeFlags = useGetNodeFlags();
+  const getNodeParent = useGetNodeParent();
+  const getNodeSharedInfo = useGetNodeSharedInfo();
+  const getNodeDynamicInfo = useGetNodeDynamicInfo();
+  const getNodeIds = useGetNodeIds();
+
   // Get dynamic info from atoms
   const dynamicInfo = useNodeDynamicInfo(nodeId);
   const { dynamicFamilyId = null, dynamicViewportId = null } =
@@ -37,8 +68,6 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
 
   // Get node builder function for topmost parent calculation
   const getNode = useGetNode();
-
-  const { nodeDisp, nodeState } = useBuilder();
 
   // Use imperative getter instead of subscription
   const getTransform = useGetTransform();
@@ -64,45 +93,66 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
     // If not in dynamic mode, return the current node
     if (!dynamicModeNodeId) return getNode(nodeId);
 
+    // Get all node IDs from the store
+    const allNodeIds = getNodeIds();
+
     // Get the dynamic family ID
-    const familyNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
+    const familyNode = getNodeDynamicInfo(dynamicModeNodeId);
     const familyId = familyNode?.dynamicFamilyId;
+
     if (!familyId) return getNode(nodeId);
 
     // First check if current node is already a top-level node in this family
+    const currentNodeFlags = getNodeFlags(nodeId);
+    const currentNodeDynamicInfo = getNodeDynamicInfo(nodeId);
+
     if (
-      (isDynamic || isVariant) &&
-      dynamicFamilyId === familyId &&
-      !nodeState.nodes.find((n) => n.id === nodeId)?.parentId
+      (currentNodeFlags.isDynamic || currentNodeFlags.isVariant) &&
+      currentNodeDynamicInfo.dynamicFamilyId === familyId &&
+      !getNodeParent(nodeId)
     ) {
       return getNode(nodeId);
     }
 
     // Otherwise, find the top-level node for the selected element
     // Start by finding which top-level node contains this element
-    const topLevelNodes = nodeState.nodes.filter(
-      (n) =>
-        (n.isDynamic || n.isVariant) &&
-        n.dynamicFamilyId === familyId &&
-        !n.parentId
-    );
+    const topLevelNodes = [];
+
+    // Collect all top-level nodes with matching family ID
+    for (const id of allNodeIds) {
+      const flags = getNodeFlags(id);
+      const dynamicInfo = getNodeDynamicInfo(id);
+      const parent = getNodeParent(id);
+
+      if (
+        (flags.isDynamic || flags.isVariant) &&
+        dynamicInfo.dynamicFamilyId === familyId &&
+        !parent
+      ) {
+        topLevelNodes.push(id);
+      }
+    }
 
     // Function to check if a node is a descendant of another
     const isDescendantOf = (
       childId: string | number,
       parentId: string | number
     ): boolean => {
-      const child = nodeState.nodes.find((n) => n.id === childId);
-      if (!child) return false;
-      if (child.parentId === parentId) return true;
-      if (child.parentId) return isDescendantOf(child.parentId, parentId);
+      if (!childId) return false;
+
+      let currentId = childId;
+      while (currentId) {
+        if (currentId === parentId) return true;
+        currentId = getNodeParent(currentId);
+      }
+
       return false;
     };
 
     // Find which top-level node this element belongs to
     for (const topNode of topLevelNodes) {
-      if (topNode.id === nodeId || isDescendantOf(nodeId, topNode.id)) {
-        return topNode;
+      if (topNode === nodeId || isDescendantOf(nodeId, topNode)) {
+        return getNode(topNode);
       }
     }
 
@@ -110,34 +160,37 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
     return getNode(nodeId);
   }, [
     nodeId,
-    nodeState.nodes,
     dynamicModeNodeId,
-    isDynamic,
-    isVariant,
-    dynamicFamilyId,
     getNode,
+    getNodeIds,
+    getNodeDynamicInfo,
+    getNodeFlags,
+    getNodeParent,
   ]);
 
   // Function to get element bounding rects for all visible nodes
   const getAllNodeRects = () => {
     const rects = new Map();
-    const visibleNodes = nodeState.nodes.filter((n) => {
-      // Filter for nodes that would be visible in the current viewport
-      if (
-        n.dynamicViewportId &&
-        n.dynamicViewportId !== activeViewportInDynamicMode
-      ) {
-        return false;
-      }
-      return true;
-    });
+    const nodeIds = getNodeIds();
 
-    visibleNodes.forEach((n) => {
-      const element = document.querySelector(`[data-node-id="${n.id}"]`);
-      if (element) {
-        rects.set(n.id, element.getBoundingClientRect());
+    // Filter for visible nodes
+    for (const id of nodeIds) {
+      const dynamicInfo = getNodeDynamicInfo(id);
+
+      // Skip nodes from other viewports
+      if (
+        dynamicInfo.dynamicViewportId &&
+        dynamicInfo.dynamicViewportId !== activeViewportInDynamicMode
+      ) {
+        continue;
       }
-    });
+
+      // Get DOM element and rect
+      const element = document.querySelector(`[data-node-id="${id}"]`);
+      if (element) {
+        rects.set(id, element.getBoundingClientRect());
+      }
+    }
 
     return rects;
   };
@@ -148,7 +201,7 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
     const transform = getTransform();
 
     // Calculate exact offset for spacing (using consistent value regardless of scale)
-    const padding = 200; // Increased spacing between element and button
+    const padding = 200; // Original spacing between element and button
     const scaledPadding = padding * transform.scale;
 
     // Default positions to try in order of preference (perfectly aligned)
@@ -379,32 +432,35 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
       });
       return () => observer.disconnect();
     }
-  }, [topmostParent?.id, nodeState.nodes, getTransform]);
+  }, [topmostParent?.id, getTransform]);
 
-  // Function to handle adding a variant
   const handleAddVariant = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!topmostParent) return;
 
-    // Ensure the node has a dynamicFamilyId
-    if (!topmostParent.dynamicFamilyId && dynamicModeNodeId) {
-      const mainNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
-      const familyId = mainNode?.dynamicFamilyId || nanoid();
+    console.log("Creating variant for dynamic node:", topmostParent.id);
 
-      nodeDisp.updateNode(topmostParent.id, { dynamicFamilyId: familyId });
+    //
+    const familyId =
+      topmostParent.dynamicFamilyId ||
+      getNodeDynamicInfo(dynamicModeNodeId)?.dynamicFamilyId ||
+      nanoid();
+
+    if (!topmostParent.dynamicFamilyId) {
+      console.log("Setting dynamicFamilyId:", familyId);
+
+      updateNodeDynamicInfo(topmostParent.id, {
+        dynamicFamilyId: familyId,
+      });
     }
 
-    // Call the NodeDispatcher method to duplicate the element
-    // Pass the button position to ensure the new variant appears in the same direction
-    const newVariantId = nodeDisp.duplicateDynamicElement(
+    const newVariantId = createDynamicVariant(
       topmostParent.id,
-      elementSize.width,
-      buttonPosition.position // Pass the position (right, left, top, bottom)
+      activeViewportInDynamicMode
     );
 
-    // Select the newly created variant node
     if (newVariantId) {
       setTimeout(() => {
         selectOps.selectNode(newVariantId);
@@ -412,24 +468,17 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
     }
   };
 
-  // Check if this node should show the variant button
   const shouldShowVariantButton = useCallback((): boolean => {
     if (!dynamicModeNodeId) return false;
 
-    // Don't show if no position is available
     if (!isPositionAvailable) return false;
 
-    // Only show for nodes that are part of a dynamicFamilyId
     if (!dynamicFamilyId && !topmostParent?.dynamicFamilyId) return false;
 
-    // CRITICAL CHANGE: Only show the button when clicking directly on the topmost parent
-    // Check if the current node IS the topmost parent (not a child)
     if (topmostParent && nodeId === topmostParent.id) {
-      // Use the node-specific selection state - prevents re-renders in other components
       return isNodeSelected;
     }
 
-    // For all other nodes (children), don't show the button
     return false;
   }, [
     dynamicModeNodeId,
@@ -455,12 +504,12 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 2001, // Higher than selection borders
+        zIndex: 2001, // Original z-index
       }}
     >
       <button
         onClick={handleAddVariant}
-        className="bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)]  flex items-center justify-center text-white shadow-md"
+        className="bg-[var(--control-bg)] hover:bg-[var(--control-bg-hover)] flex items-center justify-center text-white shadow-md"
         style={{
           borderRadius: style.borderRadius,
           width: `${elementSize.width}px`,

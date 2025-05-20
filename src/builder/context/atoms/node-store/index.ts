@@ -61,6 +61,7 @@ export interface NodeSyncFlags {
   lowerSyncProps?: Record<string, boolean>;
 }
 
+// Merged NodeDynamicInfo with NodeVariantInfo
 export interface NodeDynamicInfo {
   dynamicParentId?: NodeId;
   dynamicViewportId?: NodeId;
@@ -76,9 +77,7 @@ export interface NodeDynamicInfo {
     parentId: NodeId | null;
     inViewport: boolean;
   };
-}
-
-export interface NodeVariantInfo {
+  // From NodeVariantInfo
   variantParentId?: NodeId;
   variantInfo?: VariantInfo;
   variantResponsiveId?: string;
@@ -163,9 +162,7 @@ export const nodeDynamicInfoAtom = atomFamily((id: NodeId) =>
   atom<NodeDynamicInfo>({})
 );
 
-export const nodeVariantInfoAtom = atomFamily((id: NodeId) =>
-  atom<NodeVariantInfo>({})
-);
+// Removed nodeVariantInfoAtom
 
 export const viewportOrderAtom = atom((get) => {
   const nodeIds = get(nodeIdsAtom);
@@ -274,7 +271,6 @@ export const nodeStateAtom = atom((get) => {
     const parentId = get(nodeParentAtom(id));
     const sharedInfo = get(nodeSharedInfoAtom(id));
     const dynamicInfo = get(nodeDynamicInfoAtom(id));
-    const variantInfo = get(nodeVariantInfoAtom(id));
     const syncFlags = get(nodeSyncFlagsAtom(id));
 
     nodes.push({
@@ -284,7 +280,6 @@ export const nodeStateAtom = atom((get) => {
       parentId,
       ...sharedInfo,
       ...dynamicInfo,
-      ...variantInfo,
       ...syncFlags,
     });
   }
@@ -362,13 +357,7 @@ export const useUpdateNodeDynamicInfo = (id: NodeId) => {
   return useSetAtom(nodeDynamicInfoAtom(id), { store: nodeStore });
 };
 
-export const useNodeVariantInfo = (id: NodeId) => {
-  return useAtomValue(nodeVariantInfoAtom(id), { store: nodeStore });
-};
-
-export const useUpdateNodeVariantInfo = (id: NodeId) => {
-  return useSetAtom(nodeVariantInfoAtom(id), { store: nodeStore });
-};
+// Removed useNodeVariantInfo and useUpdateNodeVariantInfo
 
 export const useViewportOrder = () => {
   return useAtomValue(viewportOrderAtom, { store: nodeStore });
@@ -453,11 +442,7 @@ export const useGetNodeDynamicInfo = () => {
   }, []);
 };
 
-export const useGetNodeVariantInfo = () => {
-  return useCallback((id: NodeId): NodeVariantInfo => {
-    return nodeStore.get(nodeVariantInfoAtom(id));
-  }, []);
-};
+// Removed useGetNodeVariantInfo
 
 export const useGetNodeSyncFlags = () => {
   return useCallback((id: NodeId): NodeSyncFlags => {
@@ -489,7 +474,6 @@ export const useGetNode = () => {
     const parentId = nodeStore.get(nodeParentAtom(id));
     const sharedInfo = nodeStore.get(nodeSharedInfoAtom(id));
     const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(id));
-    const variantInfo = nodeStore.get(nodeVariantInfoAtom(id));
     const syncFlags = nodeStore.get(nodeSyncFlagsAtom(id));
 
     return {
@@ -499,7 +483,6 @@ export const useGetNode = () => {
       parentId,
       ...sharedInfo,
       ...dynamicInfo,
-      ...variantInfo,
       ...syncFlags,
     };
   }, []);
@@ -515,7 +498,6 @@ export const useGetAllNodes = () => {
       const parentId = nodeStore.get(nodeParentAtom(id));
       const sharedInfo = nodeStore.get(nodeSharedInfoAtom(id));
       const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(id));
-      const variantInfo = nodeStore.get(nodeVariantInfoAtom(id));
       const syncFlags = nodeStore.get(nodeSyncFlagsAtom(id));
 
       return {
@@ -525,7 +507,6 @@ export const useGetAllNodes = () => {
         parentId,
         ...sharedInfo,
         ...dynamicInfo,
-        ...variantInfo,
         ...syncFlags,
       };
     });
@@ -595,6 +576,7 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
       nodeStore.set(nodeDynamicStateAtom(node.id), node.dynamicState);
     }
 
+    // Merge the dynamic and variant info into one object
     const dynamicInfo = {
       dynamicParentId: node.dynamicParentId,
       dynamicViewportId: node.dynamicViewportId,
@@ -603,20 +585,14 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
       dynamicFamilyId: node.dynamicFamilyId,
       originalParentId: node.originalParentId,
       originalState: node.originalState,
-    };
-
-    if (Object.values(dynamicInfo).some((val) => val !== undefined)) {
-      nodeStore.set(nodeDynamicInfoAtom(node.id), dynamicInfo);
-    }
-
-    const variantInfo = {
+      // From variant info
       variantParentId: node.variantParentId,
       variantInfo: node.variantInfo,
       variantResponsiveId: node.variantResponsiveId,
     };
 
-    if (Object.values(variantInfo).some((val) => val !== undefined)) {
-      nodeStore.set(nodeVariantInfoAtom(node.id), variantInfo);
+    if (Object.values(dynamicInfo).some((val) => val !== undefined)) {
+      nodeStore.set(nodeDynamicInfoAtom(node.id), dynamicInfo);
     }
 
     nodeStore.set(nodeSyncFlagsAtom(node.id), {
@@ -718,3 +694,15 @@ export const useGetActiveViewportInDynamicMode = () => {
     return nodeStore.get(activeViewportInDynamicModeAtom);
   }, []);
 };
+
+export function updateNodeDynamicInfo(
+  nodeId: NodeId,
+  updates: Partial<NodeDynamicInfo>
+) {
+  batchNodeUpdates(() => {
+    nodeStore.set(nodeDynamicInfoAtom(nodeId), (prev) => ({
+      ...prev,
+      ...updates,
+    }));
+  });
+}

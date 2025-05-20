@@ -323,13 +323,10 @@ export const useConnect = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        console.log("Double click on node:", nodeId);
-
         if (isDynamic) {
           if (!dynamicModeNodeId) {
-            console.log("Node is dynamic, setting as dynamic mode node");
+            updateNodeStyle(nodeId, { position: "absolute" });
 
-            // Find parent viewport
             const allNodes = getCurrentNodes();
             const parentViewportId =
               dynamicViewportId ||
@@ -344,48 +341,7 @@ export const useConnect = () => {
               dynamicOps.switchDynamicViewport("viewport-1440");
             }
 
-            // Get the family ID to identify all related base dynamic nodes
-            const familyId = dynamicInfo.dynamicFamilyId;
-
-            if (familyId) {
-              // Find all related base dynamic nodes across all viewports
-              const relatedBaseNodes = allNodes.filter(
-                (node) =>
-                  node.isDynamic &&
-                  node.dynamicFamilyId === familyId &&
-                  !node.isVariant
-              );
-
-              console.log(
-                `Found ${relatedBaseNodes.length} related base nodes in the same family`
-              );
-
-              // IMPORTANT: First store all original positions BEFORE making any style changes
-              relatedBaseNodes.forEach((node) => {
-                console.log(`Storing original position for node: ${node.id}`);
-                // Store the current state (with the original position)
-                dynamicOps.storeDynamicNodeState(node.id);
-              });
-
-              // Only AFTER storing all original positions, update the styles
-              relatedBaseNodes.forEach((node) => {
-                console.log(`Setting absolute position for node: ${node.id}`);
-                // Set position to absolute for dynamic positioning
-                updateNodeStyle(node.id, { position: "absolute" });
-              });
-            } else {
-              // If no family ID, just handle the current node
-              console.log(
-                "No family ID found, setting only current node to absolute"
-              );
-              // IMPORTANT: First store original position BEFORE making any style changes
-              dynamicOps.storeDynamicNodeState(nodeId);
-              // Only AFTER storing original position, update the style
-              updateNodeStyle(nodeId, { position: "absolute" });
-            }
-
-            // Finally set the dynamic mode node ID
-            dynamicOps.setDynamicModeNodeId(nodeId, parentViewportId);
+            dynamicOps.setDynamicModeNodeId(nodeId);
           }
           return;
         }
@@ -393,75 +349,44 @@ export const useConnect = () => {
         const dynamicParentInSameViewport =
           findDynamicParentInSameViewport(nodeId);
 
-        if (dynamicParentInSameViewport && !dynamicModeNodeId) {
-          console.log("Found dynamic parent:", dynamicParentInSameViewport);
+        if (dynamicParentInSameViewport) {
+          if (!dynamicModeNodeId) {
+            // storeDynamicNodeState(dynamicParentInSameViewport);
 
-          const parentDynamicInfo = getNodeDynamicInfo(
-            dynamicParentInSameViewport
-          );
-          const parentNodeParentId = getNodeParent(dynamicParentInSameViewport);
-
-          const allNodes = getCurrentNodes();
-          const parentViewportId =
-            parentDynamicInfo.dynamicViewportId ||
-            findParentViewport(parentDynamicInfo.originalParentId, allNodes) ||
-            findParentViewport(parentNodeParentId, allNodes);
-
-          if (parentViewportId) {
-            console.log(`Setting active viewport to: ${parentViewportId}`);
-            dynamicOps.switchDynamicViewport(parentViewportId);
-          } else {
-            console.warn(
-              "Could not determine viewport for node:",
-              dynamicParentInSameViewport
-            );
-            dynamicOps.switchDynamicViewport("viewport-1440");
-          }
-
-          // Get the family ID to identify all related base dynamic nodes
-          const familyId = parentDynamicInfo.dynamicFamilyId;
-
-          if (familyId) {
-            // Find all related base dynamic nodes across all viewports
-            const relatedBaseNodes = allNodes.filter(
-              (node) =>
-                node.isDynamic &&
-                node.dynamicFamilyId === familyId &&
-                !node.isVariant
-            );
-
-            console.log(
-              `Found ${relatedBaseNodes.length} related base nodes in the same family`
-            );
-
-            // IMPORTANT: First store all original positions BEFORE making any style changes
-            relatedBaseNodes.forEach((node) => {
-              console.log(`Storing original position for node: ${node.id}`);
-              // Store the current state (with the original position)
-              dynamicOps.storeDynamicNodeState(node.id);
-            });
-
-            // Only AFTER storing all original positions, update the styles
-            relatedBaseNodes.forEach((node) => {
-              console.log(`Setting absolute position for node: ${node.id}`);
-              // Set position to absolute for dynamic positioning
-              updateNodeStyle(node.id, { position: "absolute" });
-            });
-          } else {
-            // If no family ID, just handle the current node
-            // IMPORTANT: First store original position BEFORE making any style changes
-            dynamicOps.storeDynamicNodeState(dynamicParentInSameViewport);
-            // Only AFTER storing original position, update the style
             updateNodeStyle(dynamicParentInSameViewport, {
               position: "absolute",
             });
-          }
 
-          // Finally set the dynamic mode node ID
-          dynamicOps.setDynamicModeNodeId(
-            dynamicParentInSameViewport,
-            parentViewportId
-          );
+            const parentDynamicInfo = getNodeDynamicInfo(
+              dynamicParentInSameViewport
+            );
+            const parentBasics = getNodeBasics(dynamicParentInSameViewport);
+            const parentNodeParentId = getNodeParent(
+              dynamicParentInSameViewport
+            );
+
+            const allNodes = getCurrentNodes();
+            const parentViewportId =
+              parentDynamicInfo.dynamicViewportId ||
+              findParentViewport(
+                parentDynamicInfo.originalParentId,
+                allNodes
+              ) ||
+              findParentViewport(parentNodeParentId, allNodes);
+
+            if (parentViewportId) {
+              console.log(`Setting active viewport to: ${parentViewportId}`);
+              dynamicOps.switchDynamicViewport(parentViewportId);
+            } else {
+              console.warn(
+                "Could not determine viewport for node:",
+                dynamicParentInSameViewport
+              );
+              dynamicOps.switchDynamicViewport("viewport-1440");
+            }
+
+            dynamicOps.setDynamicModeNodeId(dynamicParentInSameViewport);
+          }
         }
       };
 

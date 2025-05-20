@@ -3954,7 +3954,6 @@ export class NodeDispatcher {
     );
   }
 
-  // Helper function to reliably get the viewport ID regardless of nesting level
   getEffectiveViewport(nodeId, nodes) {
     let currentNode = nodes.find((n) => n.id === nodeId);
     while (currentNode && !currentNode.isViewport) {
@@ -3964,9 +3963,6 @@ export class NodeDispatcher {
     return currentNode ? currentNode.id : null;
   }
 
-  // 1. Store dynamic node state with enhanced context
-  // Updated: storeDynamicNodeState()
-  // When entering dynamic mode, we record extra info such as the parent’s sharedId.
   storeDynamicNodeState(nodeId: string | number | null) {
     this.setState((prev) =>
       produce(prev, (draft) => {

@@ -13,6 +13,7 @@ import {
 import { useGetNodeFlags } from "../atoms/node-store";
 import { collectDraggedNodesInfo } from "./dnd-utils";
 import { useGetSelectedIds } from "../atoms/select-store";
+import { useGetDynamicModeNodeId } from "../atoms/dynamic-store"; // Add this import for logging
 
 export const useDragStart = () => {
   const getNode = useGetNode();
@@ -22,24 +23,47 @@ export const useDragStart = () => {
   const getNodeFlags = useGetNodeFlags();
   const getNodeStyle = useGetNodeStyle();
   const getSelectedIds = useGetSelectedIds();
+  const getDynamicModeNodeId = useGetDynamicModeNodeId(); // For logging purposes
 
   return (
     e: React.MouseEvent,
     fromToolbarType?: string,
     nodeObj?: { id: NodeId; type?: string }
   ) => {
+    console.log("🟢 DRAG START - Event:", e.type, "Node:", nodeObj?.id);
     e.preventDefault();
     e.stopPropagation();
 
-    if (!nodeObj?.id) return;
+    if (!nodeObj?.id) {
+      console.log("❌ No node ID provided for drag start");
+      return;
+    }
 
     const nodeId = nodeObj.id;
     const node = getNode(nodeId);
     const nodeStyle = getNodeStyle(nodeId);
     const nodeFlags = getNodeFlags(nodeId);
+    const dynamicModeNodeId = getDynamicModeNodeId(); // Get dynamic mode node ID for logging
+
+    console.log("🔹 Node info:", {
+      id: nodeId,
+      style: {
+        position: nodeStyle.position,
+        isAbsoluteInFrame: nodeStyle.isAbsoluteInFrame,
+      },
+      flags: {
+        isDynamic: nodeFlags.isDynamic,
+        isVariant: nodeFlags.isVariant,
+        inViewport: nodeFlags.inViewport,
+      },
+      dynamicMode: !!dynamicModeNodeId,
+      dynamicModeNodeId: dynamicModeNodeId,
+    });
 
     const parentId = getNodeParent(nodeId);
+    console.log("🔹 Parent ID:", parentId);
     const isOnCanvas = !parentId && !nodeFlags.inViewport;
+    console.log("🔹 IsOnCanvas:", isOnCanvas);
 
     // Reset drag back to parent state on new drag operation
     dragOps.setDragBackToParentInfo({
@@ -54,9 +78,16 @@ export const useDragStart = () => {
         nodeStyle.position === "fixed" ||
         nodeStyle.position === "absolute") &&
       parentId;
+    console.log("🔹 IsAbsoluteInFrame:", isAbsoluteInFrame);
 
-    // Set drag source
-    if (isOnCanvas) {
+    let dragSource = "";
+
+    if (dynamicModeNodeId) {
+      dragSource = "canvas";
+      dragOps.setDragSource("canvas");
+    } else if (isOnCanvas) {
+      dragSource = "canvas";
+      console.log("🔹 Setting drag source: canvas");
       dragOps.setDragSource("canvas");
     } else if (
       nodeFlags.inViewport &&
@@ -64,12 +95,20 @@ export const useDragStart = () => {
       nodeStyle.position !== "fixed" &&
       nodeStyle.position !== "absolute"
     ) {
+      dragSource = "viewport";
+      console.log("🔹 Setting drag source: viewport");
       dragOps.setDragSource("viewport");
     } else if (fromToolbarType) {
+      dragSource = "toolbar";
+      console.log("🔹 Setting drag source: toolbar");
       dragOps.setDragSource("toolbar");
     } else if (isAbsoluteInFrame) {
+      dragSource = "absolute-in-frame";
+      console.log("🔹 Setting drag source: absolute-in-frame");
       dragOps.setDragSource("absolute-in-frame");
     } else {
+      dragSource = "parent";
+      console.log("🔹 Setting drag source: parent");
       dragOps.setDragSource("parent");
     }
 
@@ -77,6 +116,8 @@ export const useDragStart = () => {
     const selectedIds = getSelectedIds();
     const isMultiSelection =
       selectedIds.includes(nodeId) && selectedIds.length > 1;
+    console.log("🔹 Selected IDs:", selectedIds);
+    console.log("🔹 Is multi-selection:", isMultiSelection);
 
     // Filter selected nodes based on same context (parent container or canvas)
     const validSelectedIds = isMultiSelection
@@ -103,6 +144,7 @@ export const useDragStart = () => {
           }
         })
       : [nodeId];
+    console.log("🔹 Valid selected IDs:", validSelectedIds);
 
     // For nodes in the same parent, sort them by their DOM order
     if (parentId && validSelectedIds.length > 1) {
@@ -110,6 +152,7 @@ export const useDragStart = () => {
       validSelectedIds.sort(
         (a, b) => siblings.indexOf(a) - siblings.indexOf(b)
       );
+      console.log("🔹 Sorted selected IDs:", validSelectedIds);
     }
 
     // Store original indices for all dragged nodes
@@ -124,6 +167,11 @@ export const useDragStart = () => {
         }
       });
 
+      console.log(
+        "🔹 Original indices:",
+        Object.fromEntries([...originalIndices])
+      );
+
       // Store in drag state
       dragOps.setDraggedNodesOriginalIndices(originalIndices);
     }
@@ -133,19 +181,28 @@ export const useDragStart = () => {
     let mainPlaceholder = null;
 
     if (!isAbsoluteInFrame && !isOnCanvas) {
+      console.log("🔹 Creating placeholders for selected nodes");
       // Create placeholders for each selected node
       for (let i = 0; i < validSelectedIds.length; i++) {
         const currentId = validSelectedIds[i];
         const currentNode = getNode(currentId);
         const currentParentId = getNodeParent(currentId);
 
-        if (!currentNode || !currentParentId) continue;
+        if (!currentNode || !currentParentId) {
+          console.log(
+            `❌ Cannot create placeholder for node ${currentId}: missing node or parent`
+          );
+          continue;
+        }
 
         const element = document.querySelector(
           `[data-node-id="${currentId}"]`
         ) as HTMLElement;
 
-        if (!element) continue;
+        if (!element) {
+          console.log(`❌ Cannot find DOM element for node ${currentId}`);
+          continue;
+        }
 
         // Create placeholder for this node
         const placeholder = createPlaceholder({
@@ -153,6 +210,9 @@ export const useDragStart = () => {
           element,
           transform: getTransform(),
         });
+        console.log(
+          `✅ Created placeholder ${placeholder.id} for node ${currentId}`
+        );
 
         placeholders.push({
           id: placeholder.id,
@@ -163,28 +223,46 @@ export const useDragStart = () => {
         // Set main placeholder (for the node that initiated the drag)
         if (currentId === nodeId) {
           mainPlaceholder = placeholder;
+          console.log(`✅ Set main placeholder to ${placeholder.id}`);
         }
       }
 
       // Sort placeholders by their index
       placeholders.sort((a, b) => a.index - b.index);
+      console.log("🔹 Sorted placeholders:", placeholders);
 
       // Add all placeholders sequentially to maintain order
       if (parentId && placeholders.length > 0) {
         // Insert all placeholders at the position of the first selected node
         const firstIndex = placeholders[0].index;
+        console.log(
+          `🔹 Inserting placeholders starting at index ${firstIndex}`
+        );
 
         for (let i = 0; i < placeholders.length; i++) {
           // Add placeholder to parent
           addNode(placeholders[i].id, parentId);
+          console.log(
+            `✅ Added placeholder ${placeholders[i].id} to parent ${parentId}`
+          );
 
           // Position at sequential indices starting from first index
           moveNode(placeholders[i].id, parentId, firstIndex + i);
+          console.log(
+            `✅ Moved placeholder ${placeholders[i].id} to index ${
+              firstIndex + i
+            }`
+          );
         }
       }
+    } else {
+      console.log(
+        "🔹 Skipping placeholder creation - node is absolute in frame or on canvas"
+      );
     }
 
     // Use utility to collect all nodes to drag
+    console.log("🔹 Collecting dragged nodes info");
     const draggedNodesInfo = collectDraggedNodesInfo(
       nodeId,
       validSelectedIds,
@@ -195,6 +273,7 @@ export const useDragStart = () => {
       e,
       getTransform
     );
+    console.log("🔹 Dragged nodes info:", draggedNodesInfo);
 
     // Store all placeholder info for the dragged nodes
     if (draggedNodesInfo.draggedNodes.length > 0 && placeholders.length > 0) {
@@ -202,6 +281,9 @@ export const useDragStart = () => {
       if (mainPlaceholder) {
         draggedNodesInfo.draggedNodes[0].offset.placeholderId =
           mainPlaceholder.id;
+        console.log(
+          `✅ Set main placeholder ID on primary node: ${mainPlaceholder.id}`
+        );
       }
 
       // Create placeholder info for the drag operation
@@ -215,24 +297,20 @@ export const useDragStart = () => {
         targetId: null,
         position: null,
       };
+      console.log("🔹 Created placeholder info:", placeholderInfo);
 
       // Store placeholder info in drag state
       dragOps.setPlaceholderInfo(placeholderInfo);
     }
 
     // Set dragging state
+    console.log("🔹 Setting isDragging to true");
     dragOps.setIsDragging(true);
 
     // Set all dragged nodes
+    console.log("🔹 Setting dragged nodes:", draggedNodesInfo.draggedNodes);
     dragOps.setDraggedNodes(draggedNodesInfo.draggedNodes);
 
-    // Debug: Log drag back to parent info
-    console.log("Drag start - Original parent:", parentId);
-    console.log(
-      "Drag start - Original indices:",
-      Object.fromEntries([
-        ...dragOps.getState().dragBackToParentInfo.draggedNodesOriginalIndices,
-      ])
-    );
+    console.log("🟢 DRAG START COMPLETE");
   };
 };
