@@ -22,25 +22,11 @@ import {
   useGetNodeDynamicInfo,
   useGetNodeFlags,
   useGetNodeParent,
-  nodeStore,
-  nodeIdsAtom,
   useGetNodeIds,
-  nodeSharedInfoAtom,
   useGetNodeSharedInfo,
   updateNodeDynamicInfo,
-  getCurrentNodes,
-  batchNodeUpdates,
 } from "../atoms/node-store";
-import {
-  childrenMapAtom,
-  hierarchyStore,
-} from "../atoms/node-store/hierarchy-store";
-import {
-  createDynamicVariant,
-  duplicateNode,
-  duplicateSubtree,
-} from "../atoms/node-store/operations/insert-operations";
-import { updateNodeFlags } from "../atoms/node-store/operations/update-operations";
+import { createDynamicVariant } from "../atoms/node-store/operations/dynamic-operations";
 
 interface AddVariantsUIProps {
   nodeId: NodeId;
@@ -442,7 +428,6 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
 
     console.log("Creating variant for dynamic node:", topmostParent.id);
 
-    //
     const familyId =
       topmostParent.dynamicFamilyId ||
       getNodeDynamicInfo(dynamicModeNodeId)?.dynamicFamilyId ||
@@ -456,9 +441,44 @@ export const AddVariantsUI: React.FC<AddVariantsUIProps> = ({ nodeId }) => {
       });
     }
 
+    // Create a simple position object with all the information needed
+    // This includes the position type and the raw value of buttonPosition
+    // Using the exact constants from findBestButtonPosition
+    const padding = 200; // Same padding value used in findBestButtonPosition
+
+    // Get the node's style to determine its dimensions and position
+    const nodeStyle = getNodeStyle(topmostParent.id);
+
+    // Create a pure positioning information object with everything needed
+    // to precisely position the variant at the button location
+    const positionInfo = {
+      // Current source node position data
+      sourceNode: {
+        id: topmostParent.id,
+        left: nodeStyle?.left || "0px",
+        top: nodeStyle?.top || "0px",
+        width: nodeStyle?.width || "auto",
+        height: nodeStyle?.height || "auto",
+        position: nodeStyle?.position || "relative",
+      },
+      // Button positioning data (from the calculated buttonPosition)
+      buttonPosition: {
+        ...buttonPosition, // This includes left, top, and position (right/left/top/bottom)
+        padding, // Original padding/gap value
+      },
+      // Element dimensions for proper centering calculations
+      dimensions: {
+        elementWidth: elementSize.width,
+        elementHeight: elementSize.height,
+      },
+    };
+
+    console.log("Passing position info:", positionInfo);
+
     const newVariantId = createDynamicVariant(
       topmostParent.id,
-      activeViewportInDynamicMode
+      activeViewportInDynamicMode,
+      positionInfo
     );
 
     if (newVariantId) {

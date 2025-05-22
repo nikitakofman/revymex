@@ -36,6 +36,7 @@ import { canvasOps } from "@/builder/context/atoms/canvas-interaction-store";
 import {
   dynamicOps,
   useDynamicModeNodeId,
+  useActiveViewportInDynamicMode,
 } from "@/builder/context/atoms/dynamic-store";
 import {
   useNodeChildren,
@@ -64,7 +65,11 @@ import { updateNodeStyle } from "@/builder/context/atoms/node-store/operations/s
 import { updateNodeFlags } from "@/builder/context/atoms/node-store/operations/update-operations";
 
 interface TreeNodeProps {
-  node: TreeNodeWithChildren;
+  node: TreeNodeWithChildren & {
+    isTopLevelDynamicNode?: boolean;
+    dynamicFamilyId?: string;
+    dynamicViewportId?: string | number;
+  };
   level?: number;
 }
 
@@ -73,9 +78,9 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const currentSelectedIds = useGetSelectedIds();
   const { addToSelection, selectNode } = selectOps;
   const dynamicModeNodeId = useDynamicModeNodeId();
+  const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
   const isDynamicMode = !!dynamicModeNodeId;
   const isDynamicNode = node.id === dynamicModeNodeId;
-  const isDynamicChild = node.dynamicParentId === dynamicModeNodeId;
 
   // Get node data from store
   const getNodeBasics = useGetNodeBasics();
@@ -98,7 +103,52 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<number | null>(null);
 
-  const hasChildren = childrenIds.length > 0;
+  // Filter children based on dynamic mode rules
+  const getFilteredChildren = () => {
+    if (!isDynamicMode) {
+      // In normal mode, if this is a top-level dynamic node, don't show its children
+      const dynamicInfo = getNodeDynamicInfo(node.id);
+      if (node.isDynamic && dynamicInfo.isTopLevelDynamicNode) {
+        return [];
+      }
+
+      // For non-dynamic nodes, filter children
+      return childrenIds.filter((childId) => {
+        const childBasics = getNodeBasics(childId);
+        const childFlags = getNodeFlags(childId);
+        const childDynamicInfo = getNodeDynamicInfo(childId);
+
+        // Filter out placeholders
+        if (childBasics.type === "placeholder") return false;
+
+        // Don't show variants in normal mode
+        if (childFlags.isVariant) return false;
+
+        // If it's a dynamic node, only show if it's top-level
+        if (childFlags.isDynamic) {
+          return childDynamicInfo.isTopLevelDynamicNode === true;
+        }
+
+        return true;
+      });
+    } else {
+      // In dynamic mode, only show children that belong to the active viewport
+      return childrenIds.filter((childId) => {
+        const childBasics = getNodeBasics(childId);
+        const childDynamicInfo = getNodeDynamicInfo(childId);
+
+        // Filter out placeholders
+        if (childBasics.type === "placeholder") return false;
+
+        return (
+          childDynamicInfo.dynamicViewportId === activeViewportInDynamicMode
+        );
+      });
+    }
+  };
+
+  const filteredChildrenIds = getFilteredChildren();
+  const hasChildren = filteredChildrenIds.length > 0;
 
   const isSelected = useAtomValue(isNodeSelectedAtom(node.id), {
     store: selectStore,
@@ -600,7 +650,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             } else {
               // Other selected nodes go after the previous selected node
               const prevId = selectedIds[index - 1];
-              const siblings = childrenIds;
+              const siblings = filteredChildrenIds;
               const prevIndex = siblings.indexOf(prevId);
 
               // Insert after the previous node
@@ -673,7 +723,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                 // Find the index of the target node among its siblings
                 const parentId = getNodeParent(node.id);
                 if (parentId !== null) {
-                  const siblings = childrenIds;
+                  const siblings = filteredChildrenIds;
                   const targetIndex = siblings.indexOf(node.id);
 
                   // Insert at the target index
@@ -693,7 +743,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                 // Find the index of the previous node among its siblings
                 const parentId = getNodeParent(prevId);
                 if (parentId !== null) {
-                  const siblings = childrenIds;
+                  const siblings = filteredChildrenIds;
                   const prevIndex = siblings.indexOf(prevId);
 
                   // Insert after the previous node
@@ -714,7 +764,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             // Find the index of the target node among its siblings
             const parentId = getNodeParent(node.id);
             if (parentId !== null) {
-              const siblings = childrenIds;
+              const siblings = filteredChildrenIds;
               const targetIndex = siblings.indexOf(node.id);
 
               // Insert at the target index
@@ -742,7 +792,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                 // Find the index of the target node among its siblings
                 const parentId = getNodeParent(node.id);
                 if (parentId !== null) {
-                  const siblings = childrenIds;
+                  const siblings = filteredChildrenIds;
                   const targetIndex = siblings.indexOf(node.id);
 
                   // Insert after the target node
@@ -762,7 +812,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                 // Find the index of the previous node among its siblings
                 const parentId = getNodeParent(prevId);
                 if (parentId !== null) {
-                  const siblings = childrenIds;
+                  const siblings = filteredChildrenIds;
                   const prevIndex = siblings.indexOf(prevId);
 
                   // Insert after the previous node
@@ -783,7 +833,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
             // Find the index of the target node among its siblings
             const parentId = getNodeParent(node.id);
             if (parentId !== null) {
-              const siblings = childrenIds;
+              const siblings = filteredChildrenIds;
               const targetIndex = siblings.indexOf(node.id);
 
               // Insert after the target node
@@ -856,7 +906,7 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
                   // Find the index of the previous node among its siblings
                   const parentId = getNodeParent(prevId);
                   if (parentId !== null) {
-                    const siblings = childrenIds;
+                    const siblings = filteredChildrenIds;
                     const prevIndex = siblings.indexOf(prevId);
 
                     // Insert after the previous node
@@ -971,6 +1021,13 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
   // Get required node data
   const basics = getNodeBasics(node.id);
   const flags = getNodeFlags(node.id);
+  const dynamicInfo = getNodeDynamicInfo(node.id);
+
+  // Visual styling for dynamic nodes
+  const isDynamicChild =
+    isDynamicMode &&
+    dynamicInfo.dynamicFamilyId === dynamicInfo.dynamicFamilyId &&
+    !dynamicInfo.isTopLevelDynamicNode;
 
   return (
     <li className="relative select-none list-none">
@@ -1162,27 +1219,32 @@ const TreeNodeComponent: React.FC<TreeNodeProps> = ({ node, level = 0 }) => {
 
       {hasChildren && isExpanded && (
         <ul className="mt-0.5 space-y-0.5 list-none">
-          {childrenIds.map((childId) => (
-            <TreeNodeComponent
-              key={childId}
-              node={{
-                id: childId,
-                type: getNodeBasics(childId).type,
-                customName: getNodeBasics(childId).customName,
-                style: getNodeStyle(childId),
-                isViewport: getNodeFlags(childId).isViewport,
-                viewportWidth: getNodeFlags(childId).viewportWidth,
-                inViewport: getNodeFlags(childId).inViewport,
-                isDynamic: getNodeFlags(childId).isDynamic,
-                isVariant: getNodeFlags(childId).isVariant,
-                isLocked: getNodeFlags(childId).isLocked,
-                parentId: getNodeParent(childId),
-                dynamicParentId: getNodeDynamicInfo(childId).dynamicParentId,
-                children: [], // Children will be fetched by the child component
-              }}
-              level={level + 1}
-            />
-          ))}
+          {filteredChildrenIds.map((childId) => {
+            const childDynamicInfo = getNodeDynamicInfo(childId);
+            return (
+              <TreeNodeComponent
+                key={childId}
+                node={{
+                  id: childId,
+                  type: getNodeBasics(childId).type,
+                  customName: getNodeBasics(childId).customName,
+                  style: getNodeStyle(childId),
+                  isViewport: getNodeFlags(childId).isViewport,
+                  viewportWidth: getNodeFlags(childId).viewportWidth,
+                  inViewport: getNodeFlags(childId).inViewport,
+                  isDynamic: getNodeFlags(childId).isDynamic,
+                  isVariant: getNodeFlags(childId).isVariant,
+                  isLocked: getNodeFlags(childId).isLocked,
+                  isTopLevelDynamicNode: childDynamicInfo.isTopLevelDynamicNode,
+                  dynamicFamilyId: childDynamicInfo.dynamicFamilyId,
+                  dynamicViewportId: childDynamicInfo.dynamicViewportId,
+                  parentId: getNodeParent(childId),
+                  children: [], // Children will be fetched by the child component
+                }}
+                level={level + 1}
+              />
+            );
+          })}
         </ul>
       )}
     </li>

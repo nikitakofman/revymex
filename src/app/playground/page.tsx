@@ -1,16 +1,12 @@
 "use client";
 
 import React from "react";
-import PreviewPlay from "./components/preview/previewplay";
-import TextCss from "./components/textcss";
-import DuplicateDyna from "./components/duplicatedyna";
-import SimpleEditor from "./components/tiptap";
-import Sticky from "./components/sticky";
+import LeftTopAnim from "./components/lefttopanim";
 
 type Props = {};
 
 const page = (props: Props) => {
-  return <Sticky />;
+  return <LeftTopAnim />;
 };
 
 export default page;

@@ -77,10 +77,10 @@ export interface NodeDynamicInfo {
     parentId: NodeId | null;
     inViewport: boolean;
   };
-  // From NodeVariantInfo
   variantParentId?: NodeId;
   variantInfo?: VariantInfo;
   variantResponsiveId?: string;
+  isTopLevelDynamicNode?: boolean;
 }
 
 export interface NodeSharedInfo {
@@ -442,8 +442,6 @@ export const useGetNodeDynamicInfo = () => {
   }, []);
 };
 
-// Removed useGetNodeVariantInfo
-
 export const useGetNodeSyncFlags = () => {
   return useCallback((id: NodeId): NodeSyncFlags => {
     return nodeStore.get(nodeSyncFlagsAtom(id));
@@ -585,10 +583,10 @@ export function initNodeStateFromInitialState(initialState: NodeState) {
       dynamicFamilyId: node.dynamicFamilyId,
       originalParentId: node.originalParentId,
       originalState: node.originalState,
-      // From variant info
       variantParentId: node.variantParentId,
       variantInfo: node.variantInfo,
       variantResponsiveId: node.variantResponsiveId,
+      isTopLevelDynamicNode: node.isTopLevelDynamicNode,
     };
 
     if (Object.values(dynamicInfo).some((val) => val !== undefined)) {
@@ -706,3 +704,29 @@ export function updateNodeDynamicInfo(
     }));
   });
 }
+
+export function markNodeAsTopLevelDynamic(
+  nodeId: NodeId,
+  isTopLevel: boolean = true
+) {
+  batchNodeUpdates(() => {
+    nodeStore.set(nodeDynamicInfoAtom(nodeId), (prev) => ({
+      ...prev,
+      isTopLevelDynamicNode: isTopLevel,
+    }));
+  });
+}
+
+// 4. Create a helper hook to check if a node is a top-level dynamic node
+export const useIsTopLevelDynamicNode = (nodeId: NodeId) => {
+  const dynamicInfo = useNodeDynamicInfo(nodeId);
+  return !!dynamicInfo.isTopLevelDynamicNode;
+};
+
+// 5. Callback version for imperative code
+export const useGetIsTopLevelDynamicNode = () => {
+  return useCallback((nodeId: NodeId): boolean => {
+    const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(nodeId));
+    return !!dynamicInfo.isTopLevelDynamicNode;
+  }, []);
+};

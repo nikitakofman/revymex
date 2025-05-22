@@ -1,11 +1,12 @@
-import React, { useCallback, useMemo } from "react";
-import {
-  useBuilder,
-  useBuilderDynamic,
-  useBuilderRefs,
-} from "@/builder/context/builderState";
-import { Node } from "@/builder/reducer/nodeDispatcher";
-import { useGetSelectedIds } from "../atoms/select-store";
+import React, {
+  useCallback,
+  useMemo,
+  useEffect,
+  useState,
+  useRef,
+} from "react";
+import { useBuilderRefs } from "@/builder/context/builderState";
+import { useGetSelectedIds, useSelectedIds } from "../atoms/select-store";
 import {
   useTransform,
   useIsMovingCanvas,
@@ -14,96 +15,120 @@ import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
 } from "../atoms/dynamic-store";
+import {
+  NodeId,
+  getCurrentNodes,
+  useNodeIds,
+  nodeDynamicInfoAtom,
+  nodeStore,
+} from "../atoms/node-store";
 
 export const ArrowConnectors = () => {
-  const { nodeState } = useBuilderDynamic();
+  // Get DOM references
   const { contentRef } = useBuilderRefs();
 
-  // Use atoms for state
+  // Use state to force re-renders when connections change
+  const [renderKey, setRenderKey] = useState(0);
+
+  // Use these hooks to access selection state
+  const selectedIds = useSelectedIds(); // For reactive updates
+  const getSelectedIds = useGetSelectedIds(); // For imperative access
+
+  // Get viewport and canvas state
   const transform = useTransform();
   const dynamicModeNodeId = useDynamicModeNodeId();
   const activeViewportInDynamicMode = useActiveViewportInDynamicMode();
   const isMovingCanvas = useIsMovingCanvas();
+  const nodeIds = useNodeIds();
 
-  // Imperative getters for use in callbacks
-  const getSelectedIds = useGetSelectedIds();
+  // Get all nodes directly to ensure fresh data
+  const getAllNodes = useCallback(() => {
+    return getCurrentNodes();
+  }, []);
 
-  // We need to move these hooks before any early returns
-  const getAdjustedPosition = useCallback(
-    (rect: DOMRect, containerRect: DOMRect) => {
-      return {
-        x:
-          (rect.left - containerRect.left) / transform.scale +
-          transform.x / transform.scale,
-        y:
-          (rect.top - containerRect.top) / transform.scale +
-          transform.y / transform.scale,
-        width: rect.width / transform.scale,
-        height: rect.height / transform.scale,
-      };
-    },
-    [transform]
-  );
+  // Subscribe to dynamic info changes for connections
+  useEffect(() => {
+    if (!dynamicModeNodeId) return;
+
+    // Subscribe to all nodes to detect connection changes
+    const unsubscribeFns: Array<() => void> = [];
+
+    // Subscribe to nodes for connection changes
+    nodeIds.forEach((id) => {
+      const unsub = nodeStore.sub(nodeDynamicInfoAtom(id), () => {
+        const newInfo = nodeStore.get(nodeDynamicInfoAtom(id));
+
+        if (newInfo.dynamicConnections) {
+          // Force re-render when connections change
+          setRenderKey((prev) => prev + 1);
+        }
+      });
+
+      unsubscribeFns.push(unsub);
+    });
+
+    return () => {
+      unsubscribeFns.forEach((unsub) => unsub());
+    };
+  }, [dynamicModeNodeId, nodeIds]);
+
+  // Force re-render when selection changes
+  useEffect(() => {
+    setRenderKey((prev) => prev + 1);
+  }, [selectedIds]); // When selectedIds changes, re-render
 
   // Find the current active viewport ID
   const activeViewportId = useMemo(() => {
     if (!dynamicModeNodeId) return null;
 
-    // Check the explicit active viewport first
     if (activeViewportInDynamicMode) {
       return activeViewportInDynamicMode;
     }
 
-    // Otherwise, try to determine from the dynamic mode node
-    const dynamicNode = nodeState.nodes.find((n) => n.id === dynamicModeNodeId);
+    const allNodes = getAllNodes();
+    const dynamicNode = allNodes.find((n) => n.id === dynamicModeNodeId);
+
     if (dynamicNode?.dynamicViewportId) {
       return dynamicNode.dynamicViewportId;
     }
 
     return null;
-  }, [dynamicModeNodeId, activeViewportInDynamicMode, nodeState.nodes]);
+  }, [dynamicModeNodeId, activeViewportInDynamicMode, getAllNodes]);
 
-  // Get all nodes in the current active viewport
-  const nodesInActiveViewport = useMemo(() => {
-    if (!activeViewportId) return [];
-
-    return nodeState.nodes.filter(
-      (node) => node.dynamicViewportId === activeViewportId
-    );
-  }, [nodeState.nodes, activeViewportId]);
-
-  // Find all relevant connections in the current viewport
-  // Get the selected IDs only when computing the connections
+  // Find all relevant connections involving ONLY the selected node
   const relevantConnections = useMemo(() => {
     if (!activeViewportId) return [];
 
-    // Get the selected IDs imperatively only when this memo runs
-    const selectedIds = getSelectedIds();
-    if (selectedIds.length === 0) return [];
+    // FIXED: Only show connections for the primary selected node, not its children
+    const primarySelectedId = selectedIds[0];
+    if (!primarySelectedId) return [];
 
     const result = [];
     const processedConnections = new Set();
+    const allNodes = getAllNodes();
 
-    // Direct connections from selected nodes
-    for (const selectedId of selectedIds) {
-      const selectedNode = nodeState.nodes.find((n) => n.id === selectedId);
-      if (!selectedNode) continue;
+    // Get all nodes in the active viewport
+    const nodesInViewport = allNodes.filter(
+      (node) => node.dynamicViewportId === activeViewportId
+    );
 
-      // Check outgoing connections from the selected node
-      if (
-        selectedNode.dynamicConnections &&
-        selectedNode.dynamicConnections.length > 0
-      ) {
-        for (const conn of selectedNode.dynamicConnections) {
+    // Check ALL nodes in viewport for connections
+    for (const node of nodesInViewport) {
+      // Skip if no connections
+      if (!node.dynamicConnections || node.dynamicConnections.length === 0) {
+        continue;
+      }
+
+      // OUTGOING CONNECTIONS: Only show connections from the exact selected node
+      if (node.id === primarySelectedId) {
+        for (const conn of node.dynamicConnections) {
           // Skip if we've already processed this connection
           const connectionKey = `${conn.sourceId}-${conn.targetId}-${conn.type}`;
           if (processedConnections.has(connectionKey)) continue;
           processedConnections.add(connectionKey);
 
           // Get the target node
-          const targetNode = nodeState.nodes.find(
-            (n) => n.id === conn.targetId
-          );
+          const targetNode = allNodes.find((n) => n.id === conn.targetId);
           // Skip if the target doesn't exist or isn't in the same viewport
           if (!targetNode || targetNode.dynamicViewportId !== activeViewportId)
             continue;
@@ -116,18 +141,13 @@ export const ArrowConnectors = () => {
           });
         }
       }
-    }
 
-    // Direct connections to selected nodes (incoming connections)
-    for (const node of nodesInActiveViewport) {
-      // Skip nodes without connections
-      if (!node.dynamicConnections || node.dynamicConnections.length === 0)
-        continue;
-
-      // Check each connection for a selected target
+      // INCOMING CONNECTIONS: Check for connections TO the exact selected node
       for (const conn of node.dynamicConnections) {
-        // Skip if the target is not selected
-        if (!selectedIds.includes(conn.targetId)) continue;
+        // Skip if this connection is not targeting the exactly selected node
+        if (conn.targetId !== primarySelectedId) {
+          continue;
+        }
 
         // Create a unique identifier for this connection
         const connectionKey = `${conn.sourceId}-${conn.targetId}-${conn.type}`;
@@ -136,6 +156,7 @@ export const ArrowConnectors = () => {
         if (processedConnections.has(connectionKey)) continue;
         processedConnections.add(connectionKey);
 
+        // Add the incoming connection
         result.push({
           ...conn,
           connectionKey,
@@ -146,12 +167,7 @@ export const ArrowConnectors = () => {
     }
 
     return result;
-  }, [
-    nodesInActiveViewport,
-    activeViewportId,
-    nodeState.nodes,
-    getSelectedIds,
-  ]);
+  }, [activeViewportId, selectedIds, getAllNodes, renderKey]);
 
   // Group connections by source-target pair
   const connectionGroups = useMemo(() => {
@@ -301,8 +317,9 @@ export const ArrowConnectors = () => {
     };
   };
 
+  // Render the component with a key to force re-render when connections change
   return (
-    <div className="absolute inset-0 pointer-events-none z-50">
+    <div className="absolute inset-0 pointer-events-none z-50" key={renderKey}>
       {connectionGroups.map(({ key, connections, sourceId, targetId }) => {
         // Sort connections for consistent order (mouseLeave, hover, click)
         const sortedConnections = [...connections].sort((a, b) => {
@@ -310,7 +327,7 @@ export const ArrowConnectors = () => {
           return (order[a.type] || 4) - (order[b.type] || 4);
         });
 
-        // Get the DOM elements
+        // Get the DOM elements for the source and target
         const source = document.querySelector(`[data-node-id="${sourceId}"]`);
         const target = document.querySelector(`[data-node-id="${targetId}"]`);
 
@@ -366,7 +383,7 @@ export const ArrowConnectors = () => {
         // SVG for the connections
         return (
           <svg
-            key={key}
+            key={`${key}-${renderKey}`}
             className="absolute top-0 left-0 w-full h-full overflow-visible"
           >
             {/* Create connection paths */}
@@ -430,7 +447,8 @@ export const ArrowConnectors = () => {
                 midY + ctrlOffsetY
               } ${endX} ${endY}`;
 
-              const connectionId = `${sourceId}-${targetId}-${conn.type}`;
+              // Ensure unique IDs for each connection's markers
+              const connectionId = `${sourceId}-${targetId}-${conn.type}-${renderKey}`;
               const connectionColor = getConnectionColor(conn.type);
 
               return (

@@ -15,6 +15,7 @@ import {
   useGetNodeStyle,
   useGetNodeFlags,
   useGetNodeParent,
+  useGetNodeDynamicInfo,
   getCurrentNodes,
 } from "@/builder/context/atoms/node-store";
 import { syncViewports } from "@/builder/context/atoms/node-store/operations/sync-operations";
@@ -40,6 +41,7 @@ const Layers: React.FC = () => {
   const getNodeStyle = useGetNodeStyle();
   const getNodeFlags = useGetNodeFlags();
   const getNodeParent = useGetNodeParent();
+  const getNodeDynamicInfo = useGetNodeDynamicInfo();
 
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -129,6 +131,58 @@ const Layers: React.FC = () => {
     }
   };
 
+  // Filter nodes based on dynamic mode rules
+  const getFilteredRootNodes = () => {
+    if (!isDynamicMode) {
+      // Normal canvas mode - filter out variants and non-top-level dynamic nodes
+      return rootNodeIds.filter((nodeId) => {
+        const basics = getNodeBasics(nodeId);
+        const flags = getNodeFlags(nodeId);
+        const dynamicInfo = getNodeDynamicInfo(nodeId);
+
+        // Filter out placeholders
+        if (basics.type === "placeholder") return false;
+
+        // Always show viewports
+        if (flags.isViewport) return true;
+
+        // Don't show variants in normal mode
+        if (flags.isVariant) return false;
+
+        // If it's a dynamic node, only show if it's top-level
+        if (flags.isDynamic) {
+          return dynamicInfo.isTopLevelDynamicNode === true;
+        }
+
+        // Show all other non-dynamic nodes
+        return true;
+      });
+    } else {
+      // Dynamic mode - only show nodes belonging to the active viewport, NO viewports
+      return rootNodeIds.filter((nodeId) => {
+        const basics = getNodeBasics(nodeId);
+        const flags = getNodeFlags(nodeId);
+        const dynamicInfo = getNodeDynamicInfo(nodeId);
+
+        // Filter out placeholders
+        if (basics.type === "placeholder") return false;
+
+        // Don't show viewports in dynamic mode
+        if (flags.isViewport) return false;
+
+        // Only show nodes that belong to the active viewport
+        if (dynamicInfo.dynamicViewportId === activeViewportInDynamicMode) {
+          // Show both dynamic nodes and variants in dynamic mode
+          return true;
+        }
+
+        return false;
+      });
+    }
+  };
+
+  const filteredRootNodes = getFilteredRootNodes();
+
   return (
     <div
       className="h-full bg-[var(--bg-surface)] scrollbar-hide pb-10 overflow-auto"
@@ -138,10 +192,13 @@ const Layers: React.FC = () => {
     >
       <div className="p-2.5 mt-1 mb-6 space-y-2">
         <ToolbarLabel>
-          <span className="ml-2">Layers</span>
+          <span className="ml-2">
+            Layers {isDynamicMode && "(Dynamic Mode)"}
+          </span>
         </ToolbarLabel>
-        {rootNodeIds.map((nodeId) => {
+        {filteredRootNodes.map((nodeId) => {
           // Create minimal tree node object with required props
+          const dynamicInfo = getNodeDynamicInfo(nodeId);
           const treeNode = {
             id: nodeId,
             type: getNodeBasics(nodeId).type,
@@ -153,6 +210,9 @@ const Layers: React.FC = () => {
             isDynamic: getNodeFlags(nodeId).isDynamic,
             isVariant: getNodeFlags(nodeId).isVariant,
             isLocked: getNodeFlags(nodeId).isLocked,
+            isTopLevelDynamicNode: dynamicInfo.isTopLevelDynamicNode,
+            dynamicFamilyId: dynamicInfo.dynamicFamilyId,
+            dynamicViewportId: dynamicInfo.dynamicViewportId,
             parentId: getNodeParent(nodeId),
             children: [], // Children will be fetched by the component
           };

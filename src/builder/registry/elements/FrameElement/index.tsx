@@ -99,6 +99,8 @@ export const Frame = ({
         }}
         onContextMenu={connectProps.onContextMenu}
         onMouseDown={connectProps.onMouseDown}
+        onMouseOver={connectProps.onMouseOver}
+        onMouseOut={connectProps.onMouseOut}
         onDoubleClick={connectProps.onDoubleClick}
       >
         <BackgroundMedia style={style} />

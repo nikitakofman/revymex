@@ -195,7 +195,7 @@ const Canvas = () => {
                   transformOrigin: "0 0",
                 }}
               >
-                <RenderNodes filter="outOfViewport" />
+                <RenderNodes />
                 <TextEditor />
                 <LineIndicator />
                 <ContextMenu />

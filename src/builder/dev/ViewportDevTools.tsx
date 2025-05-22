@@ -6,10 +6,11 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
+  useRef,
 } from "react";
 import { useBuilderRefs } from "@/builder/context/builderState";
 import { useTheme } from "next-themes";
-import { Sun, Moon, PlayCircle, Copy } from "lucide-react";
+import { Sun, Moon, PlayCircle, Copy, Eye } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useGetSelectedIds } from "../context/atoms/select-store";
 import {
@@ -48,58 +49,66 @@ interface Operation {
 
 // Function to get a comprehensive view of a node from Jotai
 function getDetailedNode(nodeId: NodeId) {
-  const basics = nodeStore.get(nodeBasicsAtom(nodeId));
-  const style = nodeStore.get(nodeStyleAtom(nodeId));
-  const flags = nodeStore.get(nodeFlagsAtom(nodeId));
-  const parentId = nodeStore.get(nodeParentAtom(nodeId));
-  const sharedInfo = nodeStore.get(nodeSharedInfoAtom(nodeId));
-  const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(nodeId));
-  const syncFlags = nodeStore.get(nodeSyncFlagsAtom(nodeId));
-  const dynamicState = nodeStore.get(nodeDynamicStateAtom(nodeId));
+  if (!nodeId) return null;
 
-  // Get children from hierarchy store
-  const childrenMap = hierarchyStore.get(childrenMapAtom);
-  const children = childrenMap.get(nodeId) || [];
+  try {
+    const basics = nodeStore.get(nodeBasicsAtom(nodeId));
+    const style = nodeStore.get(nodeStyleAtom(nodeId));
+    const flags = nodeStore.get(nodeFlagsAtom(nodeId));
+    const parentId = nodeStore.get(nodeParentAtom(nodeId));
+    const sharedInfo = nodeStore.get(nodeSharedInfoAtom(nodeId));
+    const dynamicInfo = nodeStore.get(nodeDynamicInfoAtom(nodeId));
+    const syncFlags = nodeStore.get(nodeSyncFlagsAtom(nodeId));
+    const dynamicState = nodeStore.get(nodeDynamicStateAtom(nodeId));
 
-  return {
-    id: basics.id,
-    type: basics.type,
-    customName: basics.customName,
-    style,
-    parentId,
-    children,
-    sharedId: sharedInfo.sharedId,
-    // Dynamic info
-    dynamicViewportId: dynamicInfo.dynamicViewportId,
-    dynamicFamilyId: dynamicInfo.dynamicFamilyId,
-    dynamicParentId: dynamicInfo.dynamicParentId,
-    dynamicConnections: dynamicInfo.dynamicConnections,
-    dynamicPosition: dynamicInfo.dynamicPosition,
-    originalParentId: dynamicInfo.originalParentId,
-    originalState: dynamicInfo.originalState,
-    // Variant info
-    variantParentId: dynamicInfo.variantParentId,
-    variantInfo: dynamicInfo.variantInfo,
-    variantResponsiveId: dynamicInfo.variantResponsiveId,
-    // Flags
-    isViewport: flags.isViewport,
-    viewportWidth: flags.viewportWidth,
-    viewportName: flags.viewportName,
-    isVariant: flags.isVariant,
-    isDynamic: flags.isDynamic,
-    isLocked: flags.isLocked,
-    isAbsoluteInFrame: flags.isAbsoluteInFrame,
-    inViewport: flags.inViewport,
-    // Sync flags
-    syncFlags: {
-      independentStyles: syncFlags.independentStyles,
-      unsyncFromParentViewport: syncFlags.unsyncFromParentViewport,
-      variantIndependentSync: syncFlags.variantIndependentSync,
-      lowerSyncProps: syncFlags.lowerSyncProps,
-    },
-    // Dynamic state
-    dynamicState,
-  };
+    // Get children from hierarchy store
+    const childrenMap = hierarchyStore.get(childrenMapAtom);
+    const children = childrenMap.get(nodeId) || [];
+
+    return {
+      id: basics.id,
+      type: basics.type,
+      customName: basics.customName,
+      style,
+      parentId,
+      children,
+      sharedId: sharedInfo.sharedId,
+      // Dynamic info
+      dynamicViewportId: dynamicInfo.dynamicViewportId,
+      dynamicFamilyId: dynamicInfo.dynamicFamilyId,
+      dynamicParentId: dynamicInfo.dynamicParentId,
+      dynamicConnections: dynamicInfo.dynamicConnections,
+      dynamicPosition: dynamicInfo.dynamicPosition,
+      originalParentId: dynamicInfo.originalParentId,
+      originalState: dynamicInfo.originalState,
+      // Variant info
+      variantParentId: dynamicInfo.variantParentId,
+      variantInfo: dynamicInfo.variantInfo,
+      variantResponsiveId: dynamicInfo.variantResponsiveId,
+      isTopLevelDynamicNode: dynamicInfo.isTopLevelDynamicNode,
+      // Flags
+      isViewport: flags.isViewport,
+      viewportWidth: flags.viewportWidth,
+      viewportName: flags.viewportName,
+      isVariant: flags.isVariant,
+      isDynamic: flags.isDynamic,
+      isLocked: flags.isLocked,
+      isAbsoluteInFrame: flags.isAbsoluteInFrame,
+      inViewport: flags.inViewport,
+      // Sync flags
+      syncFlags: {
+        independentStyles: syncFlags.independentStyles,
+        unsyncFromParentViewport: syncFlags.unsyncFromParentViewport,
+        variantIndependentSync: syncFlags.variantIndependentSync,
+        lowerSyncProps: syncFlags.lowerSyncProps,
+      },
+      // Dynamic state
+      dynamicState,
+    };
+  } catch (error) {
+    console.error(`Error getting node details for ID ${nodeId}:`, error);
+    return null;
+  }
 }
 
 // Function to get all nodes from the Jotai store
@@ -108,7 +117,7 @@ function getAllNodesFromJotai() {
   const nodeIds = nodeStore.get(nodeIdsAtom);
 
   // Create detailed nodes for each ID
-  return nodeIds.map((id) => getDetailedNode(id));
+  return nodeIds.map((id) => getDetailedNode(id)).filter(Boolean);
 }
 
 // Function to get nodes grouped by viewport
@@ -180,6 +189,37 @@ function getDescendants(nodes: any[], rootId: string | number): any[] {
   }
   return result;
 }
+
+// Component to show node details popup
+const NodeDetailsPopup = ({ node, onClose }) => {
+  if (!node) return null;
+
+  return (
+    <div className="fixed top-20 right-20 z-[9999] bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-lg)] border border-[var(--border-light)] p-4 w-[500px] h-[600px] overflow-auto">
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h3 className="font-bold text-lg">{node.type} Node</h3>
+          <div className="text-sm text-[var(--text-secondary)]">
+            ID: {node.id}
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="px-2 py-1 bg-[var(--control-bg)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+        >
+          Close
+        </button>
+      </div>
+
+      <div>
+        <div className="font-medium mb-1">Full Node Data</div>
+        <pre className="text-xs bg-[var(--control-bg)] p-2 rounded-[var(--radius-sm)] max-h-[550px] overflow-auto">
+          {JSON.stringify(node, null, 2)}
+        </pre>
+      </div>
+    </div>
+  );
+};
 
 const OperationsList: React.FC<{
   operations: Operation[];
@@ -461,26 +501,34 @@ export const ViewportDevTools: React.FC = () => {
     []
   );
 
+  // Add ref for the selected node details popup
+  const [showNodeDetails, setShowNodeDetails] = useState(false);
+  const [selectedNodeDetails, setSelectedNodeDetails] = useState(null);
+
   // Update selected IDs when needed
   useEffect(() => {
-    // Set up a MutationObserver to detect selection changes via DOM attributes
-    const selectionObserver = new MutationObserver(() => {
+    // Function to update the selected IDs and node details
+    const updateSelectedInfo = () => {
       const currentSelectedIds = getSelectedIds();
       setSelectedIdsList(currentSelectedIds);
-    });
+
+      // Update the node details if there's a selection
+      if (currentSelectedIds.length > 0) {
+        const details = getDetailedNode(currentSelectedIds[0]);
+        setSelectedNodeDetails(details);
+      } else {
+        setSelectedNodeDetails(null);
+      }
+    };
+
+    // Set up interval to check for selection changes
+    const selectionInterval = setInterval(updateSelectedInfo, 500);
 
     // Initial update
-    setSelectedIdsList(getSelectedIds());
-
-    // Observe changes to data-selected attribute
-    selectionObserver.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["data-selected"],
-      subtree: true,
-    });
+    updateSelectedInfo();
 
     return () => {
-      selectionObserver.disconnect();
+      clearInterval(selectionInterval);
     };
   }, [getSelectedIds]);
 
@@ -504,10 +552,6 @@ export const ViewportDevTools: React.FC = () => {
   const [openViewportId, setOpenViewportId] = useState<string | number | null>(
     null
   );
-
-  // Get detailed node info for the selected node
-  const selectedNodeDetails =
-    selectedIdsList.length > 0 ? getDetailedNode(selectedIdsList[0]) : null;
 
   if (!mounted) return null;
 
@@ -576,15 +620,34 @@ export const ViewportDevTools: React.FC = () => {
       });
   };
 
+  const handleShowNodeDetails = () => {
+    if (selectedNodeDetails) {
+      setShowNodeDetails(true);
+    } else {
+      setCopyStatus("No node selected");
+      setTimeout(() => setCopyStatus(""), 2000);
+    }
+  };
+
   // Get viewports from hierarchyData instead of filtering jotaiNodes
   const { viewports } = hierarchyData;
 
   return createPortal(
     <>
+      {/* Show selected node details popup */}
+      {showNodeDetails && selectedNodeDetails && (
+        <NodeDetailsPopup
+          node={selectedNodeDetails}
+          onClose={() => setShowNodeDetails(false)}
+        />
+      )}
+
       <div className="fixed resize bottom-14 scale-75 right-[190px] flex gap-2 p-2 bg-[var(--bg-surface)] rounded-[var(--radius-md)] shadow-[var(--shadow-sm)] border border-[var(--border-light)]">
-        <div className="absolute bottom-[-40px] z-[9999] cursor-pointer right-0 p-2">
-          {selectedIdsList[0]}
+        {/* Display selected node ID - always visible */}
+        <div className="absolute bottom-[-40px] z-[9999] right-0 px-3 py-1 bg-[var(--bg-surface)] rounded-[var(--radius-sm)] shadow-[var(--shadow-sm)] border border-[var(--border-light)] text-sm font-mono">
+          {selectedIdsList.length > 0 ? selectedIdsList[0] : "No selection"}
         </div>
+
         <button
           className="px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
           onClick={handleResetView}
@@ -634,6 +697,16 @@ export const ViewportDevTools: React.FC = () => {
           onClick={handleToggleTree}
         >
           Show Tree
+        </button>
+
+        {/* Show Node button - NEW */}
+        <button
+          className="flex items-center gap-1 px-3 py-1 bg-[var(--control-bg)] text-[var(--text-primary)] rounded-[var(--radius-sm)] hover:bg-[var(--control-bg-hover)]"
+          onClick={handleShowNodeDetails}
+          disabled={!selectedNodeDetails}
+        >
+          <Eye className="w-4 h-4" />
+          Show Node
         </button>
 
         {/* Copy JSON button */}

@@ -10,6 +10,7 @@ import {
   useDynamicModeNodeId,
   useActiveViewportInDynamicMode,
   dynamicOps,
+  useGetDetachedNodes,
 } from "@/builder/context/atoms/dynamic-store";
 import {
   useGetNodeIds,
@@ -30,6 +31,7 @@ export const DynamicToolbar: React.FC = () => {
   const getNodeSharedInfo = useGetNodeSharedInfo();
   const getNodeDynamicInfo = useGetNodeDynamicInfo();
   const getNodeStyle = useGetNodeStyle();
+  const getDetachedNodes = useGetDetachedNodes?.() || (() => new Set());
 
   // Use atoms for state
   const dynamicModeNodeId = useDynamicModeNodeId();
@@ -443,6 +445,17 @@ export const DynamicToolbar: React.FC = () => {
 
       if (counterpart) {
         console.log(`Found counterpart: ${counterpart}`);
+
+        // Get the currently detached nodes
+        const detachedNodes = getDetachedNodes();
+
+        // First, store state for the new node we're about to switch to
+        if (!detachedNodes.has(counterpart)) {
+          dynamicOps.storeDynamicNodeState(counterpart);
+          dynamicOps.detachNodeForDynamicMode(counterpart);
+        }
+
+        // Set the dynamic mode ID to the new node
         dynamicOps.setDynamicModeNodeId(counterpart);
 
         // Update mapping for future use
@@ -473,6 +486,7 @@ export const DynamicToolbar: React.FC = () => {
       getNodeDynamicInfo,
       getNodeFlags,
       getNodeParent,
+      getDetachedNodes,
     ]
   );
 
@@ -487,6 +501,20 @@ export const DynamicToolbar: React.FC = () => {
     }
   }, []);
 
+  // Function to exit dynamic mode
+  const handleExitDynamicMode = useCallback(() => {
+    console.log("Exiting dynamic mode");
+
+    // Exit dynamic mode - restoration is handled inside setDynamicModeNodeId
+    dynamicOps.setDynamicModeNodeId(null);
+
+    // Clear selections and state
+    setSelectedIds([]);
+    setActiveViewportId(null);
+    setViewportNodeIds({});
+    setInitialNodeId(null);
+  }, [setSelectedIds]);
+
   if (!dynamicModeNodeId) return null;
 
   return createPortal(
@@ -494,14 +522,7 @@ export const DynamicToolbar: React.FC = () => {
       <Button
         size="sm"
         className="outline outline-[var(--accent-secondary)]"
-        onClick={() => {
-          // Exit dynamic mode - restoration is handled inside setDynamicModeNodeId
-          dynamicOps.setDynamicModeNodeId(null);
-          setSelectedIds([]);
-          setActiveViewportId(null);
-          setViewportNodeIds({});
-          setInitialNodeId(null);
-        }}
+        onClick={handleExitDynamicMode}
       >
         Home
       </Button>

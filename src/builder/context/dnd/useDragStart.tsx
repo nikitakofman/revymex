@@ -82,10 +82,7 @@ export const useDragStart = () => {
 
     let dragSource = "";
 
-    if (dynamicModeNodeId) {
-      dragSource = "canvas";
-      dragOps.setDragSource("canvas");
-    } else if (isOnCanvas) {
+    if (isOnCanvas) {
       dragSource = "canvas";
       console.log("🔹 Setting drag source: canvas");
       dragOps.setDragSource("canvas");

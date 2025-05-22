@@ -60,6 +60,7 @@ export interface Node {
     parentId: string | number | null;
     inViewport: boolean;
   };
+  isTopLevelDynamicNode?: boolean;
   isAbsoluteInFrame?: boolean;
   isFixedInFrame?: boolean;
   isVariant?: boolean;

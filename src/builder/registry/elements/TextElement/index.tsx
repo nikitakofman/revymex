@@ -12,8 +12,10 @@ import {
   useIsEditingText,
   useEditingTextNodeId,
 } from "@/builder/context/atoms/canvas-interaction-store";
-import { useGetDynamicModeNodeId } from "@/builder/context/atoms/drag-store";
-import { dynamicOps } from "@/builder/context/atoms/dynamic-store";
+import {
+  dynamicOps,
+  useGetDynamicModeNodeId,
+} from "@/builder/context/atoms/dynamic-store";
 
 // Default text content when none exists
 const DEFAULT_TEXT = '<p class="text-inherit"><span>Text</span></p>';
@@ -45,8 +47,12 @@ const TextElement = ({ nodeId }: { nodeId: NodeId }) => {
       e.preventDefault();
       e.stopPropagation();
 
+      console.log("Double-click on text node:", nodeFlags.isDynamic);
+
+      console.log("broh", dynamicModeNodeId());
+
       // If in dynamic mode, handle that first
-      if (nodeFlags.isDynamic && dynamicModeNodeId === null) {
+      if (nodeFlags.isDynamic && dynamicModeNodeId() === null) {
         dynamicOps.setDynamicModeNodeId(nodeId);
         return;
       }

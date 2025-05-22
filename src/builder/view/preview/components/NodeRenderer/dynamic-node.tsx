@@ -370,8 +370,10 @@ export const DynamicNode = ({ nodeId }) => {
 
   // Compute the merged style based solely on base node, responsive overrides, and variant.
   const mergedStyle = useMemo(() => {
+    // Start with base node style
     const baseStyle = { ...baseNode.style };
 
+    // Apply responsive node styles if different from base
     if (responsiveNode && responsiveNode.id !== baseNode.id) {
       if (responsiveNode.independentStyles) {
         Object.keys(responsiveNode.independentStyles).forEach((key) => {
@@ -387,6 +389,17 @@ export const DynamicNode = ({ nodeId }) => {
       }
     }
 
+    // Use responsiveBaseNode for viewport-specific position values
+    const currentBaseStyle = { ...responsiveBaseNode.style };
+
+    // Process isFakeFixed for the base style
+    if (
+      currentBaseStyle.isFakeFixed === "true" &&
+      currentBaseStyle.position === "absolute"
+    ) {
+      currentBaseStyle.position = "fixed";
+    }
+
     if (activeVariant) {
       const targetId =
         activeVariant.targetId || activeVariant._originalTargetId;
@@ -395,17 +408,51 @@ export const DynamicNode = ({ nodeId }) => {
         ? { ...targetNode.style }
         : { ...activeVariant.style };
 
-      variantStyle.position = "relative";
-      delete variantStyle.left;
-      delete variantStyle.top;
-      delete variantStyle.right;
-      delete variantStyle.bottom;
+      // Check if the current responsive base node has absolute/fixed positioning
+      const baseHasAbsolutePosition =
+        currentBaseStyle.isAbsoluteInFrame === "true" ||
+        currentBaseStyle.isFakeFixed === "true";
+
+      if (baseHasAbsolutePosition) {
+        // If base node is absolute/fixed, force variant to inherit same position values
+        variantStyle.position =
+          currentBaseStyle.isFakeFixed === "true" ? "fixed" : "absolute";
+        variantStyle.left = currentBaseStyle.left;
+        variantStyle.top = currentBaseStyle.top;
+        variantStyle.right = currentBaseStyle.right;
+        variantStyle.bottom = currentBaseStyle.bottom;
+        variantStyle.isAbsoluteInFrame = currentBaseStyle.isAbsoluteInFrame;
+        variantStyle.isFakeFixed = currentBaseStyle.isFakeFixed;
+      } else if (
+        variantStyle.isAbsoluteInFrame !== "true" &&
+        variantStyle.isFakeFixed !== "true"
+      ) {
+        // Only modify position properties if neither base nor variant are absolute/fixed
+        variantStyle.position = "relative";
+        delete variantStyle.left;
+        delete variantStyle.top;
+        delete variantStyle.right;
+        delete variantStyle.bottom;
+      } else if (
+        variantStyle.isFakeFixed === "true" &&
+        variantStyle.position === "absolute"
+      ) {
+        // Process isFakeFixed for the variant
+        variantStyle.position = "fixed";
+      }
+
       variantStyle.transition = "all 0.3s ease";
       return variantStyle;
     }
 
-    return baseStyle;
-  }, [baseNode.style, activeVariant, originalNodes, responsiveNode]);
+    return currentBaseStyle;
+  }, [
+    baseNode.style,
+    activeVariant,
+    originalNodes,
+    responsiveNode,
+    responsiveBaseNode,
+  ]);
 
   // Interaction handlers
   const handleClick = (e, targetNodeId) => {
@@ -611,11 +658,19 @@ export const DynamicNode = ({ nodeId }) => {
         if (variantChild) {
           childStyle = {
             ...variantChild.style,
-            position: "relative",
-            left: 0,
-            top: 0,
-            right: "auto",
-            bottom: "auto",
+            // Check if the parent base node has absolute positioning
+            ...(childStyle.isAbsoluteInFrame !== "true" &&
+            childStyle.isFakeFixed !== "true" &&
+            variantChild.style.isAbsoluteInFrame !== "true" &&
+            variantChild.style.isFakeFixed !== "true"
+              ? {
+                  position: "relative",
+                  left: 0,
+                  top: 0,
+                  right: "auto",
+                  bottom: "auto",
+                }
+              : {}),
             transition: "all 0.3s ease",
           };
         }
@@ -853,27 +908,57 @@ export const DynamicNode = ({ nodeId }) => {
   const filterPositionProps = (style) => {
     if (!style) return {};
     const result = { ...style };
-    const excludeProps = ["left", "top", "right", "bottom"];
-    excludeProps.forEach((prop) => {
-      delete result[prop];
-    });
-    result.position = "relative";
+
+    // Check if responsive base node has absolute/fixed positioning
+    const baseHasAbsolutePosition =
+      responsiveBaseNode.style.isAbsoluteInFrame === "true" ||
+      responsiveBaseNode.style.isFakeFixed === "true";
+
+    // Only filter position props if neither base nor current style are absolute/fixed positioned
+    if (
+      !baseHasAbsolutePosition &&
+      style.isAbsoluteInFrame !== "true" &&
+      style.isFakeFixed !== "true"
+    ) {
+      const excludeProps = ["left", "top", "right", "bottom"];
+      excludeProps.forEach((prop) => {
+        delete result[prop];
+      });
+      result.position = "relative";
+    }
+
     return result;
   };
 
-  // Dynamic CSS generation for variant styles
+  // Dynamic CSS generation for variant styles - FIXED to not include position properties when base has absolute/fixed
   const variantOverrideCSS = useMemo(() => {
     if (!activeVariant || !activeVariant.style) return "";
+
+    // Check if base has absolute/fixed positioning
+    const baseHasAbsolutePosition =
+      responsiveBaseNode.style.isAbsoluteInFrame === "true" ||
+      responsiveBaseNode.style.isFakeFixed === "true";
+
     const variantStyle = activeVariant.style;
     const cssRules = Object.entries(variantStyle)
-      .filter(
-        ([key]) =>
+      .filter(([key]) => {
+        // Always filter out these
+        if (key === "isAbsoluteInFrame" || key === "isFakeFixed") {
+          return false;
+        }
+        // If base has absolute positioning, filter out ALL position properties from CSS
+        if (baseHasAbsolutePosition) {
+          return !["position", "left", "top", "right", "bottom"].includes(key);
+        }
+        // Otherwise, filter out position properties as before
+        return (
           key !== "position" &&
           key !== "left" &&
           key !== "top" &&
           key !== "right" &&
           key !== "bottom"
-      )
+        );
+      })
       .map(([key, value]) => {
         const cssKey = key.replace(
           /([A-Z])/g,
@@ -883,26 +968,37 @@ export const DynamicNode = ({ nodeId }) => {
       })
       .join("\n");
 
+    // Only add position rules if base doesn't have absolute positioning
+    const positionRule = baseHasAbsolutePosition
+      ? ""
+      : "position: relative !important;";
+
     return `
       /* Dynamic override for all variant styles */
       #dynamic-node-${nodeId}[data-variant-id="${activeVariant.id}"]#dynamic-node-${nodeId}[data-variant-id="${activeVariant.id}"] {
-        position: relative !important;
+        ${positionRule}
         ${cssRules}
       }
       
       /* Ensure correct initial state by using render counter */
       #dynamic-node-${nodeId}[data-render-count="${renderCounter}"][data-variant-id="${activeVariant.id}"] {
-        position: relative !important;
+        ${positionRule}
         ${cssRules}
       }
       
       /* Force update for nested children in variants with data attributes */
       #dynamic-node-${nodeId}[data-variant-update="${forceNestedUpdate}"][data-variant-id="${activeVariant.id}"] {
-        position: relative !important;
+        ${positionRule}
         ${cssRules}
       }
     `;
-  }, [activeVariant, nodeId, renderCounter, forceNestedUpdate]);
+  }, [
+    activeVariant,
+    nodeId,
+    renderCounter,
+    forceNestedUpdate,
+    responsiveBaseNode,
+  ]);
 
   // Additional styles to force style application on initial load
   const initialLoadCSS = `
@@ -978,6 +1074,17 @@ export const DynamicNode = ({ nodeId }) => {
     return cssRules;
   }, [activeVariant, nodeId, originalNodes, forceNestedUpdate]);
 
+  // Helper function to determine the correct position value
+  const getPositionValue = (style) => {
+    // isFakeFixed takes precedence over everything
+    if (style.isFakeFixed === "true") {
+      return "fixed";
+    } else if (style.isAbsoluteInFrame === "true") {
+      return "absolute";
+    }
+    return "relative";
+  };
+
   // Update text content for smooth text style transitions.
 
   return (
@@ -1004,12 +1111,35 @@ export const DynamicNode = ({ nodeId }) => {
         className="dynamic-node"
         style={{
           cursor: baseNode.isDynamic ? "pointer" : undefined,
-          position: "relative",
+          // Apply other styles first (but not position-related ones)
+          ...Object.fromEntries(
+            Object.entries(containerStyle).filter(
+              ([key]) =>
+                !["position", "left", "top", "right", "bottom"].includes(key)
+            )
+          ),
+          // Then apply position with proper priority
+          position: getPositionValue(mergedStyle),
+          // Include position values if absolute/fixed
+          ...(mergedStyle.isAbsoluteInFrame === "true" ||
+          mergedStyle.isFakeFixed === "true"
+            ? {
+                left: mergedStyle.left,
+                top: mergedStyle.top,
+                right: mergedStyle.right,
+                bottom: mergedStyle.bottom,
+              }
+            : {}),
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flex: "0 0 auto",
-          ...(activeVariant ? filterPositionProps(activeVariant.style) : {}),
+          // Apply filtered variant styles last
+          ...(activeVariant &&
+          mergedStyle.isAbsoluteInFrame !== "true" &&
+          mergedStyle.isFakeFixed !== "true"
+            ? filterPositionProps(activeVariant.style)
+            : {}),
         }}
         onClick={(e) => handleClick(e, responsiveBaseNode.id)}
         onMouseEnter={(e) => handleMouseEnter(e, responsiveBaseNode.id)}

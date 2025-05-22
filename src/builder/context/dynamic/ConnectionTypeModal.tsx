@@ -1,30 +1,31 @@
 import React, { useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { useBuilder, useBuilderDynamic } from "@/builder/context/builderState";
+import { useBuilderRefs } from "@/builder/context/builderState";
 import Button from "@/components/ui/button";
 import { selectOps, useGetSelectedIds } from "../atoms/select-store";
-import { useGetDynamicModeNodeId } from "../atoms/dynamic-store";
+import { useGetDynamicModeNodeId, dynamicOps } from "../atoms/dynamic-store";
 import { useConnectionTypeModal, modalOps } from "../atoms/modal-store";
+import {
+  NodeId,
+  getCurrentNodes,
+  useGetNodeDynamicInfo,
+} from "../atoms/node-store";
+import { addUniqueConnection } from "../atoms/node-store/operations/dynamic-operations";
 
 const ConnectionTypeModal: React.FC = () => {
-  const { nodeDisp, nodeState } = useBuilderDynamic();
+  const { contentRef } = useBuilderRefs();
 
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = React.useState(false);
 
-  // Use the subscription hook for rendering
   const connectionTypeModal = useConnectionTypeModal();
 
-  // Use imperative getters for event handlers
   const getSelectedIds = useGetSelectedIds();
-  const getDynamicModeNodeId = useGetDynamicModeNodeId();
 
-  // Handle clicks outside the modal
   useEffect(() => {
     if (!connectionTypeModal.show) return;
 
-    // Show with a small delay for animation
     const animationTimeout = setTimeout(() => {
       setIsVisible(true);
     }, 10);
@@ -35,7 +36,6 @@ const ConnectionTypeModal: React.FC = () => {
       }
     };
 
-    // Add event listener with slight delay to prevent immediate trigger
     const timeoutId = setTimeout(() => {
       document.addEventListener("mousedown", handleClickOutside);
     }, 50);
@@ -47,74 +47,66 @@ const ConnectionTypeModal: React.FC = () => {
     };
   }, [connectionTypeModal.show]);
 
-  // Reset visibility when modal is hidden
   useEffect(() => {
     if (!connectionTypeModal.show) {
       setIsVisible(false);
     }
   }, [connectionTypeModal.show]);
 
-  // Function to find responsive counterparts of a node across all viewports
-  const findResponsiveCounterparts = useCallback(
-    (nodeId: string | number) => {
-      const counterparts: string[] = [];
-      const node = nodeState.nodes.find((n) => n.id === nodeId);
+  const findResponsiveCounterparts = useCallback((nodeId: NodeId) => {
+    const allNodes = getCurrentNodes();
+    const node = allNodes.find((n) => n.id === nodeId);
 
-      if (!node || !node.variantResponsiveId) return counterparts;
+    const counterparts: NodeId[] = [];
 
-      // Find all nodes with the same variantResponsiveId (responsive siblings)
-      const responsiveNodes = nodeState.nodes.filter(
-        (n) =>
-          n.variantResponsiveId === node.variantResponsiveId && n.id !== nodeId
-      );
+    if (!node || !node.variantResponsiveId) return counterparts;
 
-      responsiveNodes.forEach((responsiveNode) => {
-        counterparts.push(responsiveNode.id.toString());
-      });
+    const responsiveNodes = allNodes.filter(
+      (n) =>
+        n.variantResponsiveId === node.variantResponsiveId && n.id !== nodeId
+    );
 
-      return counterparts;
-    },
-    [nodeState.nodes]
-  );
+    responsiveNodes.forEach((responsiveNode) => {
+      counterparts.push(responsiveNode.id);
+    });
 
-  // Function to create connections across responsive counterparts
+    return counterparts;
+  }, []);
+
   const createResponsiveConnections = useCallback(
     (
-      sourceId: string | number,
-      targetId: string | number,
+      sourceId: NodeId,
+      targetId: NodeId,
       connectionType: "click" | "hover" | "mouseLeave"
     ) => {
-      // Get source and target nodes
-      const sourceNode = nodeState.nodes.find((n) => n.id === sourceId);
-      const targetNode = nodeState.nodes.find((n) => n.id === targetId);
+      const allNodes = getCurrentNodes();
+
+      const sourceNode = allNodes.find((n) => n.id === sourceId);
+      const targetNode = allNodes.find((n) => n.id === targetId);
 
       if (!sourceNode || !targetNode) return;
 
-      // Find the responsive counterparts
       const sourceCounterparts = findResponsiveCounterparts(sourceId);
       const targetCounterparts = findResponsiveCounterparts(targetId);
 
       console.log("Source Counterparts:", sourceCounterparts);
       console.log("Target Counterparts:", targetCounterparts);
 
-      // Map targets to their viewport IDs for easier matching
       const targetsByViewport = new Map();
 
-      targetNode.dynamicViewportId &&
+      if (targetNode.dynamicViewportId) {
         targetsByViewport.set(targetNode.dynamicViewportId, targetId);
+      }
 
       targetCounterparts.forEach((counterpartId) => {
-        const counterpart = nodeState.nodes.find((n) => n.id === counterpartId);
+        const counterpart = allNodes.find((n) => n.id === counterpartId);
         if (counterpart && counterpart.dynamicViewportId) {
           targetsByViewport.set(counterpart.dynamicViewportId, counterpartId);
         }
       });
 
-      // For each source counterpart, find the target in the same viewport and connect them
       sourceCounterparts.forEach((sourceCounterpartId) => {
-        const counterpart = nodeState.nodes.find(
-          (n) => n.id === sourceCounterpartId
-        );
+        const counterpart = allNodes.find((n) => n.id === sourceCounterpartId);
 
         if (counterpart && counterpart.dynamicViewportId) {
           const viewportId = counterpart.dynamicViewportId;
@@ -125,42 +117,30 @@ const ConnectionTypeModal: React.FC = () => {
               `Creating responsive connection: ${sourceCounterpartId} -> ${matchingTargetId} (${connectionType})`
             );
 
-            const dynamicModeNodeId = getDynamicModeNodeId();
-
-            // Create the connection in this viewport
-            nodeDisp.addUniqueDynamicConnection(
+            addUniqueConnection(
               sourceCounterpartId,
               matchingTargetId,
-              connectionType,
-              dynamicModeNodeId
+              connectionType
             );
           }
         }
       });
     },
-    [
-      nodeState.nodes,
-      findResponsiveCounterparts,
-      getDynamicModeNodeId,
-      nodeDisp,
-    ]
+    [findResponsiveCounterparts]
   );
 
   if (!connectionTypeModal.show) return null;
 
   const handleClose = () => {
-    // Get the current selection when closing
     const selectedIds = getSelectedIds();
 
-    // Before closing, make sure the source node remains selected
     if (
       connectionTypeModal.sourceId &&
-      !selectedIds.includes(connectionTypeModal.sourceId.toString())
+      !selectedIds.includes(connectionTypeModal.sourceId)
     ) {
       selectOps.selectNode(connectionTypeModal.sourceId);
     }
 
-    // Use the modal ops to hide the modal
     modalOps.hideConnectionTypeModal();
   };
 
@@ -169,25 +149,15 @@ const ConnectionTypeModal: React.FC = () => {
   ) => {
     const { sourceId, targetId } = connectionTypeModal;
 
-    const dynamicModeNodeId = getDynamicModeNodeId();
     if (sourceId && targetId) {
-      // Create the primary connection
-      nodeDisp.addUniqueDynamicConnection(
-        sourceId,
-        targetId,
-        type,
-        dynamicModeNodeId
-      );
+      addUniqueConnection(sourceId, targetId, type);
 
-      // Then cascade the connection to all responsive counterparts
       createResponsiveConnections(sourceId, targetId, type);
     }
 
-    // Hide the modal
     handleClose();
   };
 
-  // Calculate position to ensure it stays within viewport bounds
   const x = Math.min(connectionTypeModal.position.x, window.innerWidth - 290);
   const y = Math.min(connectionTypeModal.position.y, window.innerHeight - 200);
 

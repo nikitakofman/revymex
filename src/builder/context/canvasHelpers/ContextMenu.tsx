@@ -189,6 +189,9 @@ export const ContextMenu = () => {
     [getNode]
   );
 
+  // Updated makeNodeDynamic function that sets isTopLevelDynamicNode flag only on the top-level node
+  // and its shared counterparts, but not on child nodes
+
   const makeNodeDynamic = useCallback(
     (nodeId: NodeId) => {
       // Get shared info and all nodes
@@ -226,19 +229,26 @@ export const ContextMenu = () => {
         // Get all descendants
         const descendants = getDescendants(rootId);
 
-        // Add the root node itself
-        const nodesToUpdate = [rootId, ...Array.from(descendants)];
+        // First, make the root node dynamic and mark it as a top-level dynamic node
+        updateNodeFlags(rootId, { isDynamic: true });
+        updateNodeDynamicInfo(rootId, {
+          dynamicFamilyId,
+          dynamicViewportId: viewportId,
+          variantResponsiveId,
+          isTopLevelDynamicNode: true, // Only set this flag on the root node
+        });
 
-        // Update all nodes in the subtree
-        for (const id of nodesToUpdate) {
+        // Then update all descendants WITHOUT setting isTopLevelDynamicNode
+        for (const id of descendants) {
           // Make node dynamic
           updateNodeFlags(id, { isDynamic: true });
 
-          // Set dynamic info
+          // Set dynamic info but DON'T mark as top-level
           updateNodeDynamicInfo(id, {
             dynamicFamilyId,
             dynamicViewportId: viewportId,
             variantResponsiveId,
+            // isTopLevelDynamicNode is intentionally not set for descendants
           });
         }
       };
@@ -393,7 +403,7 @@ export const ContextMenu = () => {
     const node = nodeId ? getNode(nodeId) : null;
 
     // Add "Make Dynamic" option only for frame nodes
-    if (node && node.type === "frame") {
+    if (node) {
       menuItems.push(
         {
           label: "Make Dynamic",

@@ -13,7 +13,7 @@ import {
   useGetIsMovingCanvas,
   useGetIsTextModeActive,
 } from "../atoms/canvas-interaction-store";
-import { dynamicOps } from "../atoms/dynamic-store";
+import { dynamicOps, useDynamicModeNodeId } from "../atoms/dynamic-store";
 import {
   NodeId,
   useGetNodeBasics,
@@ -51,7 +51,7 @@ export const useConnect = () => {
   const getIsEditingText = useGetIsEditingText();
   const getHoverNodeId = useGetHoveredNodeId();
   const currentSelectedIds = useGetSelectedIds();
-  const getDynamicModeNodeId = useGetDynamicModeNodeId();
+  const dynamicModeNodeId = useDynamicModeNodeId();
 
   const isNearEdge = (
     e: React.MouseEvent,
@@ -177,14 +177,31 @@ export const useConnect = () => {
         variantResponsiveId,
       } = dynamicInfo;
 
-      const isFrameModeActive = getIsFrameModeActive();
-      const dynamicModeNodeId = getDynamicModeNodeId();
+      const findTopLevelDynamicParent = (nodeId: NodeId): NodeId | null => {
+        const dynamicInfo = getNodeDynamicInfo(nodeId);
+
+        // If this node has a dynamicFamilyId but is NOT a top-level dynamic node
+        if (dynamicInfo.dynamicFamilyId && !dynamicInfo.isTopLevelDynamicNode) {
+          const allNodes = getCurrentNodes();
+          const topLevelParent = allNodes.find(
+            (node) =>
+              node.isDynamic &&
+              node.dynamicFamilyId === dynamicInfo.dynamicFamilyId &&
+              node.isTopLevelDynamicNode === true
+          );
+
+          return topLevelParent ? topLevelParent.id : null;
+        }
+
+        return null;
+      };
 
       const handleMouseDown = (e: React.MouseEvent) => {
         const selectedIds = currentSelectedIds();
         const isMoveCanvasMode = getIsMoveCanvasMode();
         const isTextModeActive = getIsTextModeActive();
         const isEditingText = getIsEditingText();
+        const isFrameModeActive = getIsFrameModeActive();
 
         if (isMoveCanvasMode) {
           return;
@@ -207,10 +224,21 @@ export const useConnect = () => {
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
         let isDragStarted = false;
 
-        const isAlreadySelected = selectOps.getSelectedIds().includes(nodeId);
+        // Check if we should select the top-level dynamic parent instead
+        let targetNodeId = nodeId;
+        if (!dynamicModeNodeId) {
+          const topLevelParent = findTopLevelDynamicParent(nodeId);
+          if (topLevelParent) {
+            targetNodeId = topLevelParent;
+          }
+        }
+
+        const isAlreadySelected = selectOps
+          .getSelectedIds()
+          .includes(targetNodeId);
 
         const dynamicParentInSameViewport =
-          findDynamicParentInSameViewport(nodeId);
+          findDynamicParentInSameViewport(targetNodeId);
 
         if (!dynamicModeNodeId && dynamicParentInSameViewport) {
           if (!e.shiftKey) {
@@ -220,10 +248,11 @@ export const useConnect = () => {
           }
         } else {
           if (isAlreadySelected && selectedIds.length > 1) {
+            // Do nothing on initial click if already selected in multi-selection
           } else if (e.shiftKey) {
-            addToSelection(nodeId);
+            addToSelection(targetNodeId);
           } else {
-            setSelectNodeId(nodeId);
+            setSelectNodeId(targetNodeId);
           }
         }
 
@@ -252,12 +281,34 @@ export const useConnect = () => {
                 if (!isResizeHandle && !isEdge) {
                   console.log("START DRAG");
 
+                  // Check if we should drag the top-level dynamic parent instead
+                  let dragNodeId = nodeId;
+                  let dragFlags = flags;
+                  let dragDynamicInfo = dynamicInfo;
+                  let dragParentId = parentId;
+                  let dragStyle = style;
+
+                  if (!dynamicModeNodeId) {
+                    const topLevelParent = findTopLevelDynamicParent(nodeId);
+                    if (topLevelParent) {
+                      console.log(
+                        "Redirecting drag to top-level parent:",
+                        topLevelParent
+                      );
+                      dragNodeId = topLevelParent;
+                      dragFlags = getNodeFlags(topLevelParent);
+                      dragDynamicInfo = getNodeDynamicInfo(topLevelParent);
+                      dragParentId = getNodeParent(topLevelParent);
+                      dragStyle = getNodeStyle(topLevelParent);
+                    }
+                  }
+
                   const nodeData = {
-                    id: nodeId,
-                    ...flags,
-                    ...dynamicInfo,
-                    parentId,
-                    style,
+                    id: dragNodeId,
+                    ...dragFlags,
+                    ...dragDynamicInfo,
+                    parentId: dragParentId,
+                    style: dragStyle,
                   };
 
                   handleDragStart(e, undefined, nodeData);
@@ -297,8 +348,17 @@ export const useConnect = () => {
           const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
 
           if (dx < 5 && dy < 5) {
+            // Check if we should select the top-level dynamic parent instead
+            let targetNodeId = nodeId;
+            if (!dynamicModeNodeId) {
+              const topLevelParent = findTopLevelDynamicParent(nodeId);
+              if (topLevelParent) {
+                targetNodeId = topLevelParent;
+              }
+            }
+
             const dynamicParentInSameViewport =
-              findDynamicParentInSameViewport(nodeId);
+              findDynamicParentInSameViewport(targetNodeId);
 
             if (!dynamicModeNodeId && dynamicParentInSameViewport) {
               if (!e.shiftKey) {
@@ -308,9 +368,9 @@ export const useConnect = () => {
               }
             } else {
               if (!e.shiftKey) {
-                setSelectNodeId(nodeId);
+                setSelectNodeId(targetNodeId);
               } else {
-                addToSelection(nodeId);
+                addToSelection(targetNodeId);
               }
             }
           }
@@ -325,73 +385,109 @@ export const useConnect = () => {
 
         console.log("Double click on node:", nodeId);
 
-        if (isDynamic) {
+        // Check if we should handle double-click on the top-level dynamic parent instead
+        let targetNodeId = nodeId;
+        let targetDynamicInfo = dynamicInfo;
+        let targetIsDynamic = isDynamic;
+
+        if (!dynamicModeNodeId) {
+          const topLevelParent = findTopLevelDynamicParent(nodeId);
+          if (topLevelParent) {
+            targetNodeId = topLevelParent;
+            targetDynamicInfo = getNodeDynamicInfo(topLevelParent);
+            const targetFlags = getNodeFlags(topLevelParent);
+            targetIsDynamic = targetFlags.isDynamic || false;
+            console.log(
+              "Redirecting double-click to top-level parent:",
+              topLevelParent
+            );
+          }
+        }
+
+        if (targetIsDynamic) {
           if (!dynamicModeNodeId) {
             console.log("Node is dynamic, setting as dynamic mode node");
 
             // Find parent viewport
             const allNodes = getCurrentNodes();
+            const targetParentId = getNodeParent(targetNodeId);
             const parentViewportId =
-              dynamicViewportId ||
-              findParentViewport(originalParentId, allNodes) ||
-              findParentViewport(parentId, allNodes);
+              targetDynamicInfo.dynamicViewportId ||
+              findParentViewport(
+                targetDynamicInfo.originalParentId,
+                allNodes
+              ) ||
+              findParentViewport(targetParentId, allNodes);
 
             if (parentViewportId) {
               console.log(`Setting active viewport to: ${parentViewportId}`);
               dynamicOps.switchDynamicViewport(parentViewportId);
             } else {
-              console.warn("Could not determine viewport for node:", nodeId);
+              console.warn(
+                "Could not determine viewport for node:",
+                targetNodeId
+              );
               dynamicOps.switchDynamicViewport("viewport-1440");
             }
 
-            // Get the family ID to identify all related base dynamic nodes
-            const familyId = dynamicInfo.dynamicFamilyId;
+            // Get the family ID to identify all related dynamic nodes
+            const familyId = targetDynamicInfo.dynamicFamilyId;
 
             if (familyId) {
-              // Find all related base dynamic nodes across all viewports
-              const relatedBaseNodes = allNodes.filter(
+              // Find all related dynamic nodes that are marked as top-level
+              const topLevelNodes = allNodes.filter(
                 (node) =>
                   node.isDynamic &&
                   node.dynamicFamilyId === familyId &&
-                  !node.isVariant
+                  node.isTopLevelDynamicNode === true
               );
 
               console.log(
-                `Found ${relatedBaseNodes.length} related base nodes in the same family`
+                `Found ${topLevelNodes.length} top-level dynamic nodes in the same family`
               );
 
-              // IMPORTANT: First store all original positions BEFORE making any style changes
-              relatedBaseNodes.forEach((node) => {
-                console.log(`Storing original position for node: ${node.id}`);
-                // Store the current state (with the original position)
+              // IMPORTANT: First store all original positions BEFORE making any detachment
+              topLevelNodes.forEach((node) => {
+                console.log(
+                  `Storing original position for top-level node: ${node.id}`
+                );
+                // Store the current state (with the original position and parent)
                 dynamicOps.storeDynamicNodeState(node.id);
               });
 
-              // Only AFTER storing all original positions, update the styles
-              relatedBaseNodes.forEach((node) => {
-                console.log(`Setting absolute position for node: ${node.id}`);
-                // Set position to absolute for dynamic positioning
-                updateNodeStyle(node.id, { position: "absolute" });
+              // Now AFTER storing, detach only the top-level dynamic nodes
+              topLevelNodes.forEach((node) => {
+                console.log(
+                  `Detaching top-level node for dynamic mode: ${node.id}`
+                );
+                // Detach from parent and set as absolute position
+                dynamicOps.detachNodeForDynamicMode(node.id);
               });
             } else {
               // If no family ID, just handle the current node
               console.log(
-                "No family ID found, setting only current node to absolute"
+                "No family ID found, checking if current node is top-level"
               );
-              // IMPORTANT: First store original position BEFORE making any style changes
-              dynamicOps.storeDynamicNodeState(nodeId);
-              // Only AFTER storing original position, update the style
-              updateNodeStyle(nodeId, { position: "absolute" });
+
+              // Check if this node is a top-level dynamic node
+              if (targetDynamicInfo.isTopLevelDynamicNode) {
+                // IMPORTANT: First store original position BEFORE detaching
+                dynamicOps.storeDynamicNodeState(targetNodeId);
+                // Detach node from parent for dynamic mode
+                dynamicOps.detachNodeForDynamicMode(targetNodeId);
+              } else {
+                console.log("Node is not marked as top-level, not detaching");
+              }
             }
 
             // Finally set the dynamic mode node ID
-            dynamicOps.setDynamicModeNodeId(nodeId, parentViewportId);
+            dynamicOps.setDynamicModeNodeId(targetNodeId, parentViewportId);
           }
           return;
         }
 
         const dynamicParentInSameViewport =
-          findDynamicParentInSameViewport(nodeId);
+          findDynamicParentInSameViewport(targetNodeId);
 
         if (dynamicParentInSameViewport && !dynamicModeNodeId) {
           console.log("Found dynamic parent:", dynamicParentInSameViewport);
@@ -418,43 +514,52 @@ export const useConnect = () => {
             dynamicOps.switchDynamicViewport("viewport-1440");
           }
 
-          // Get the family ID to identify all related base dynamic nodes
+          // Get the family ID to identify all related dynamic nodes
           const familyId = parentDynamicInfo.dynamicFamilyId;
 
           if (familyId) {
-            // Find all related base dynamic nodes across all viewports
-            const relatedBaseNodes = allNodes.filter(
+            // Find only top-level dynamic nodes with the isTopLevelDynamicNode flag
+            const topLevelNodes = allNodes.filter(
               (node) =>
                 node.isDynamic &&
                 node.dynamicFamilyId === familyId &&
-                !node.isVariant
+                node.isTopLevelDynamicNode === true
             );
 
             console.log(
-              `Found ${relatedBaseNodes.length} related base nodes in the same family`
+              `Found ${topLevelNodes.length} top-level dynamic nodes in the same family`
             );
 
-            // IMPORTANT: First store all original positions BEFORE making any style changes
-            relatedBaseNodes.forEach((node) => {
-              console.log(`Storing original position for node: ${node.id}`);
-              // Store the current state (with the original position)
+            // IMPORTANT: First store all original positions BEFORE making any detachment
+            topLevelNodes.forEach((node) => {
+              console.log(
+                `Storing original position for top-level node: ${node.id}`
+              );
+              // Store the current state (with the original position and parent)
               dynamicOps.storeDynamicNodeState(node.id);
             });
 
-            // Only AFTER storing all original positions, update the styles
-            relatedBaseNodes.forEach((node) => {
-              console.log(`Setting absolute position for node: ${node.id}`);
-              // Set position to absolute for dynamic positioning
-              updateNodeStyle(node.id, { position: "absolute" });
+            // Now AFTER storing, detach only the top-level dynamic nodes
+            topLevelNodes.forEach((node) => {
+              console.log(
+                `Detaching top-level node for dynamic mode: ${node.id}`
+              );
+              // Detach from parent and set as absolute position
+              dynamicOps.detachNodeForDynamicMode(node.id);
             });
           } else {
-            // If no family ID, just handle the current node
-            // IMPORTANT: First store original position BEFORE making any style changes
-            dynamicOps.storeDynamicNodeState(dynamicParentInSameViewport);
-            // Only AFTER storing original position, update the style
-            updateNodeStyle(dynamicParentInSameViewport, {
-              position: "absolute",
-            });
+            // If no family ID, check if this node is top-level
+            console.log("No family ID found, checking if parent is top-level");
+
+            // Check if the dynamic parent is a top-level dynamic node
+            if (parentDynamicInfo.isTopLevelDynamicNode) {
+              // IMPORTANT: First store original position BEFORE detaching
+              dynamicOps.storeDynamicNodeState(dynamicParentInSameViewport);
+              // Detach node from parent for dynamic mode
+              dynamicOps.detachNodeForDynamicMode(dynamicParentInSameViewport);
+            } else {
+              console.log("Parent is not marked as top-level, not detaching");
+            }
           }
 
           // Finally set the dynamic mode node ID
@@ -474,28 +579,37 @@ export const useConnect = () => {
           timeoutRef.current = null;
         }
 
-        const dynamicParentInSameViewport =
-          findDynamicParentInSameViewport(nodeId);
+        // Check if we should select the top-level dynamic parent instead
+        let targetNodeId = nodeId;
+        if (!dynamicModeNodeId) {
+          const topLevelParent = findTopLevelDynamicParent(nodeId);
+          if (topLevelParent) {
+            targetNodeId = topLevelParent;
+          }
+        }
 
-        const targetNodeId =
+        const dynamicParentInSameViewport =
+          findDynamicParentInSameViewport(targetNodeId);
+
+        const finalTargetNodeId =
           !dynamicModeNodeId && dynamicParentInSameViewport
             ? dynamicParentInSameViewport
-            : nodeId;
-        const selectedIds = currentSelectedIds();
+            : targetNodeId;
 
-        const isNodeSelected = selectedIds.includes(targetNodeId);
+        const selectedIds = currentSelectedIds();
+        const isNodeSelected = selectedIds.includes(finalTargetNodeId);
 
         if (!isNodeSelected && !e.shiftKey) {
           clearSelection();
-          setSelectNodeId(targetNodeId);
+          setSelectNodeId(finalTargetNodeId);
         } else if (!isNodeSelected && e.shiftKey) {
-          addToSelection(targetNodeId);
+          addToSelection(finalTargetNodeId);
         }
 
         contextMenuOps.setContextMenu(
           e.clientX,
           e.clientY,
-          targetNodeId as string
+          finalTargetNodeId as string
         );
       };
 
@@ -504,8 +618,36 @@ export const useConnect = () => {
         const isMovingCanvas = getMovingCanvas();
 
         if (e.target === e.currentTarget && !dragSource && !isMovingCanvas) {
-          const nodeViewportId = getNodeViewportId(nodeId);
+          // If NOT in dynamic mode, check if this node is a child of a dynamic node
+          if (!dynamicModeNodeId) {
+            const dynamicInfo = getNodeDynamicInfo(nodeId);
 
+            // Check if this node has a dynamicFamilyId but is NOT a top-level dynamic node
+            if (
+              dynamicInfo.dynamicFamilyId &&
+              !dynamicInfo.isTopLevelDynamicNode
+            ) {
+              // Find the top-level dynamic parent in the same family
+              const allNodes = getCurrentNodes();
+              const topLevelParent = allNodes.find(
+                (node) =>
+                  node.isDynamic &&
+                  node.dynamicFamilyId === dynamicInfo.dynamicFamilyId &&
+                  node.isTopLevelDynamicNode === true
+              );
+
+              if (topLevelParent) {
+                // Transfer hover to the top-level dynamic parent
+                requestAnimationFrame(() => {
+                  setHoverNodeId(topLevelParent.id);
+                });
+                return;
+              }
+            }
+          }
+
+          // Original hover logic for other cases
+          const nodeViewportId = getNodeViewportId(nodeId);
           const dynamicParentInSameViewport =
             findDynamicParentInSameViewport(nodeId);
 
@@ -533,8 +675,34 @@ export const useConnect = () => {
         const hoveredNodeId = getHoverNodeId();
         if (e.target === e.currentTarget) {
           const currentHoverId = hoveredNodeId;
-          console.log("moussing out");
 
+          // If NOT in dynamic mode, check if we need to handle dynamic family hover
+          if (!dynamicModeNodeId) {
+            const dynamicInfo = getNodeDynamicInfo(nodeId);
+
+            // If this is a child of a dynamic node (not top-level)
+            if (
+              dynamicInfo.dynamicFamilyId &&
+              !dynamicInfo.isTopLevelDynamicNode
+            ) {
+              // Find the top-level dynamic parent
+              const allNodes = getCurrentNodes();
+              const topLevelParent = allNodes.find(
+                (node) =>
+                  node.isDynamic &&
+                  node.dynamicFamilyId === dynamicInfo.dynamicFamilyId &&
+                  node.isTopLevelDynamicNode === true
+              );
+
+              // Clear hover if the current hover is the top-level parent
+              if (topLevelParent && currentHoverId === topLevelParent.id) {
+                setHoverNodeId(null);
+                return;
+              }
+            }
+          }
+
+          // Original mouse out logic
           const dynamicParentInSameViewport =
             findDynamicParentInSameViewport(nodeId);
 
@@ -603,7 +771,7 @@ export const useConnect = () => {
       getIsTextModeActive,
       getIsEditingText,
       setHoverNodeId,
-      getDynamicModeNodeId,
+      dynamicModeNodeId,
     ]
   );
 };

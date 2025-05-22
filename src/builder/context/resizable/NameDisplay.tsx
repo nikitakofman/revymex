@@ -16,6 +16,7 @@ import {
   useGetNode,
   useNodeStyle,
   useGetNodeFlags,
+  useNodeDynamicInfo,
   getCurrentNodes,
 } from "../atoms/node-store";
 
@@ -28,6 +29,7 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
   const parentId = useNodeParent(nodeId);
   const basics = useNodeBasics(nodeId);
   const { type, customName } = basics;
+  const dynamicInfo = useNodeDynamicInfo(nodeId);
 
   // Get a full node builder for compatibility with drag functions
   const getNode = useGetNode();
@@ -50,19 +52,36 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
     (node) => node.id === activeViewportInDynamicMode
   );
 
-  // Early returns for nodes we don't want to display names for
-  if (!isViewport) return null;
+  // Don't show name if currently dragging
   if (isDraggingFromStore) return null;
 
-  // In normal mode (not dynamic mode), don't show names for nodes in viewports
+  // In normal mode (not dynamic mode)
   if (!dynamicModeNodeId) {
-    // Check if this node is inside a viewport
-    const isInsideViewport = inViewport || !!parentId;
-    if (isInsideViewport) return null;
-  }
+    // Only show names for:
+    // 1. Viewports
+    // 2. Canvas elements (parentId === null and not inViewport)
+    // 3. Top-level dynamic nodes that are also on canvas (parentId === null)
 
-  // Changed: Now we're only filtering out non-top-level nodes in dynamic mode
-  if (dynamicModeNodeId && parentId !== null && !isDynamic) return null;
+    if (isViewport) {
+      // Always show viewport names
+    } else if (parentId === null && !inViewport) {
+      // Show canvas element names (including top-level dynamic nodes)
+    } else {
+      // Don't show names for anything else (including dynamic nodes with parents)
+      return null;
+    }
+  } else {
+    // In dynamic mode
+    // Only show names for nodes that belong to the active viewport
+    if (dynamicInfo.dynamicViewportId !== activeViewportInDynamicMode) {
+      return null;
+    }
+
+    // Don't show names for child nodes (only top-level)
+    if (parentId !== null && !dynamicInfo.isTopLevelDynamicNode) {
+      return null;
+    }
+  }
 
   // Determine name to display - always start with custom name or type
   let nameToDisplay = customName || type;
@@ -78,18 +97,11 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
         : "Mobile"
       : "");
 
-  // Check if this is a base dynamic node or a variant
-  const isBaseDynamicNode = isDynamic;
+  // Check if this is a top-level dynamic node
+  const isTopLevelDynamicNode = dynamicInfo.isTopLevelDynamicNode === true;
 
-  // Check if this should show the viewport suffix
-  // We only want to show viewport suffix for:
-  // 1. Base dynamic nodes (isDynamic)
-  // 2. Actual variants (isVariant)
-  // 3. NOT free-floating elements that just happen to have dynamicParentId
-  const shouldShowViewportSuffix = isBaseDynamicNode || isVariant;
-
-  // FIXED: Only append viewport name for proper dynamic nodes and variants
-  if (dynamicModeNodeId && viewportName && shouldShowViewportSuffix) {
+  // Only append viewport name in dynamic mode for dynamic nodes and variants
+  if (dynamicModeNodeId && viewportName && (isDynamic || isVariant)) {
     nameToDisplay = `${nameToDisplay} - ${viewportName}`;
   }
 
@@ -174,10 +186,10 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
         contextMenuOps.setContextMenu(e.clientX, e.clientY, nodeId, true)
       }
     >
-      {/* Show Crown icon for base dynamic nodes */}
-      {isBaseDynamicNode && (
+      {/* Show Crown icon for top-level dynamic nodes */}
+      {isTopLevelDynamicNode && !isVariant && (
         <Crown
-          fill="#000"
+          fill={dynamicModeNodeId ? "var(--accent-secondary)" : "var(--accent)"}
           style={{
             marginRight: `${6 / transform.scale}px`,
             width: `${12 / transform.scale}px`,
@@ -185,9 +197,10 @@ const NameDisplay = ({ nodeId }: { nodeId: string }) => {
           }}
         />
       )}
+      {/* Show Component icon for variants */}
       {isVariant && (
         <Component
-          fill="#000"
+          fill={dynamicModeNodeId ? "var(--accent-secondary)" : "var(--accent)"}
           style={{
             marginRight: `${6 / transform.scale}px`,
             width: `${12 / transform.scale}px`,

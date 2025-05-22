@@ -1,4 +1,3 @@
-// Modified dynamic-store.ts with additional dynamicPositions tracking
 import { atom, createStore } from "jotai/vanilla";
 import { selectAtom } from "jotai/utils";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -13,10 +12,11 @@ import {
   sharedIdBucketsAtom,
 } from "./node-store";
 import { updateNodeStyle } from "./node-store/operations/style-operations";
+import { moveNode } from "./node-store/operations/insert-operations";
+import { updateNodeFlags } from "./node-store/operations/update-operations";
 
 export const dynamicStore = createStore();
 
-// Adding dynamicPositions to store temporary positions in dynamic mode
 export interface DynamicState {
   dynamicModeNodeId: string | number | null;
   activeViewportInDynamicMode: string | number | null;
@@ -28,7 +28,7 @@ export interface DynamicState {
       top?: string;
     }
   >;
-  // New field for temporary positions while in dynamic mode
+  // Track temporary positions while in dynamic mode
   dynamicPositions: Record<
     string | number,
     {
@@ -36,6 +36,20 @@ export interface DynamicState {
       top: string;
     }
   >;
+  // Store original parent relationships
+  originalParents: Record<
+    string | number,
+    {
+      parentId: string | number | null;
+      inViewport: boolean;
+      originalPosition?: string;
+      originalLeft?: string;
+      originalTop?: string;
+      originalZIndex?: string;
+    }
+  >;
+  // Track which nodes were detached for dynamic mode
+  detachedNodes: Set<string | number>;
 }
 
 const initialDynamicState: DynamicState = {
@@ -43,6 +57,8 @@ const initialDynamicState: DynamicState = {
   activeViewportInDynamicMode: null,
   storedNodePositions: {},
   dynamicPositions: {},
+  originalParents: {},
+  detachedNodes: new Set(),
 };
 
 export const _internalDynamicStateAtom =
@@ -68,24 +84,46 @@ export const dynamicPositionsAtom = selectAtom(
   (state) => state.dynamicPositions
 );
 
+export const originalParentsAtom = selectAtom(
+  _internalDynamicStateAtom,
+  (state) => state.originalParents
+);
+
+export const detachedNodesAtom = selectAtom(
+  _internalDynamicStateAtom,
+  (state) => state.detachedNodes
+);
+
 const dynamicOperations = {
-  // Store the original position properties before entering dynamic mode
+  // Store the original position properties and parent relationship before entering dynamic mode
   storeDynamicNodeState: (nodeId: NodeId) => {
     if (!nodeId) return;
 
-    // Get node style from nodeStore
+    // Get node information from nodeStore
     const nodeStyle = nodeStore.get(nodeStyleAtom(nodeId));
     const nodeSharedInfo = nodeStore.get(nodeSharedInfoAtom(nodeId));
+    const nodeFlags = nodeStore.get(nodeFlagsAtom(nodeId));
+    const nodeParent = nodeStore.get(nodeParentAtom(nodeId));
 
-    // Store position properties
+    // Store original position properties and parent relationship
     dynamicStore.set(_internalDynamicStateAtom, (prev) => {
       const storedNodePositions = { ...prev.storedNodePositions };
+      const originalParents = { ...prev.originalParents };
 
-      // Store this node's position, left, and top
+      // Store this node's position, left, top, and parent relationship
       storedNodePositions[nodeId] = {
         position: nodeStyle.position,
         left: nodeStyle.left,
         top: nodeStyle.top,
+      };
+
+      originalParents[nodeId] = {
+        parentId: nodeParent,
+        inViewport: !!nodeFlags.inViewport,
+        originalPosition: nodeStyle.position,
+        originalLeft: nodeStyle.left,
+        originalTop: nodeStyle.top,
+        originalZIndex: nodeStyle.zIndex,
       };
 
       // If node has sharedId, also store positions for all shared nodes
@@ -98,11 +136,22 @@ const dynamicOperations = {
             if (id !== nodeId) {
               // Skip the original node we already stored
               const sharedNodeStyle = nodeStore.get(nodeStyleAtom(id));
+              const sharedNodeParent = nodeStore.get(nodeParentAtom(id));
+              const sharedNodeFlags = nodeStore.get(nodeFlagsAtom(id));
 
               storedNodePositions[id] = {
                 position: sharedNodeStyle.position,
                 left: sharedNodeStyle.left,
                 top: sharedNodeStyle.top,
+              };
+
+              originalParents[id] = {
+                parentId: sharedNodeParent,
+                inViewport: !!sharedNodeFlags.inViewport,
+                originalPosition: sharedNodeStyle.position,
+                originalLeft: sharedNodeStyle.left,
+                originalTop: sharedNodeStyle.top,
+                originalZIndex: sharedNodeStyle.zIndex,
               };
             }
           }
@@ -112,10 +161,86 @@ const dynamicOperations = {
       return {
         ...prev,
         storedNodePositions,
+        originalParents,
       };
     });
 
-    console.log("Stored original position for node:", nodeId);
+    console.log("Stored original position and parent for node:", nodeId);
+  },
+
+  // New method to detach a node from its parent for dynamic mode
+  detachNodeForDynamicMode: (nodeId: NodeId) => {
+    if (!nodeId) return;
+
+    console.log("Detaching node for dynamic mode:", nodeId);
+
+    // First ensure we've stored the original state
+    const currentState = dynamicStore.get(_internalDynamicStateAtom);
+    if (!currentState.originalParents[nodeId]) {
+      dynamicOperations.storeDynamicNodeState(nodeId);
+    }
+
+    // Detach the node by setting its parent to null
+    moveNode(nodeId, null);
+
+    // Mark this node as detached
+    dynamicStore.set(_internalDynamicStateAtom, (prev) => {
+      const detachedNodes = new Set(prev.detachedNodes);
+      detachedNodes.add(nodeId);
+      return {
+        ...prev,
+        detachedNodes,
+      };
+    });
+
+    // Make sure the node is positioned absolutely
+    updateNodeStyle(nodeId, {
+      position: "absolute",
+      pointerEvents: "auto",
+    });
+
+    // Make sure inViewport flag is false (since it's now on canvas)
+    updateNodeFlags(nodeId, { inViewport: false });
+  },
+
+  // Restore a detached node to its original parent
+  restoreDetachedNode: (nodeId: NodeId) => {
+    const currentState = dynamicStore.get(_internalDynamicStateAtom);
+    const originalInfo = currentState.originalParents[nodeId];
+
+    if (!originalInfo) {
+      console.warn("No original parent information found for:", nodeId);
+      return;
+    }
+
+    console.log("Restoring node to original parent:", nodeId, originalInfo);
+
+    // First restore the node to its original parent
+    if (originalInfo.parentId) {
+      moveNode(nodeId, originalInfo.parentId);
+    }
+
+    // Restore original positioning and style
+    updateNodeStyle(nodeId, {
+      position: originalInfo.originalPosition || "",
+      left: originalInfo.originalLeft || "",
+      top: originalInfo.originalTop || "",
+      zIndex: originalInfo.originalZIndex || "",
+      pointerEvents: "", // Reset pointer events
+    });
+
+    // Restore original viewport flag
+    updateNodeFlags(nodeId, { inViewport: originalInfo.inViewport });
+
+    // Mark as no longer detached
+    dynamicStore.set(_internalDynamicStateAtom, (prev) => {
+      const detachedNodes = new Set(prev.detachedNodes);
+      detachedNodes.delete(nodeId);
+      return {
+        ...prev,
+        detachedNodes,
+      };
+    });
   },
 
   // Set temporary dynamic position for a node (for dragging in dynamic mode)
@@ -148,70 +273,32 @@ const dynamicOperations = {
     });
   },
 
-  // Restore the original position properties when exiting dynamic mode
-  restoreDynamicNodePositions: () => {
-    const { storedNodePositions } = dynamicStore.get(_internalDynamicStateAtom);
+  // Restore all nodes to their original parents when exiting dynamic mode
+  restoreAllDynamicNodes: () => {
+    const state = dynamicStore.get(_internalDynamicStateAtom);
 
-    console.log("Stored positions to restore:", storedNodePositions);
+    console.log("Restoring all detached nodes to original parents");
 
-    // If there are no stored positions, log warning and return
-    if (Object.keys(storedNodePositions).length === 0) {
-      console.warn("No stored positions found to restore");
-      return;
+    // Restore all detached nodes
+    for (const nodeId of state.detachedNodes) {
+      dynamicOperations.restoreDetachedNode(nodeId);
     }
 
-    // Batch update all stored node positions
-    for (const [nodeId, state] of Object.entries(storedNodePositions)) {
-      // Restore position properties
-      const styleUpdates: Record<string, string | undefined> = {};
-
-      if (state.position !== undefined) {
-        styleUpdates.position = state.position;
-
-        // IMPORTANT: If original position was "relative" or something other than "absolute",
-        // we should clear left/top values to prevent unwanted offsets
-        if (
-          state.position === "relative" ||
-          state.position === "static" ||
-          (state.position !== "absolute" && state.position !== "fixed")
-        ) {
-          styleUpdates.left = "";
-          styleUpdates.top = "";
-        } else {
-          // Only set left/top if the original position was absolute/fixed
-          if (state.left !== undefined) {
-            styleUpdates.left = state.left;
-          }
-
-          if (state.top !== undefined) {
-            styleUpdates.top = state.top;
-          }
-        }
-      } else {
-        // If position wasn't stored, still restore left/top as they were
-        if (state.left !== undefined) {
-          styleUpdates.left = state.left;
-        }
-
-        if (state.top !== undefined) {
-          styleUpdates.top = state.top;
-        }
-      }
-
-      console.log(`Restoring position for node ${nodeId}:`, styleUpdates);
-      updateNodeStyle(nodeId, styleUpdates);
-    }
-
-    // Clear stored positions after restoration
+    // Clear out all dynamic mode state
     dynamicStore.set(_internalDynamicStateAtom, (prev) => ({
       ...prev,
+      originalParents: {},
+      detachedNodes: new Set(),
+      dynamicPositions: {},
       storedNodePositions: {},
-      dynamicPositions: {}, // Also clear dynamic positions
+      dynamicModeNodeId: null,
+      activeViewportInDynamicMode: null,
     }));
 
-    console.log("Restored all node positions");
+    console.log("Restored all dynamic mode state");
   },
 
+  // Set dynamic mode with a specific node ID
   setDynamicModeNodeId: (
     nodeId: string | number | null,
     defaultViewportId?: string | number
@@ -222,8 +309,8 @@ const dynamicOperations = {
 
     // If exiting dynamic mode (current is not null, new one is null)
     if (currentNodeId && !nodeId) {
-      console.log("Exiting dynamic mode, restoring positions");
-      dynamicOperations.restoreDynamicNodePositions();
+      console.log("Exiting dynamic mode, restoring all nodes");
+      dynamicOperations.restoreAllDynamicNodes();
     }
 
     dynamicStore.set(_internalDynamicStateAtom, (prev) => {
@@ -259,11 +346,25 @@ const dynamicOperations = {
   getState: () => {
     return dynamicStore.get(_internalDynamicStateAtom);
   },
+
+  // Check if a node is currently detached for dynamic mode
+  isNodeDetachedForDynamicMode: (nodeId: NodeId) => {
+    const state = dynamicStore.get(_internalDynamicStateAtom);
+    return state.detachedNodes.has(nodeId);
+  },
 };
 
 export const dynamicOps = dynamicOperations;
 
-// Add hooks for the new dynamicPositions atom
+// Add hooks for the new atoms
+export const useOriginalParents = () => {
+  return useAtomValue(originalParentsAtom, { store: dynamicStore });
+};
+
+export const useDetachedNodes = () => {
+  return useAtomValue(detachedNodesAtom, { store: dynamicStore });
+};
+
 export const useDynamicPositions = () => {
   return useAtomValue(dynamicPositionsAtom, { store: dynamicStore });
 };
@@ -271,6 +372,18 @@ export const useDynamicPositions = () => {
 export const useGetDynamicPositions = () => {
   return useCallback(() => {
     return dynamicStore.get(_internalDynamicStateAtom).dynamicPositions;
+  }, []);
+};
+
+export const useGetOriginalParents = () => {
+  return useCallback(() => {
+    return dynamicStore.get(_internalDynamicStateAtom).originalParents;
+  }, []);
+};
+
+export const useGetDetachedNodes = () => {
+  return useCallback(() => {
+    return dynamicStore.get(_internalDynamicStateAtom).detachedNodes;
   }, []);
 };
 
